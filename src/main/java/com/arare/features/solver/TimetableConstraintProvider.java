@@ -30,6 +30,8 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             roomConflict(factory),
             batchConflict(factory),
             roomCapacityViolation(factory),
+            roomTypeMismatch(factory),
+            sectionConflict(factory),
             teacherNotQualified(factory),
             teacherUnavailable(factory),
             roomUnavailable(factory),
@@ -110,6 +112,32 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .penalize(HardMediumSoftScore.ONE_HARD,
                 s -> s.getEffectiveStudentCount() - s.getRoom().getCapacity())
             .asConstraint("Room capacity violation");
+    }
+
+    /**
+     * Room type must match the subject's required room type (LECTURE vs LAB).
+     * Spec: "Room type must match subject.roomTypeRequired"
+     */
+    Constraint roomTypeMismatch(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> s.getRoom() != null
+                && s.getSubject() != null
+                && s.getSubject().getRoomTypeRequired() != null
+                && s.getSubject().getRoomTypeRequired() != s.getRoom().getType())
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Room type mismatch");
+    }
+
+    /**
+     * A class section (lab sub-group) cannot have two sessions at the same timeslot.
+     */
+    Constraint sectionConflict(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> s.getSection() != null && s.getTimeslot() != null)
+            .groupBy(ClassSession::getSection, ClassSession::getTimeslot, ConstraintCollectors.count())
+            .filter((section, timeslot, count) -> count > 1)
+            .penalize(HardMediumSoftScore.ONE_HARD, (section, timeslot, count) -> count - 1)
+            .asConstraint("Section conflict");
     }
 
     /**
