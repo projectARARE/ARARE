@@ -6,6 +6,7 @@ import com.arare.common.enums.RoomType;
 public record SubjectResponse(
     Long id,
     String name,
+    String code,
     Long departmentId,
     String departmentName,
     int weeklyHours,

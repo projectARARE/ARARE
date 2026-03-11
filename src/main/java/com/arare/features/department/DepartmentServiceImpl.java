@@ -23,6 +23,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     public DepartmentResponse create(DepartmentRequest req) {
         Department d = Department.builder()
             .name(req.name())
+            .code(req.code())
             .buildingsAllowed(resolveBuildings(req.buildingIds()))
             .build();
         return toResponse(repo.save(d));
@@ -33,6 +34,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     public DepartmentResponse update(Long id, DepartmentRequest req) {
         Department d = findEntity(id);
         d.setName(req.name());
+        d.setCode(req.code());
         d.setBuildingsAllowed(resolveBuildings(req.buildingIds()));
         return toResponse(repo.save(d));
     }
@@ -68,6 +70,6 @@ public class DepartmentServiceImpl implements DepartmentService {
         List<BuildingResponse> buildings = d.getBuildingsAllowed().stream()
             .map(b -> new BuildingResponse(b.getId(), b.getName(), b.getLocation()))
             .toList();
-        return new DepartmentResponse(d.getId(), d.getName(), buildings);
+        return new DepartmentResponse(d.getId(), d.getName(), d.getCode(), buildings);
     }
 }

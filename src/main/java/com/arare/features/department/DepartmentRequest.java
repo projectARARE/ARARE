@@ -6,5 +6,6 @@ import java.util.List;
 /** Request DTO: create or update a Department. */
 public record DepartmentRequest(
     @NotBlank String name,
+    @NotBlank String code,
     List<Long> buildingIds
 ) {}

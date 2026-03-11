@@ -45,6 +45,10 @@ public class Subject extends BaseEntity {
     @Column(nullable = false)
     private String name;
 
+    /** Short course code, e.g. "CS301". Displayed in the timetable grid. */
+    @Column
+    private String code;
+
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "department_id", nullable = false)

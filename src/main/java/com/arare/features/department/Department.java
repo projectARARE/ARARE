@@ -26,6 +26,10 @@ public class Department extends BaseEntity {
     @Column(nullable = false, unique = true)
     private String name;
 
+    @NotBlank
+    @Column(nullable = false, unique = true)
+    private String code;
+
     /**
      * Buildings this department is allowed to schedule sessions in.
      * Soft constraint: sessions should prefer these buildings.

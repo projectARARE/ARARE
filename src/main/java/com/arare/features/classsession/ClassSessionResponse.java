@@ -9,6 +9,8 @@ public record ClassSessionResponse(
     Long id,
     String subjectName,
     boolean isLab,
+    Long batchId,             // null for lab-section sessions
+    Long sectionId,           // null for batch sessions
     String batchLabel,        // e.g. "CSE-2A"  or section label for lab splits
     Long teacherId,
     String teacherName,

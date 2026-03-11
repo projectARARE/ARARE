@@ -25,6 +25,7 @@ public class SubjectServiceImpl implements SubjectService {
 
         Subject s = Subject.builder()
             .name(req.name())
+            .code(req.code())
             .department(dept)
             .weeklyHours(req.weeklyHours())
             .chunkHours(req.chunkHours())
@@ -47,6 +48,7 @@ public class SubjectServiceImpl implements SubjectService {
             .orElseThrow(() -> new ResourceNotFoundException("Department", req.departmentId()));
 
         s.setName(req.name());
+        s.setCode(req.code());
         s.setDepartment(dept);
         s.setWeeklyHours(req.weeklyHours());
         s.setChunkHours(req.chunkHours());
@@ -88,7 +90,7 @@ public class SubjectServiceImpl implements SubjectService {
 
     private SubjectResponse toResponse(Subject s) {
         return new SubjectResponse(
-            s.getId(), s.getName(),
+            s.getId(), s.getName(), s.getCode(),
             s.getDepartment().getId(), s.getDepartment().getName(),
             s.getWeeklyHours(), s.getChunkHours(),
             s.getRoomTypeRequired(), s.getLabSubtypeRequired(),

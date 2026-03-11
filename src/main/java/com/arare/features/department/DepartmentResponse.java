@@ -6,5 +6,6 @@ import java.util.List;
 public record DepartmentResponse(
     Long id,
     String name,
+    String code,
     List<BuildingResponse> buildingsAllowed
 ) {}

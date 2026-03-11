@@ -3,7 +3,6 @@ package com.arare.features.solver;
 import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
 import ai.timefold.solver.core.api.score.stream.*;
 import com.arare.features.classsession.ClassSession;
-import com.arare.features.timeslot.Timeslot;
 
 /**
  * All scheduling constraints for ARARE, mapped to their spec categories.
@@ -28,12 +27,18 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             teacherUnavailable(factory),
             roomUnavailable(factory),
             breakSlotViolation(factory),
+            labSessionsMustUseSections(factory),
+            teacherRequiredButMissing(factory),
+            roomRequiredButMissing(factory),
 
             // ── Medium ────────────────────────────────────────────────
             teacherDailyHoursCap(factory),
+            teacherWeeklyHoursCap(factory),
             teacherConsecutiveClassesCap(factory),
             avoidStudentIdleGaps(factory),
+            avoidTeacherIdleGaps(factory),
             preferSameTeacherSameSubject(factory),
+            preferDepartmentBuildings(factory),
 
             // ── Soft ──────────────────────────────────────────────────
             teacherFreeDayPreference(factory),
@@ -157,6 +162,45 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .asConstraint("Session assigned to break or blocked slot");
     }
 
+    /**
+     * Lab sessions (subject.isLab == true) must be assigned to a ClassSection, not a full Batch.
+     * Spec: "Lab sessions must use sections"
+     *
+     * <p>When a batch has 60 students but the lab capacity is 36, the session must be split
+     * into sections. A lab ClassSession that still holds a full batch is a configuration error.</p>
+     */
+    Constraint labSessionsMustUseSections(ConstraintFactory factory) {
+        return factory.forEach(ClassSession.class)
+            .filter(s -> s.getSubject() != null
+                && s.getSubject().isLab()
+                && s.getSection() == null   // lab session has no section assigned
+                && s.getBatch() != null)    // but has a full batch (wrong)
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Lab session must use ClassSection, not full Batch");
+    }
+
+    /**
+     * When a subject requires a teacher, the session must have one assigned.
+     * Spec: "Teacher must be assigned when subject.requiresTeacher == true"
+     */
+    Constraint teacherRequiredButMissing(ConstraintFactory factory) {
+        return factory.forEach(ClassSession.class)
+            .filter(s -> s.getSubject().isRequiresTeacher() && s.getTeacher() == null)
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Teacher required but not assigned");
+    }
+
+    /**
+     * When a subject requires a room, the session must have one assigned.
+     * Spec: "Room must be assigned when subject.requiresRoom == true"
+     */
+    Constraint roomRequiredButMissing(ConstraintFactory factory) {
+        return factory.forEach(ClassSession.class)
+            .filter(s -> s.getSubject().isRequiresRoom() && s.getRoom() == null)
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Room required but not assigned");
+    }
+
     // ==================================================================
     // MEDIUM CONSTRAINTS
     // ==================================================================
@@ -175,6 +219,21 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .penalize(HardMediumSoftScore.ONE_MEDIUM,
                 (teacher, day, totalHours) -> totalHours - teacher.getMaxDailyHours())
             .asConstraint("Teacher daily hours exceeded");
+    }
+
+    /**
+     * Teacher total weekly hours must not exceed maxWeeklyHours.
+     * Spec: "Teacher max weekly hours"
+     */
+    Constraint teacherWeeklyHoursCap(ConstraintFactory factory) {
+        return factory.forEach(ClassSession.class)
+            .filter(s -> s.getTeacher() != null && s.getTimeslot() != null)
+            .groupBy(ClassSession::getTeacher,
+                ConstraintCollectors.sum(ClassSession::getDuration))
+            .filter((teacher, totalHours) -> totalHours > teacher.getMaxWeeklyHours())
+            .penalize(HardMediumSoftScore.ONE_MEDIUM,
+                (teacher, totalHours) -> totalHours - teacher.getMaxWeeklyHours())
+            .asConstraint("Teacher weekly hours exceeded");
     }
 
     /**
@@ -199,19 +258,87 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     /**
      * Avoid idle gaps in the student schedule.
      * Spec: "Avoid student idle gaps"
-     * Approximation: penalise batches with more than 1 unassigned slot between first
-     * and last session on a day. Full implementation requires session ordering logic.
+     *
+     * <p>Penalises any pair of sessions for the same batch on the same day where
+     * one session ends strictly before the other begins — i.e., there is dead time
+     * between them that a student must sit through with no class.</p>
+     *
+     * <p>Example (gap):     09:00–10:00, then 12:00–13:00 → penalised.<br>
+     * Example (no gap):   09:00–10:00, then 10:00–11:00 → not penalised.</p>
+     *
+     * <p>Note: This pairwise approach is a known approximation. For three contiguous
+     * sessions A-B-C, the pair (A,C) is also flagged because A ends before C starts.
+     * The solver minimises total penalties and will still prefer compact schedules.</p>
      */
     Constraint avoidStudentIdleGaps(ConstraintFactory factory) {
-        return factory.forEach(ClassSession.class)
-            .filter(s -> s.getBatch() != null && s.getTimeslot() != null)
-            .groupBy(ClassSession::getBatch,
-                s -> s.getTimeslot().getDay(),
-                ConstraintCollectors.count())
-            // Placeholder: actual idle-gap detection needs sorted timeslot analysis
-            .filter((batch, day, count) -> count == 0)
+        return factory.forEachUniquePair(
+                ClassSession.class,
+                Joiners.equal(ClassSession::getBatch),
+                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null))
+            .filter((s1, s2) ->
+                s1.getBatch() != null
+                && s1.getTimeslot() != null
+                && s2.getTimeslot() != null
+                && hasIdleGap(s1, s2))
             .penalize(HardMediumSoftScore.ONE_MEDIUM)
             .asConstraint("Student idle gap");
+    }
+
+    /**
+     * Returns true when there is a strict time gap between two sessions on the same day
+     * (i.e., the earlier session ends before the later session starts, with dead time between them).
+     */
+    private static boolean hasIdleGap(ClassSession a, ClassSession b) {
+        var tA = a.getTimeslot();
+        var tB = b.getTimeslot();
+        if (tA.getStartTime().isBefore(tB.getStartTime())) {
+            // a comes first — gap exists if a's end < b's start
+            return tA.getEndTime().isBefore(tB.getStartTime());
+        } else {
+            // b comes first — gap exists if b's end < a's start
+            return tB.getEndTime().isBefore(tA.getStartTime());
+        }
+    }
+
+    /**
+     * Avoid idle gaps in the teacher schedule.
+     * Spec: "Avoid teacher idle gaps"
+     *
+     * <p>Penalises any pair of sessions for the same teacher on the same day where
+     * there is dead time between them (teacher is on-site but not teaching).</p>
+     */
+    Constraint avoidTeacherIdleGaps(ConstraintFactory factory) {
+        return factory.forEachUniquePair(
+                ClassSession.class,
+                Joiners.equal(ClassSession::getTeacher),
+                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null))
+            .filter((s1, s2) ->
+                s1.getTeacher() != null
+                && s1.getTimeslot() != null
+                && s2.getTimeslot() != null
+                && hasIdleGap(s1, s2))
+            .penalize(HardMediumSoftScore.ONE_MEDIUM)
+            .asConstraint("Teacher idle gap");
+    }
+
+    /**
+     * Sessions should be placed in buildings assigned to the subject's department.
+     * Spec: "Prefer department buildings"
+     *
+     * <p>Penalises any session whose room's building is not in the subject
+     * department's {@code buildingsAllowed} list. No penalty when the list is empty
+     * (department has no building restriction).</p>
+     */
+    Constraint preferDepartmentBuildings(ConstraintFactory factory) {
+        return factory.forEach(ClassSession.class)
+            .filter(s -> s.getRoom() != null
+                && s.getSubject() != null
+                && s.getSubject().getDepartment() != null
+                && !s.getSubject().getDepartment().getBuildingsAllowed().isEmpty()
+                && !s.getSubject().getDepartment().getBuildingsAllowed()
+                    .contains(s.getRoom().getBuilding()))
+            .penalize(HardMediumSoftScore.ONE_MEDIUM)
+            .asConstraint("Session outside department buildings");
     }
 
     /**

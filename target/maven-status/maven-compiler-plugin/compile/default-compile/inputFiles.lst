@@ -8,7 +8,6 @@ D:\ARARE\src\main\java\com\arare\common\enums\ScheduleStatus.java
 D:\ARARE\src\main\java\com\arare\common\enums\SchoolDay.java
 D:\ARARE\src\main\java\com\arare\common\enums\TimeslotType.java
 D:\ARARE\src\main\java\com\arare\config\JpaConfig.java
-D:\ARARE\src\main\java\com\arare\config\SolverConfiguration.java
 D:\ARARE\src\main\java\com\arare\exception\DuplicateResourceException.java
 D:\ARARE\src\main\java\com\arare\exception\GlobalExceptionHandler.java
 D:\ARARE\src\main\java\com\arare\exception\ResourceNotFoundException.java
@@ -74,6 +73,7 @@ D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleRequest.java
 D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleResponse.java
 D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleService.java
 D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleServiceImpl.java
+D:\ARARE\src\main\java\com\arare\features\solver\ScoreExplanationResponse.java
 D:\ARARE\src\main\java\com\arare\features\solver\TimetableConstraintProvider.java
 D:\ARARE\src\main\java\com\arare\features\solver\TimetableSolution.java
 D:\ARARE\src\main\java\com\arare\features\solver\TimetableSolverService.java

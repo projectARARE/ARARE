@@ -1,6 +1,7 @@
 package com.arare.features.classsession;
 
 import ai.timefold.solver.core.api.domain.entity.PlanningEntity;
+import ai.timefold.solver.core.api.domain.entity.PlanningPin;
 import ai.timefold.solver.core.api.domain.lookup.PlanningId;
 import ai.timefold.solver.core.api.domain.variable.PlanningVariable;
 import com.arare.features.batch.Batch;
@@ -39,6 +40,7 @@ import lombok.*;
 @Entity
 @Table(name = "class_sessions")
 @PlanningEntity
+@EqualsAndHashCode(of = "id")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -89,10 +91,10 @@ public class ClassSession {
     private int duration = 1;
 
     /**
-     * When true, the solver must not reassign this session.
-     * Pre-allocated sessions (from {@link com.arare.features.preallocation.PreAllocation})
-     * are locked before the solve begins.
+     * When true, Timefold will NOT modify this session's planning variables.
+     * Pre-allocated sessions and sessions outside the partial re-solve scope are pinned.
      */
+    @PlanningPin
     @Column(nullable = false)
     @Builder.Default
     private boolean isLocked = false;
@@ -102,25 +104,25 @@ public class ClassSession {
     // ------------------------------------------------------------------
 
     /**
-     * Assigned teacher.
-     * Null for self-study subjects ({@code subject.requiresTeacher == false}).
+     * Assigned teacher. {@code allowsUnassigned = true}: null when
+     * {@code subject.requiresTeacher == false} (self-study, project, seminar).
      */
-    @PlanningVariable
+    @PlanningVariable(allowsUnassigned = true, valueRangeProviderRefs = {"teacherRange"})
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "teacher_id")
     private Teacher teacher;
 
     /**
-     * Assigned room.
-     * Null for off-campus subjects ({@code subject.requiresRoom == false}).
+     * Assigned room. {@code allowsUnassigned = true}: null when
+     * {@code subject.requiresRoom == false} (field work, off-campus activity).
      */
-    @PlanningVariable
+    @PlanningVariable(allowsUnassigned = true, valueRangeProviderRefs = {"roomRange"})
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "room_id")
     private Room room;
 
     /** Assigned timeslot. Always required. */
-    @PlanningVariable
+    @PlanningVariable(valueRangeProviderRefs = {"timeslotRange"})
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "timeslot_id")
     private Timeslot timeslot;

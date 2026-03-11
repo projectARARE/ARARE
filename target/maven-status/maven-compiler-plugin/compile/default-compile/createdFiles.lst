@@ -7,6 +7,7 @@ com\arare\features\solver\TimetableSolution.class
 com\arare\features\universityconfig\UniversityConfig$UniversityConfigBuilder.class
 com\arare\features\building\BuildingServiceImpl.class
 com\arare\features\building\BuildingController.class
+com\arare\features\solver\ScoreExplanationResponse$ConstraintBreakdown.class
 com\arare\features\subject\Subject$SubjectBuilder.class
 com\arare\features\subject\SubjectController.class
 com\arare\features\event\EventServiceImpl.class
@@ -60,6 +61,7 @@ com\arare\features\department\DepartmentServiceImpl.class
 com\arare\features\batch\BatchController.class
 com\arare\features\universityconfig\UniversityConfigService.class
 com\arare\features\universityconfig\UniversityConfig.class
+com\arare\features\solver\ScoreExplanationResponse.class
 com\arare\features\event\Event$EventBuilder.class
 com\arare\features\timeslot\Timeslot$TimeslotBuilder.class
 com\arare\features\room\RoomResponse.class
@@ -79,7 +81,6 @@ com\arare\features\universityconfig\UniversityConfigRepository.class
 com\arare\features\preallocation\PreAllocationRequest.class
 com\arare\features\room\Room$RoomBuilder.class
 com\arare\features\timeslot\TimeslotRequest.class
-com\arare\config\SolverConfiguration.class
 com\arare\features\event\EventService.class
 com\arare\features\universityconfig\UniversityConfigRequest.class
 com\arare\features\solver\TimetableConstraintProvider.class

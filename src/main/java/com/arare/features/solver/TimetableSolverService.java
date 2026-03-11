@@ -1,6 +1,8 @@
 package com.arare.features.solver;
 
 import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
+import ai.timefold.solver.core.api.score.constraint.ConstraintMatchTotal;
+import ai.timefold.solver.core.api.solver.SolutionManager;
 import ai.timefold.solver.core.api.solver.SolverJob;
 import ai.timefold.solver.core.api.solver.SolverManager;
 import com.arare.common.enums.ScheduleStatus;
@@ -33,6 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -57,6 +60,7 @@ import java.util.concurrent.ExecutionException;
 public class TimetableSolverService {
 
     private final SolverManager<TimetableSolution, UUID> solverManager;
+    private final SolutionManager<TimetableSolution, HardMediumSoftScore> solutionManager;
 
     private final ScheduleRepository       scheduleRepo;
     private final ClassSessionRepository   sessionRepo;
@@ -113,6 +117,54 @@ public class TimetableSolverService {
     }
 
     // ------------------------------------------------------------------
+    // Score explanation
+    // ------------------------------------------------------------------
+
+    /**
+     * Returns a human-readable breakdown of constraint violations for a schedule.
+     *
+     * <p>Uses Timefold's {@link SolutionManager} to calculate match totals
+     * without running the solver again — it just evaluates the current state.</p>
+     */
+    @Transactional(readOnly = true)
+    public ScoreExplanationResponse explainSchedule(Long scheduleId) {
+        Schedule schedule = scheduleRepo.findById(scheduleId)
+            .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + scheduleId));
+
+        TimetableSolution solution = buildProblem(schedule, null);
+        var explanation = solutionManager.explain(solution);
+        HardMediumSoftScore score = explanation.getScore();
+
+        Collection<ConstraintMatchTotal<HardMediumSoftScore>> totals =
+            explanation.getConstraintMatchTotalMap().values();
+
+        List<ScoreExplanationResponse.ConstraintBreakdown> breakdowns = totals.stream()
+            .filter(t -> !t.getScore().equals(HardMediumSoftScore.ZERO))
+            .map(t -> {
+                HardMediumSoftScore cs = t.getScore();
+                String level = cs.hardScore() != 0 ? "HARD"
+                    : cs.mediumScore() != 0 ? "MEDIUM" : "SOFT";
+                return new ScoreExplanationResponse.ConstraintBreakdown(
+                    t.getConstraintRef().constraintName(),
+                    level,
+                    t.getConstraintMatchCount(),
+                    cs.toString()
+                );
+            })
+            .sorted(java.util.Comparator.comparing(ScoreExplanationResponse.ConstraintBreakdown::level))
+            .toList();
+
+        return new ScoreExplanationResponse(
+            score != null ? score.toString() : "N/A",
+            score != null && score.isFeasible(),
+            score != null ? score.hardScore() : 0,
+            score != null ? score.mediumScore() : 0,
+            score != null ? score.softScore() : 0,
+            breakdowns
+        );
+    }
+
+    // ------------------------------------------------------------------
     // Problem construction
     // ------------------------------------------------------------------
 
@@ -147,6 +199,13 @@ public class TimetableSolverService {
                 }
             });
         }
+
+        // Force-initialize all Hibernate lazy associations before we hand the data
+        // off to Timefold solver threads, which run outside this Hibernate session.
+        // Without this, lazy-proxy access in constraint streams silently returns null
+        // (the Hibernate session is thread-local and unavailable in solver threads),
+        // causing every constraint to see 0 violations and the solver to ignore conflicts.
+        initializeLazyAssociations(sessions, teachers, rooms, subjects, batches, sections);
 
         TimetableSolution problem = new TimetableSolution();
         problem.setTimeslots(timeslots);
@@ -255,6 +314,75 @@ public class TimetableSolverService {
     }
 
     // ------------------------------------------------------------------
+    // Lazy-association initialisation
+    // ------------------------------------------------------------------
+
+    /**
+     * Forces Hibernate to load every association that the Timefold constraint
+     * streams will access during solving.  Must be called from the thread that
+     * owns the current Hibernate session (i.e. inside the @Transactional boundary)
+     * so that the data is already resident in memory before solver threads start.
+     */
+    private void initializeLazyAssociations(
+        List<ClassSession> sessions,
+        List<Teacher> teachers,
+        List<Room> rooms,
+        List<Subject> subjects,
+        List<Batch> batches,
+        List<ClassSection> sections
+    ) {
+        // --- Sessions ---
+        for (ClassSession s : sessions) {
+            // subject and its department+buildings (used in many constraints)
+            Subject sub = s.getSubject();
+            sub.getDepartment().getId();
+            sub.getDepartment().getBuildingsAllowed().size();
+
+            // batch (batchConflict, freeDayPreference, studentIdleGap, etc.)
+            if (s.getBatch() != null) {
+                Batch b = s.getBatch();
+                b.getDepartment().getId();
+                b.getWorkingDays().size();
+            }
+            // section (labSessionsMustUseSections)
+            if (s.getSection() != null) {
+                s.getSection().getId();
+                s.getSection().getBatch().getId();
+            }
+        }
+
+        // --- Teachers ---
+        for (Teacher t : teachers) {
+            t.getSubjects().size();           // teacherNotQualified
+            t.getPreferredBuildings().size(); // preferTeacherBuilding
+            t.getAvailableTimeslots().size(); // teacherUnavailable
+        }
+
+        // --- Rooms ---
+        for (Room r : rooms) {
+            r.getBuilding().getId();          // preferDepartmentBuildings, preferTeacherBuilding
+            r.getAvailableTimeslots().size(); // roomUnavailable
+        }
+
+        // --- Subjects (already partly done via sessions, but load standalone list too) ---
+        for (Subject sub : subjects) {
+            sub.getDepartment().getId();
+            sub.getDepartment().getBuildingsAllowed().size();
+        }
+
+        // --- Batches ---
+        for (Batch b : batches) {
+            b.getDepartment().getId();
+            b.getWorkingDays().size();
+        }
+
+        // --- Sections ---
+        for (ClassSection sec : sections) {
+            sec.getBatch().getId();
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Solver invocation
     // ------------------------------------------------------------------
 
@@ -281,6 +409,7 @@ public class TimetableSolverService {
 
         // Update schedule metadata
         schedule.setScore(score != null ? score.toString() : null);
+        schedule.setScoreExplanation(solutionManager.explain(solution).toString());
         schedule.setStatus(determineStatus(score));
         scheduleRepo.save(schedule);
 
