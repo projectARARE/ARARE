@@ -8,4 +8,5 @@ import java.util.List;
 @Repository
 public interface ClassSectionRepository extends JpaRepository<ClassSection, Long> {
     List<ClassSection> findByBatchId(Long batchId);
+    List<ClassSection> findByBatchIdIn(List<Long> batchIds);
 }

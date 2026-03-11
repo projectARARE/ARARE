@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, Zap } from 'lucide-react'
 import { Card, Button, Modal, Input, Select, Table, Badge } from '../components/ui'
 import type { Column } from '../components/ui/Table'
-import { eventApi, scheduleApi } from '../services/api'
-import type { Event, EventRequest, EventType, Schedule } from '../types'
+import { eventApi, scheduleApi, teacherApi, roomApi } from '../services/api'
+import type { Event, EventRequest, EventType, Schedule, Teacher, Room } from '../types'
 
-const EVENT_TYPES: EventType[] = ['EXAM', 'MAINTENANCE', 'FESTIVAL', 'TEACHER_LEAVE', 'SEMINAR', 'HOLIDAY', 'OTHER']
+const EVENT_TYPES: EventType[] = [
+  'EXAM', 'MAINTENANCE', 'FESTIVAL', 'TEACHER_LEAVE',
+  'GUEST_LECTURE', 'SPORTS_DAY', 'SEMINAR', 'HOLIDAY', 'OTHER',
+]
 
 const EMPTY: EventRequest = {
   title: '',
@@ -15,11 +18,12 @@ const EMPTY: EventRequest = {
   description: '',
   affectedRoomIds: [],
   affectedTeacherIds: [],
+  affectedTimeslotIds: [],
 }
 
 const typeVariant = (t: EventType): 'red' | 'green' | 'yellow' | 'blue' => {
   if (t === 'EXAM') return 'red'
-  if (t === 'HOLIDAY' || t === 'FESTIVAL') return 'green'
+  if (t === 'HOLIDAY' || t === 'FESTIVAL' || t === 'SPORTS_DAY') return 'green'
   if (t === 'MAINTENANCE') return 'yellow'
   return 'blue'
 }
@@ -27,6 +31,8 @@ const typeVariant = (t: EventType): 'red' | 'green' | 'yellow' | 'blue' => {
 export default function Events() {
   const [items, setItems] = useState<Event[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
+  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<EventRequest>(EMPTY)
@@ -38,8 +44,8 @@ export default function Events() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([eventApi.getAll(), scheduleApi.getAll()])
-      .then(([evs, scheds]) => { setItems(evs); setSchedules(scheds) })
+    Promise.all([eventApi.getAll(), scheduleApi.getAll(), teacherApi.getAll(), roomApi.getAll()])
+      .then(([evs, scheds, t, r]) => { setItems(evs); setSchedules(scheds); setTeachers(t); setRooms(r) })
       .finally(() => setLoading(false))
   }
 
@@ -85,22 +91,45 @@ export default function Events() {
     }
   }
 
+  const toggleTeacher = (id: number) => {
+    setForm((prev) => {
+      const current = prev.affectedTeacherIds ?? []
+      return { ...prev, affectedTeacherIds: current.includes(id) ? current.filter((x) => x !== id) : [...current, id] }
+    })
+  }
+
+  const toggleRoom = (id: number) => {
+    setForm((prev) => {
+      const current = prev.affectedRoomIds ?? []
+      return { ...prev, affectedRoomIds: current.includes(id) ? current.filter((x) => x !== id) : [...current, id] }
+    })
+  }
+
   const scheduleOptions = schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))
-  const typeOptions = EVENT_TYPES.map((t) => ({ value: t, label: t }))
+  const typeOptions = EVENT_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))
 
   const columns: Column<Event>[] = [
     { key: 'title', header: 'Title', render: (e) => <span className="font-medium">{e.title}</span> },
-    { key: 'type', header: 'Type', render: (e) => <Badge label={e.type} variant={typeVariant(e.type)} /> },
+    { key: 'type', header: 'Type', render: (e) => <Badge label={e.type.replace(/_/g, ' ')} variant={typeVariant(e.type)} /> },
     { key: 'dates', header: 'Dates', render: (e) => `${e.startDate} → ${e.endDate}` },
+    {
+      key: 'affected', header: 'Affected',
+      render: (e) => (
+        <span className="text-xs text-gray-500">
+          {[
+            e.affectedTeacherIds.length ? `${e.affectedTeacherIds.length} teacher(s)` : '',
+            e.affectedRoomIds.length ? `${e.affectedRoomIds.length} room(s)` : '',
+          ].filter(Boolean).join(', ') || '—'}
+        </span>
+      ),
+    },
     { key: 'description', header: 'Description', render: (e) => e.description ?? '—' },
     {
       key: 'actions', header: '', width: '140px',
       render: (e) => (
         <div className="flex gap-2">
           <Button
-            variant="ghost"
-            size="sm"
-            icon={<Zap size={14} />}
+            variant="ghost" size="sm" icon={<Zap size={14} />}
             onClick={() => { setApplyTarget({ eventId: e.id, scheduleId: '' }); setApplyError(null) }}
           >
             Apply
@@ -145,6 +174,38 @@ export default function Events() {
             <Input label="End Date" type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
           </div>
           <Input label="Description" value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional description…" />
+
+          {/* Affected Teachers */}
+          <div>
+            <p className="block text-sm font-medium text-gray-700 mb-2">
+              Affected Teachers <span className="font-normal text-gray-500">(optional)</span>
+            </p>
+            <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-3">
+              {teachers.map((t) => (
+                <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={(form.affectedTeacherIds ?? []).includes(t.id)} onChange={() => toggleTeacher(t.id)} />
+                  {t.name}
+                </label>
+              ))}
+              {teachers.length === 0 && <p className="text-sm text-gray-400">No teachers configured yet.</p>}
+            </div>
+          </div>
+
+          {/* Affected Rooms */}
+          <div>
+            <p className="block text-sm font-medium text-gray-700 mb-2">
+              Affected Rooms <span className="font-normal text-gray-500">(optional)</span>
+            </p>
+            <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto border border-gray-200 rounded-md p-3">
+              {rooms.map((r) => (
+                <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={(form.affectedRoomIds ?? []).includes(r.id)} onChange={() => toggleRoom(r.id)} />
+                  {r.roomNumber} {r.buildingName ? `(${r.buildingName})` : ''}
+                </label>
+              ))}
+              {rooms.length === 0 && <p className="text-sm text-gray-400">No rooms configured yet.</p>}
+            </div>
+          </div>
         </div>
       </Modal>
 

@@ -81,14 +81,15 @@ public class TimetableSolverService {
     /**
      * Generates a timetable from scratch for the given schedule record.
      *
-     * @param scheduleId ID of the Schedule entity that was pre-created by the caller.
+     * @param scheduleId   ID of the Schedule entity that was pre-created by the caller.
+     * @param departmentId Optional – when provided, only batches/subjects for that department are scheduled.
      */
     @Transactional
-    public void solveSchedule(Long scheduleId) {
+    public void solveSchedule(Long scheduleId, Long departmentId) {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + scheduleId));
 
-        TimetableSolution problem = buildProblem(schedule, null);
+        TimetableSolution problem = buildProblem(schedule, null, departmentId);
         TimetableSolution solution = runSolver(problem);
         persistSolution(schedule, solution);
     }
@@ -111,7 +112,7 @@ public class TimetableSolverService {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + scheduleId));
 
-        TimetableSolution problem = buildProblem(schedule, impactedSessionIds);
+        TimetableSolution problem = buildProblem(schedule, impactedSessionIds, null);
         TimetableSolution solution = runSolver(problem);
         persistSolution(schedule, solution);
     }
@@ -131,7 +132,7 @@ public class TimetableSolverService {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + scheduleId));
 
-        TimetableSolution solution = buildProblem(schedule, null);
+        TimetableSolution solution = buildProblem(schedule, null, null);
         var explanation = solutionManager.explain(solution);
         HardMediumSoftScore score = explanation.getScore();
 
@@ -173,17 +174,29 @@ public class TimetableSolverService {
      *
      * @param schedule         Target schedule.
      * @param impactedIds      When non-null, all sessions NOT in this list are locked.
+     * @param departmentId     When non-null, only batches / subjects for that department are loaded.
      */
-    private TimetableSolution buildProblem(Schedule schedule, List<Long> impactedIds) {
+    private TimetableSolution buildProblem(Schedule schedule, List<Long> impactedIds, Long departmentId) {
         // Problem facts
         List<Timeslot>       timeslots = timeslotRepo.findByType(TimeslotType.CLASS);
         List<Room>           rooms     = roomRepo.findAll();
         List<Teacher>        teachers  = teacherRepo.findAll();
-        List<Subject>        subjects  = subjectRepo.findAll();
-        List<Batch>          batches   = batchRepo.findAll();
-        List<ClassSection>   sections  = sectionRepo.findAll();
         List<Building>       buildings = buildingRepo.findAll();
         List<UniversityConfig> configs = configRepo.findAll();
+
+        // Filter by department when generating a department-scoped schedule
+        List<Subject> subjects = departmentId != null
+            ? subjectRepo.findByDepartmentId(departmentId)
+            : subjectRepo.findAll();
+        List<Batch> batches = departmentId != null
+            ? batchRepo.findByDepartmentId(departmentId)
+            : batchRepo.findAll();
+
+        // Sections belonging to the resolved batches
+        List<Long> batchIds = batches.stream().map(Batch::getId).toList();
+        List<ClassSection> sections = departmentId != null
+            ? sectionRepo.findByBatchIdIn(batchIds)
+            : sectionRepo.findAll();
 
         // Generate or reuse ClassSession planning entities
         List<ClassSession> sessions = getOrGenerateSessions(schedule, subjects, batches, sections);
@@ -404,7 +417,7 @@ public class TimetableSolverService {
     // ------------------------------------------------------------------
 
     @Transactional
-    protected void persistSolution(Schedule schedule, TimetableSolution solution) {
+    public void persistSolution(Schedule schedule, TimetableSolution solution) {
         HardMediumSoftScore score = solution.getScore();
 
         // Update schedule metadata
@@ -413,8 +426,33 @@ public class TimetableSolverService {
         schedule.setStatus(determineStatus(score));
         scheduleRepo.save(schedule);
 
-        // Persist updated planning variables on each session
-        sessionRepo.saveAll(solution.getSessions());
+        // Build a lookup map from the solved clones (planning variables are set on these)
+        java.util.Map<Long, ClassSession> solvedById = solution.getSessions().stream()
+            .filter(s -> s.getId() != null)
+            .collect(java.util.stream.Collectors.toMap(ClassSession::getId, s -> s));
+
+        // Log what the solver actually assigned to each session
+        solution.getSessions().forEach(s -> log.info(
+            "SOLVED session id={} teacher={} room={} timeslot={}",
+            s.getId(),
+            s.getTeacher() != null ? s.getTeacher().getId() : "NULL",
+            s.getRoom()    != null ? s.getRoom().getId()    : "NULL",
+            s.getTimeslot()!= null ? s.getTimeslot().getId() : "NULL"
+        ));
+
+        // Reload sessions from DB (avoids Hibernate first-level-cache merge issues with
+        // Timefold clones) and apply the solved planning-variable assignments explicitly.
+        List<ClassSession> managed = sessionRepo.findByScheduleId(schedule.getId());
+        for (ClassSession managed_s : managed) {
+            ClassSession solved = solvedById.get(managed_s.getId());
+            if (solved != null) {
+                managed_s.setTeacher(solved.getTeacher());
+                managed_s.setRoom(solved.getRoom());
+                managed_s.setTimeslot(solved.getTimeslot());
+                managed_s.setLocked(solved.isLocked());
+            }
+        }
+        sessionRepo.saveAll(managed);
 
         log.info("Schedule [{}] solved. Score: {}", schedule.getId(), score);
     }

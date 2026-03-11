@@ -2,19 +2,22 @@ import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Card, Button, Modal, Input, Select, Table, Badge } from '../components/ui'
 import type { Column } from '../components/ui/Table'
-import { roomApi, buildingApi } from '../services/api'
-import type { Room, RoomRequest, Building, RoomType, LabSubtype } from '../types'
+import { roomApi, buildingApi, timeslotApi } from '../services/api'
+import type { Room, RoomRequest, Building, Timeslot, RoomType, LabSubtype, SchoolDay } from '../types'
 
 const LAB_SUBTYPES: LabSubtype[] = [
   'COMPUTER_LAB', 'ELECTRONICS_LAB', 'CHEMISTRY_LAB', 'PHYSICS_LAB',
   'MECHANICAL_LAB', 'CIVIL_LAB', 'NETWORK_LAB', 'GENERAL_LAB',
 ]
 
-const EMPTY: RoomRequest = { buildingId: 0, roomNumber: '', type: 'LECTURE', capacity: 30 }
+const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+
+const EMPTY: RoomRequest = { buildingId: 0, roomNumber: '', type: 'LECTURE', capacity: 30, availableTimeslotIds: [] }
 
 export default function Rooms() {
   const [items, setItems] = useState<Room[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [timeslots, setTimeslots] = useState<Timeslot[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Room | null>(null)
@@ -24,8 +27,8 @@ export default function Rooms() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([roomApi.getAll(), buildingApi.getAll()])
-      .then(([rooms, bldgs]) => { setItems(rooms); setBuildings(bldgs) })
+    Promise.all([roomApi.getAll(), buildingApi.getAll(), timeslotApi.getAll()])
+      .then(([rooms, bldgs, ts]) => { setItems(rooms); setBuildings(bldgs); setTimeslots(ts) })
       .finally(() => setLoading(false))
   }
 
@@ -39,7 +42,7 @@ export default function Rooms() {
   }
   const openEdit = (r: Room) => {
     setEditing(r)
-    setForm({ buildingId: r.buildingId, roomNumber: r.roomNumber, type: r.type, labSubtype: r.labSubtype, capacity: r.capacity })
+    setForm({ buildingId: r.buildingId, roomNumber: r.roomNumber, type: r.type, labSubtype: r.labSubtype, capacity: r.capacity, availableTimeslotIds: [] })
     setError(null)
     setOpen(true)
   }
@@ -74,12 +77,27 @@ export default function Rooms() {
     }
   }
 
+  const toggleTimeslot = (id: number) => {
+    setForm((prev) => {
+      const current = prev.availableTimeslotIds ?? []
+      return {
+        ...prev,
+        availableTimeslotIds: current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
+      }
+    })
+  }
+
   const bldgOptions = buildings.map((b) => ({ value: b.id, label: b.name }))
   const typeOptions: { value: string; label: string }[] = [
     { value: 'LECTURE', label: 'Lecture Hall' },
     { value: 'LAB', label: 'Laboratory' },
   ]
   const subtypeOptions = LAB_SUBTYPES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))
+
+  const timeslotsByDay = DAYS.reduce<Record<SchoolDay, Timeslot[]>>((acc, day) => {
+    acc[day] = timeslots.filter((t) => t.day === day && t.type === 'CLASS')
+    return acc
+  }, {} as Record<SchoolDay, Timeslot[]>)
 
   const columns: Column<Room>[] = [
     { key: 'roomNumber', header: 'Room No.', render: (r) => <span className="font-medium">{r.roomNumber}</span> },
@@ -134,6 +152,39 @@ export default function Rooms() {
           {form.type === 'LAB' && (
             <Select label="Lab Subtype" value={form.labSubtype ?? ''} onChange={(e) => setForm({ ...form, labSubtype: e.target.value as LabSubtype })} options={subtypeOptions} placeholder="Select lab type…" />
           )}
+
+          <div>
+            <p className="block text-sm font-medium text-gray-700 mb-1">
+              Availability <span className="font-normal text-gray-500">(leave all unchecked = always available)</span>
+            </p>
+            <p className="text-xs text-gray-500 mb-2">Select timeslots only when this room is restricted or under maintenance</p>
+            <div className="border border-gray-200 rounded-md p-3 max-h-48 overflow-y-auto space-y-3">
+              {DAYS.map((day) => {
+                const slots = timeslotsByDay[day]
+                if (!slots.length) return null
+                return (
+                  <div key={day}>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{day}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {slots.map((ts) => (
+                        <label key={ts.id} className="flex items-center gap-1 text-xs cursor-pointer bg-gray-50 border border-gray-200 rounded px-2 py-1">
+                          <input
+                            type="checkbox"
+                            checked={(form.availableTimeslotIds ?? []).includes(ts.id)}
+                            onChange={() => toggleTimeslot(ts.id)}
+                          />
+                          {ts.startTime}–{ts.endTime}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+              {timeslots.filter((t) => t.type === 'CLASS').length === 0 && (
+                <p className="text-sm text-gray-400">No CLASS timeslots configured yet.</p>
+              )}
+            </div>
+          </div>
         </div>
       </Modal>
     </>

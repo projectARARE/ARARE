@@ -124,15 +124,11 @@ export const timeslotApi = {
   delete: (id: number) => api.delete(`/timeslots/${id}`),
 }
 
-// University Config
+// University Config  (singleton endpoint – only one active config at a time)
 export const universityConfigApi = {
-  getAll: () => api.get<UniversityConfig[]>('/university-configs').then((r) => r.data),
-  getById: (id: number) => api.get<UniversityConfig>(`/university-configs/${id}`).then((r) => r.data),
-  create: (data: UniversityConfigRequest) =>
-    api.post<UniversityConfig>('/university-configs', data).then((r) => r.data),
-  update: (id: number, data: UniversityConfigRequest) =>
-    api.put<UniversityConfig>(`/university-configs/${id}`, data).then((r) => r.data),
-  delete: (id: number) => api.delete(`/university-configs/${id}`),
+  get: () => api.get<UniversityConfig>('/university-config').then((r) => r.data),
+  save: (data: UniversityConfigRequest) =>
+    api.post<UniversityConfig>('/university-config', data).then((r) => r.data),
 }
 
 // Schedules

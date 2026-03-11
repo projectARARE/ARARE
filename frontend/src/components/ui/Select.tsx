@@ -4,12 +4,13 @@ import type { SelectHTMLAttributes } from 'react'
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string
   error?: string
+  helpText?: string
   options: { value: string | number; label: string }[]
   placeholder?: string
 }
 
 const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, options, placeholder, className = '', id, ...props }, ref) => {
+  ({ label, error, helpText, options, placeholder, className = '', id, ...props }, ref) => {
     const selectId = id ?? label?.toLowerCase().replace(/\s+/g, '-')
     return (
       <div className="space-y-1">
@@ -41,6 +42,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
+        {helpText && !error && <p className="text-xs text-gray-500">{helpText}</p>}
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
     )

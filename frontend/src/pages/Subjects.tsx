@@ -3,11 +3,16 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Card, Button, Modal, Input, Select, Table, Badge } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import { subjectApi, departmentApi } from '../services/api'
-import type { Subject, SubjectRequest, Department, LabSubtype } from '../types'
+import type { Subject, SubjectRequest, Department, LabSubtype, RoomType } from '../types'
 
 const LAB_SUBTYPES: LabSubtype[] = [
   'COMPUTER_LAB', 'ELECTRONICS_LAB', 'CHEMISTRY_LAB', 'PHYSICS_LAB',
   'MECHANICAL_LAB', 'CIVIL_LAB', 'NETWORK_LAB', 'GENERAL_LAB',
+]
+
+const ROOM_TYPE_OPTIONS: { value: RoomType; label: string }[] = [
+  { value: 'LECTURE', label: 'Lecture Hall' },
+  { value: 'LAB', label: 'Laboratory' },
 ]
 
 const EMPTY: SubjectRequest = {
@@ -16,9 +21,11 @@ const EMPTY: SubjectRequest = {
   departmentId: 0,
   weeklyHours: 4,
   chunkHours: 1,
+  roomTypeRequired: 'LECTURE',
   isLab: false,
   requiresTeacher: true,
   requiresRoom: true,
+  minGapBetweenSessions: 0,
   maxSessionsPerDay: 1,
 }
 
@@ -77,6 +84,7 @@ export default function Subjects() {
       const data: SubjectRequest = {
         ...form,
         labSubtypeRequired: form.isLab ? form.labSubtypeRequired : undefined,
+        roomTypeRequired: form.isLab ? 'LAB' : (form.roomTypeRequired ?? 'LECTURE'),
       }
       if (editing) {
         await subjectApi.update(editing.id, data)
@@ -163,13 +171,37 @@ export default function Subjects() {
             <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Data Structures" />
             <Input label="Code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="CS301" />
             <Select label="Department" value={form.departmentId} onChange={(e) => setForm({ ...form, departmentId: +e.target.value })} options={deptOptions} placeholder="Select department…" />
+            <Select
+              label="Room Type Required"
+              value={form.isLab ? 'LAB' : (form.roomTypeRequired ?? 'LECTURE')}
+              onChange={(e) => setForm({ ...form, roomTypeRequired: e.target.value as RoomType })}
+              options={ROOM_TYPE_OPTIONS}
+              helpText="Type of room this subject needs"
+            />
             <Input label="Weekly Hours" type="number" min={1} value={form.weeklyHours} onChange={(e) => setForm({ ...form, weeklyHours: +e.target.value })} />
             <Input label="Chunk Hours (per session)" type="number" min={1} value={form.chunkHours} onChange={(e) => setForm({ ...form, chunkHours: +e.target.value })} />
             <Input label="Max Sessions / Day" type="number" min={1} value={form.maxSessionsPerDay} onChange={(e) => setForm({ ...form, maxSessionsPerDay: +e.target.value })} />
+            <Input
+              label="Min Gap Between Sessions (slots)"
+              type="number"
+              min={0}
+              value={form.minGapBetweenSessions ?? 0}
+              onChange={(e) => setForm({ ...form, minGapBetweenSessions: +e.target.value })}
+              helpText="Minimum timeslots between two sessions of this subject"
+            />
           </div>
           <div className="flex gap-6">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={form.isLab} onChange={(e) => setForm({ ...form, isLab: e.target.checked, labSubtypeRequired: undefined })} />
+              <input
+                type="checkbox"
+                checked={form.isLab}
+                onChange={(e) => setForm({
+                  ...form,
+                  isLab: e.target.checked,
+                  roomTypeRequired: e.target.checked ? 'LAB' : 'LECTURE',
+                  labSubtypeRequired: undefined,
+                })}
+              />
               Lab Subject
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">

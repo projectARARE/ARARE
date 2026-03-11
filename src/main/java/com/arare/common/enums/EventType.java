@@ -8,5 +8,6 @@ public enum EventType {
     GUEST_LECTURE,
     SPORTS_DAY,
     SEMINAR,
+    HOLIDAY,
     OTHER
 }

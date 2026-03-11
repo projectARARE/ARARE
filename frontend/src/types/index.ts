@@ -19,6 +19,8 @@ export type EventType =
   | 'MAINTENANCE'
   | 'FESTIVAL'
   | 'TEACHER_LEAVE'
+  | 'GUEST_LECTURE'
+  | 'SPORTS_DAY'
   | 'SEMINAR'
   | 'HOLIDAY'
   | 'OTHER'
@@ -247,6 +249,7 @@ export interface ScheduleRequest {
   name: string
   scope?: ScheduleScope
   parentScheduleId?: number
+  departmentId?: number
 }
 
 // ─── ClassSession ─────────────────────────────────────────────────────────────

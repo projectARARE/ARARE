@@ -17,7 +17,6 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class ScheduleServiceImpl implements ScheduleService {
 
     private final ScheduleRepository repo;
@@ -41,17 +40,19 @@ public class ScheduleServiceImpl implements ScheduleService {
         schedule = repo.save(schedule);
 
         // Run solver synchronously; for long runs consider @Async or a job queue
-        solverService.solveSchedule(schedule.getId());
+        solverService.solveSchedule(schedule.getId(), req.departmentId());
 
         return toResponse(repo.findById(schedule.getId()).orElseThrow());
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ScheduleResponse findById(Long id) {
         return toResponse(findEntity(id));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<ScheduleResponse> findAll() {
         return repo.findAll().stream().map(this::toResponse).toList();
     }
@@ -65,12 +66,14 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ScoreExplanationResponse explainScore(Long scheduleId) {
         findEntity(scheduleId); // validate exists
         return solverService.explainSchedule(scheduleId);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public String getExplanation(Long id) {
         String explanation = findEntity(id).getScoreExplanation();
         return explanation != null ? explanation : "No explanation available.";
@@ -84,6 +87,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<ClassSessionResponse> getSessionsBySchedule(Long scheduleId) {
         findEntity(scheduleId); // validate schedule exists
         return sessionRepo.findByScheduleId(scheduleId)
