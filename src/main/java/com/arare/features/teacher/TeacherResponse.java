@@ -8,6 +8,8 @@ public record TeacherResponse(
     String name,
     List<Long> subjectIds,
     List<String> subjectNames,
+    List<Long> availableTimeslotIds,
+    List<Long> preferredBuildingIds,
     int maxDailyHours,
     int maxWeeklyHours,
     int maxConsecutiveClasses,

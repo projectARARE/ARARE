@@ -24,6 +24,12 @@ import type {
   ClassSession,
   Event,
   EventRequest,
+  SessionAssignmentRequest,
+  AcademicTerm,
+  AcademicTermRequest,
+  DisruptionRequest,
+  DisruptionResponse,
+  FeasibilityCheckResult,
 } from '../types'
 
 const api = axios.create({ baseURL: '/api/v1' })
@@ -106,6 +112,8 @@ export const batchApi = {
 // Class Sections
 export const classSectionApi = {
   getAll: () => api.get<ClassSection[]>('/class-sections').then((r) => r.data),
+  getByBatch: (batchId: number) =>
+    api.get<ClassSection[]>(`/class-sections/batch/${batchId}`).then((r) => r.data),
   getById: (id: number) => api.get<ClassSection>(`/class-sections/${id}`).then((r) => r.data),
   create: (data: ClassSectionRequest) =>
     api.post<ClassSection>('/class-sections', data).then((r) => r.data),
@@ -144,8 +152,22 @@ export const scheduleApi = {
   getExplanation: (id: number) =>
     api.get<string>(`/schedules/${id}/explanation`).then((r) => r.data),
   getSessions: (id: number) =>
-    api.get<ClassSession[]>(`/schedules/${id}/sessions`).then((r) => r.data),
+    api.get<ClassSession[]>(`/sessions/schedule/${id}`).then((r) => r.data),
   delete: (id: number) => api.delete(`/schedules/${id}`),
+  previewDisruption: (id: number, data: DisruptionRequest) =>
+    api.post<DisruptionResponse>(`/schedules/${id}/disruption/preview`, data).then((r) => r.data),
+  applyDisruption: (id: number, data: DisruptionRequest) =>
+    api.post<Schedule>(`/schedules/${id}/disruption/apply`, data).then((r) => r.data),
+  exportCsv: (id: number) =>
+    api.get(`/schedules/${id}/export/csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  checkFeasibility: (req: Partial<ScheduleRequest>) =>
+    api.post<FeasibilityCheckResult>('/schedules/feasibility-check', req).then((r) => r.data),
+}
+
+// Sessions (manual editing of timetable)
+export const sessionApi = {
+  updateAssignment: (id: number, data: SessionAssignmentRequest) =>
+    api.patch<ClassSession>(`/sessions/${id}`, data).then((r) => r.data),
 }
 
 // Events
@@ -159,3 +181,15 @@ export const eventApi = {
     api.post(`/events/${id}/apply/${scheduleId}`),
   delete: (id: number) => api.delete(`/events/${id}`),
 }
+
+// Academic Terms
+export const academicTermApi = {
+  getAll: () => api.get<AcademicTerm[]>('/academic-terms').then((r) => r.data),
+  getById: (id: number) => api.get<AcademicTerm>(`/academic-terms/${id}`).then((r) => r.data),
+  create: (data: AcademicTermRequest) =>
+    api.post<AcademicTerm>('/academic-terms', data).then((r) => r.data),
+  update: (id: number, data: AcademicTermRequest) =>
+    api.put<AcademicTerm>(`/academic-terms/${id}`, data).then((r) => r.data),
+  delete: (id: number) => api.delete(`/academic-terms/${id}`),
+}
+

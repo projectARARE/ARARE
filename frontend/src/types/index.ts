@@ -63,7 +63,7 @@ export interface Room {
   type: RoomType
   labSubtype?: LabSubtype
   capacity: number
-  createdAt?: string
+  availableTimeslotIds: number[]
 }
 export interface RoomRequest {
   buildingId: number
@@ -81,12 +81,13 @@ export interface Teacher {
   name: string
   subjectIds: number[]
   subjectNames?: string[]
+  availableTimeslotIds: number[]
+  preferredBuildingIds: number[]
   maxDailyHours: number
   maxWeeklyHours: number
   maxConsecutiveClasses: number
   movementPenalty: number
   preferredFreeDay?: SchoolDay
-  createdAt?: string
 }
 export interface TeacherRequest {
   name: string
@@ -161,9 +162,9 @@ export interface BatchRequest {
 export interface ClassSection {
   id: number
   batchId: number
+  batchName?: string
   label: string
   size: number
-  createdAt?: string
 }
 export interface ClassSectionRequest {
   batchId: number
@@ -247,9 +248,13 @@ export interface Schedule {
 }
 export interface ScheduleRequest {
   name: string
-  scope?: ScheduleScope
+  scope: ScheduleScope
   parentScheduleId?: number
   departmentId?: number
+  batchIds?: number[]
+  teacherIds?: number[]
+  roomIds?: number[]
+  solvingTimeSeconds?: number
 }
 
 // ─── ClassSession ─────────────────────────────────────────────────────────────
@@ -306,4 +311,99 @@ export interface UniversityConfigEntryRequest {
   key: string
   value: string
   description?: string
+}
+
+// ─── Session Assignment (manual edit) ────────────────────────────────────────
+
+export interface SessionAssignmentRequest {
+  teacherId?: number | null
+  roomId?: number | null
+  timeslotId?: number | null
+  locked?: boolean
+}
+
+// ─── AcademicTerm ─────────────────────────────────────────────────────────────
+
+export type AcademicTermStatus = 'UPCOMING' | 'ACTIVE' | 'CLOSED' | 'ARCHIVED'
+
+export interface AcademicTerm {
+  id: number
+  name: string
+  academicYear?: string
+  startDate: string
+  endDate: string
+  examPeriodStart?: string
+  examPeriodEnd?: string
+  status: AcademicTermStatus
+  description?: string
+  createdAt?: string
+}
+
+export interface AcademicTermRequest {
+  name: string
+  academicYear?: string
+  startDate: string
+  endDate: string
+  examPeriodStart?: string
+  examPeriodEnd?: string
+  status?: AcademicTermStatus
+  description?: string
+}
+
+// ─── Disruption / Impact Analyzer ─────────────────────────────────────────────
+
+export type DisruptionType =
+  | 'TEACHER_UNAVAILABLE'
+  | 'ROOM_UNAVAILABLE'
+  | 'TIMESLOT_BLOCKED'
+  | 'SESSION_CANCELLED'
+  | 'SPECIAL_EVENT'
+
+export interface DisruptionRequest {
+  type: DisruptionType
+  affectedEntityId: number
+  date?: string              // ISO date e.g. "2026-03-15"
+  description?: string
+}
+
+export interface ImpactedSession {
+  id: number
+  subjectName?: string
+  batchLabel?: string
+  teacherName?: string
+  roomNumber?: string
+  day?: string
+  startTime?: string
+  endTime?: string
+  locked: boolean
+}
+
+export interface DisruptionResponse {
+  type: DisruptionType
+  affectedEntityId: number
+  affectedEntityName: string
+  disruption: string
+  impactedSessionCount: number
+  impactedSessions: ImpactedSession[]
+  impactedSessionIds: number[]
+}
+
+// Feasibility Check (pre-solve Constraint Propagation)
+export type FeasibilitySeverity = 'ERROR' | 'WARNING'
+
+export interface FeasibilityIssue {
+  severity: FeasibilitySeverity
+  category: string
+  message: string
+  entityId?: number
+  entityName?: string
+}
+
+export interface FeasibilityCheckResult {
+  feasible: boolean
+  errorCount: number
+  warningCount: number
+  totalSessionsEstimate: number
+  availableTimeslots: number
+  issues: FeasibilityIssue[]
 }

@@ -1,6 +1,7 @@
 package com.arare.exception;
 
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -45,6 +46,29 @@ public class GlobalExceptionHandler {
         ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         detail.setType(URI.create("/errors/validation"));
         return detail;
+    }
+
+    /**
+     * Handles database constraint violations (foreign key, unique, not-null) with
+     * human-readable messages instead of exposing raw SQL error details.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
+        String msg = ex.getMessage() != null ? ex.getMessage().toLowerCase() : "";
+        String detail;
+        if (msg.contains("foreign key") || msg.contains("violates") || msg.contains("referenced")) {
+            detail = "Cannot delete this record because it is still referenced by other data. " +
+                     "Remove all related entries first before deleting.";
+        } else if (msg.contains("unique") || msg.contains("duplicate")) {
+            detail = "A record with the same value already exists. Please use a unique value.";
+        } else if (msg.contains("not-null") || msg.contains("null value")) {
+            detail = "A required field is missing a value.";
+        } else {
+            detail = "A data constraint was violated. Please check your input and try again.";
+        }
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
+        pd.setType(URI.create("/errors/conflict"));
+        return pd;
     }
 
     @ExceptionHandler(Exception.class)

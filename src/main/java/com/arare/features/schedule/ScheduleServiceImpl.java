@@ -40,7 +40,8 @@ public class ScheduleServiceImpl implements ScheduleService {
         schedule = repo.save(schedule);
 
         // Run solver synchronously; for long runs consider @Async or a job queue
-        solverService.solveSchedule(schedule.getId(), req.departmentId());
+        solverService.solveSchedule(schedule.getId(), req.departmentId(),
+            req.batchIds(), req.teacherIds(), req.roomIds(), req.solvingTimeSeconds());
 
         return toResponse(repo.findById(schedule.getId()).orElseThrow());
     }
@@ -83,6 +84,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        sessionRepo.deleteByScheduleId(id);
         repo.deleteById(id);
     }
 
@@ -137,6 +139,7 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         return new ClassSessionResponse(
                 cs.getId(),
+                cs.getSubject().getId(),
                 cs.getSubject().getName(),
                 cs.getSubject().isLab(),
                 cs.getBatch() != null ? cs.getBatch().getId() : null,

@@ -3,6 +3,7 @@ package com.arare.features.classsection;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
 import com.arare.features.batch.BatchRepository;
+import com.arare.features.classsession.ClassSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +17,7 @@ public class ClassSectionServiceImpl implements ClassSectionService {
 
     private final ClassSectionRepository repo;
     private final BatchRepository batchRepo;
+    private final ClassSessionRepository sessionRepo;
 
     @Override
     @Transactional
@@ -49,6 +51,11 @@ public class ClassSectionServiceImpl implements ClassSectionService {
     }
 
     @Override
+    public List<ClassSectionResponse> findAll() {
+        return repo.findAll().stream().map(this::toResponse).toList();
+    }
+
+    @Override
     public List<ClassSectionResponse> findByBatch(Long batchId) {
         return repo.findByBatchId(batchId).stream().map(this::toResponse).toList();
     }
@@ -57,6 +64,7 @@ public class ClassSectionServiceImpl implements ClassSectionService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        sessionRepo.deleteBySectionId(id);
         repo.deleteById(id);
     }
 
@@ -65,6 +73,9 @@ public class ClassSectionServiceImpl implements ClassSectionService {
     }
 
     private ClassSectionResponse toResponse(ClassSection cs) {
-        return new ClassSectionResponse(cs.getId(), cs.getBatch().getId(), cs.getLabel(), cs.getSize());
+        String batchName = cs.getBatch().getDepartment().getName()
+            + " Yr" + cs.getBatch().getYear()
+            + "-" + cs.getBatch().getSection();
+        return new ClassSectionResponse(cs.getId(), cs.getBatch().getId(), batchName, cs.getLabel(), cs.getSize());
     }
 }

@@ -7,6 +7,7 @@ package com.arare.features.classsession;
  */
 public record ClassSessionResponse(
     Long id,
+    Long subjectId,
     String subjectName,
     boolean isLab,
     Long batchId,             // null for lab-section sessions

@@ -6,6 +6,7 @@ public interface ClassSectionService {
     ClassSectionResponse create(ClassSectionRequest request);
     ClassSectionResponse update(Long id, ClassSectionRequest request);
     ClassSectionResponse findById(Long id);
+    List<ClassSectionResponse> findAll();
     List<ClassSectionResponse> findByBatch(Long batchId);
     void delete(Long id);
 }

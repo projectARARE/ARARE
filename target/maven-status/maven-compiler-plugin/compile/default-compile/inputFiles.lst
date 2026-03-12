@@ -1,5 +1,6 @@
 D:\ARARE\src\main\java\com\arare\ArareApplication.java
 D:\ARARE\src\main\java\com\arare\common\BaseEntity.java
+D:\ARARE\src\main\java\com\arare\common\enums\AcademicTermStatus.java
 D:\ARARE\src\main\java\com\arare\common\enums\EventType.java
 D:\ARARE\src\main\java\com\arare\common\enums\LabSubtype.java
 D:\ARARE\src\main\java\com\arare\common\enums\RoomType.java
@@ -11,6 +12,13 @@ D:\ARARE\src\main\java\com\arare\config\JpaConfig.java
 D:\ARARE\src\main\java\com\arare\exception\DuplicateResourceException.java
 D:\ARARE\src\main\java\com\arare\exception\GlobalExceptionHandler.java
 D:\ARARE\src\main\java\com\arare\exception\ResourceNotFoundException.java
+D:\ARARE\src\main\java\com\arare\features\academicterm\AcademicTerm.java
+D:\ARARE\src\main\java\com\arare\features\academicterm\AcademicTermController.java
+D:\ARARE\src\main\java\com\arare\features\academicterm\AcademicTermRepository.java
+D:\ARARE\src\main\java\com\arare\features\academicterm\AcademicTermRequest.java
+D:\ARARE\src\main\java\com\arare\features\academicterm\AcademicTermResponse.java
+D:\ARARE\src\main\java\com\arare\features\academicterm\AcademicTermService.java
+D:\ARARE\src\main\java\com\arare\features\academicterm\AcademicTermServiceImpl.java
 D:\ARARE\src\main\java\com\arare\features\batch\Batch.java
 D:\ARARE\src\main\java\com\arare\features\batch\BatchController.java
 D:\ARARE\src\main\java\com\arare\features\batch\BatchRepository.java
@@ -38,6 +46,7 @@ D:\ARARE\src\main\java\com\arare\features\classsession\ClassSessionRepository.ja
 D:\ARARE\src\main\java\com\arare\features\classsession\ClassSessionResponse.java
 D:\ARARE\src\main\java\com\arare\features\classsession\ClassSessionService.java
 D:\ARARE\src\main\java\com\arare\features\classsession\ClassSessionServiceImpl.java
+D:\ARARE\src\main\java\com\arare\features\classsession\SessionAssignmentRequest.java
 D:\ARARE\src\main\java\com\arare\features\department\Department.java
 D:\ARARE\src\main\java\com\arare\features\department\DepartmentController.java
 D:\ARARE\src\main\java\com\arare\features\department\DepartmentRepository.java
@@ -52,6 +61,17 @@ D:\ARARE\src\main\java\com\arare\features\event\EventRequest.java
 D:\ARARE\src\main\java\com\arare\features\event\EventResponse.java
 D:\ARARE\src\main\java\com\arare\features\event\EventService.java
 D:\ARARE\src\main\java\com\arare\features\event\EventServiceImpl.java
+D:\ARARE\src\main\java\com\arare\features\impact\DependencyEdge.java
+D:\ARARE\src\main\java\com\arare\features\impact\DependencyGraph.java
+D:\ARARE\src\main\java\com\arare\features\impact\DependencyGraphBuilder.java
+D:\ARARE\src\main\java\com\arare\features\impact\DependencyType.java
+D:\ARARE\src\main\java\com\arare\features\impact\DisruptionRequest.java
+D:\ARARE\src\main\java\com\arare\features\impact\DisruptionResponse.java
+D:\ARARE\src\main\java\com\arare\features\impact\DisruptionService.java
+D:\ARARE\src\main\java\com\arare\features\impact\DisruptionServiceImpl.java
+D:\ARARE\src\main\java\com\arare\features\impact\DisruptionType.java
+D:\ARARE\src\main\java\com\arare\features\impact\ImpactAnalyzer.java
+D:\ARARE\src\main\java\com\arare\features\impact\SessionNode.java
 D:\ARARE\src\main\java\com\arare\features\preallocation\PreAllocation.java
 D:\ARARE\src\main\java\com\arare\features\preallocation\PreAllocationController.java
 D:\ARARE\src\main\java\com\arare\features\preallocation\PreAllocationRepository.java
@@ -66,6 +86,9 @@ D:\ARARE\src\main\java\com\arare\features\room\RoomRequest.java
 D:\ARARE\src\main\java\com\arare\features\room\RoomResponse.java
 D:\ARARE\src\main\java\com\arare\features\room\RoomService.java
 D:\ARARE\src\main\java\com\arare\features\room\RoomServiceImpl.java
+D:\ARARE\src\main\java\com\arare\features\schedule\FeasibilityCheckResult.java
+D:\ARARE\src\main\java\com\arare\features\schedule\FeasibilityCheckService.java
+D:\ARARE\src\main\java\com\arare\features\schedule\FeasibilityIssue.java
 D:\ARARE\src\main\java\com\arare\features\schedule\Schedule.java
 D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleController.java
 D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleRepository.java
@@ -73,6 +96,7 @@ D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleRequest.java
 D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleResponse.java
 D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleService.java
 D:\ARARE\src\main\java\com\arare\features\schedule\ScheduleServiceImpl.java
+D:\ARARE\src\main\java\com\arare\features\schedule\TimetableExportService.java
 D:\ARARE\src\main\java\com\arare\features\solver\ScoreExplanationResponse.java
 D:\ARARE\src\main\java\com\arare\features\solver\TimetableConstraintProvider.java
 D:\ARARE\src\main\java\com\arare\features\solver\TimetableSolution.java

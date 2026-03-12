@@ -4,6 +4,7 @@ import java.util.List;
 
 public interface EventService {
     EventResponse create(EventRequest request);
+    EventResponse update(Long id, EventRequest request);
     EventResponse findById(Long id);
     List<EventResponse> findAll();
     void delete(Long id);

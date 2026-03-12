@@ -1,6 +1,7 @@
 package com.arare.features.timeslot;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.classsession.ClassSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +14,7 @@ import java.util.List;
 public class TimeslotServiceImpl implements TimeslotService {
 
     private final TimeslotRepository repo;
+    private final ClassSessionRepository sessionRepo;
 
     @Override
     @Transactional
@@ -51,6 +53,7 @@ public class TimeslotServiceImpl implements TimeslotService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        sessionRepo.clearTimeslotById(id);  // Unassign timeslot from sessions, keep sessions
         repo.deleteById(id);
     }
 

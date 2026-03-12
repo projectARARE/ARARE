@@ -14,28 +14,35 @@ import ScheduleGenerator from './pages/ScheduleGenerator'
 import TimetableViewer from './pages/TimetableViewer'
 import ScheduleHistory from './pages/ScheduleHistory'
 import Events from './pages/Events'
+import AcademicTerms from './pages/AcademicTerms'
+import { ToastProvider } from './contexts/ToastContext'
+import ToastContainer from './components/ui/Toast'
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="buildings" element={<Buildings />} />
-        <Route path="rooms" element={<Rooms />} />
-        <Route path="teachers" element={<Teachers />} />
-        <Route path="subjects" element={<Subjects />} />
-        <Route path="departments" element={<Departments />} />
-        <Route path="batches" element={<Batches />} />
-        <Route path="sections" element={<ClassSections />} />
-        <Route path="timeslots" element={<Timeslots />} />
-        <Route path="config" element={<UniversityConfigPage />} />
-        <Route path="schedule/generate" element={<ScheduleGenerator />} />
-        <Route path="schedule/view/:id" element={<TimetableViewer />} />
-        <Route path="schedule/history" element={<ScheduleHistory />} />
-        <Route path="events" element={<Events />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Route>
-    </Routes>
+    <ToastProvider>
+      <ToastContainer />
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="buildings" element={<Buildings />} />
+          <Route path="rooms" element={<Rooms />} />
+          <Route path="teachers" element={<Teachers />} />
+          <Route path="subjects" element={<Subjects />} />
+          <Route path="departments" element={<Departments />} />
+          <Route path="batches" element={<Batches />} />
+          <Route path="sections" element={<ClassSections />} />
+          <Route path="timeslots" element={<Timeslots />} />
+          <Route path="config" element={<UniversityConfigPage />} />
+          <Route path="schedule/generate" element={<ScheduleGenerator />} />
+          <Route path="schedule/view/:id" element={<TimetableViewer />} />
+          <Route path="schedule/history" element={<ScheduleHistory />} />
+          <Route path="events" element={<Events />} />
+          <Route path="academic-terms" element={<AcademicTerms />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
+      </Routes>
+    </ToastProvider>
   )
 }

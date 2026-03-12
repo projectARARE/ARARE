@@ -3,8 +3,11 @@ package com.arare.features.solver;
 import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
 import ai.timefold.solver.core.api.score.constraint.ConstraintMatchTotal;
 import ai.timefold.solver.core.api.solver.SolutionManager;
+import ai.timefold.solver.core.api.solver.SolverConfigOverride;
 import ai.timefold.solver.core.api.solver.SolverJob;
+import ai.timefold.solver.core.api.solver.SolverJobBuilder;
 import ai.timefold.solver.core.api.solver.SolverManager;
+import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import com.arare.common.enums.ScheduleStatus;
 import com.arare.common.enums.TimeslotType;
 import com.arare.features.batch.Batch;
@@ -81,16 +84,22 @@ public class TimetableSolverService {
     /**
      * Generates a timetable from scratch for the given schedule record.
      *
-     * @param scheduleId   ID of the Schedule entity that was pre-created by the caller.
-     * @param departmentId Optional – when provided, only batches/subjects for that department are scheduled.
+     * @param scheduleId         ID of the Schedule entity that was pre-created by the caller.
+     * @param departmentId       Optional – when provided, only batches/subjects for that department are scheduled.
+     * @param batchIds           Optional – builder mode: limit to these batches only.
+     * @param teacherIds         Optional – builder mode: limit to these teachers only.
+     * @param roomIds            Optional – builder mode: limit to these rooms only.
+     * @param solvingTimeSeconds Optional – per-request solve time limit in seconds (default: application config).
      */
     @Transactional
-    public void solveSchedule(Long scheduleId, Long departmentId) {
+    public void solveSchedule(Long scheduleId, Long departmentId,
+                              List<Long> batchIds, List<Long> teacherIds, List<Long> roomIds,
+                              Integer solvingTimeSeconds) {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + scheduleId));
 
-        TimetableSolution problem = buildProblem(schedule, null, departmentId);
-        TimetableSolution solution = runSolver(problem);
+        TimetableSolution problem = buildProblem(schedule, null, departmentId, batchIds, teacherIds, roomIds);
+        TimetableSolution solution = runSolver(problem, solvingTimeSeconds);
         persistSolution(schedule, solution);
     }
 
@@ -112,8 +121,8 @@ public class TimetableSolverService {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + scheduleId));
 
-        TimetableSolution problem = buildProblem(schedule, impactedSessionIds, null);
-        TimetableSolution solution = runSolver(problem);
+        TimetableSolution problem = buildProblem(schedule, impactedSessionIds, null, null, null, null);
+        TimetableSolution solution = runSolver(problem, null);
         persistSolution(schedule, solution);
     }
 
@@ -132,7 +141,7 @@ public class TimetableSolverService {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + scheduleId));
 
-        TimetableSolution solution = buildProblem(schedule, null, null);
+        TimetableSolution solution = buildProblem(schedule, null, null, null, null, null);
         var explanation = solutionManager.explain(solution);
         HardMediumSoftScore score = explanation.getScore();
 
@@ -175,14 +184,24 @@ public class TimetableSolverService {
      * @param schedule         Target schedule.
      * @param impactedIds      When non-null, all sessions NOT in this list are locked.
      * @param departmentId     When non-null, only batches / subjects for that department are loaded.
+     * @param filterBatchIds   Builder mode: when non-empty, restrict to these batches only.
+     * @param filterTeacherIds Builder mode: when non-empty, restrict to these teachers only.
+     * @param filterRoomIds    Builder mode: when non-empty, restrict to these rooms only.
      */
-    private TimetableSolution buildProblem(Schedule schedule, List<Long> impactedIds, Long departmentId) {
+    private TimetableSolution buildProblem(Schedule schedule, List<Long> impactedIds, Long departmentId,
+                                           List<Long> filterBatchIds, List<Long> filterTeacherIds, List<Long> filterRoomIds) {
         // Problem facts
         List<Timeslot>       timeslots = timeslotRepo.findByType(TimeslotType.CLASS);
-        List<Room>           rooms     = roomRepo.findAll();
-        List<Teacher>        teachers  = teacherRepo.findAll();
         List<Building>       buildings = buildingRepo.findAll();
         List<UniversityConfig> configs = configRepo.findAll();
+
+        // Apply builder mode room/teacher filters
+        List<Room> rooms = (filterRoomIds != null && !filterRoomIds.isEmpty())
+            ? roomRepo.findAllById(filterRoomIds)
+            : roomRepo.findAll();
+        List<Teacher> teachers = (filterTeacherIds != null && !filterTeacherIds.isEmpty())
+            ? teacherRepo.findAllById(filterTeacherIds)
+            : teacherRepo.findAll();
 
         // Filter by department when generating a department-scoped schedule
         List<Subject> subjects = departmentId != null
@@ -192,9 +211,16 @@ public class TimetableSolverService {
             ? batchRepo.findByDepartmentId(departmentId)
             : batchRepo.findAll();
 
+        // Apply builder mode batch filter (after department filter)
+        if (filterBatchIds != null && !filterBatchIds.isEmpty()) {
+            batches = batches.stream()
+                .filter(b -> filterBatchIds.contains(b.getId()))
+                .toList();
+        }
+
         // Sections belonging to the resolved batches
         List<Long> batchIds = batches.stream().map(Batch::getId).toList();
-        List<ClassSection> sections = departmentId != null
+        List<ClassSection> sections = !batchIds.isEmpty()
             ? sectionRepo.findByBatchIdIn(batchIds)
             : sectionRepo.findAll();
 
@@ -215,9 +241,6 @@ public class TimetableSolverService {
 
         // Force-initialize all Hibernate lazy associations before we hand the data
         // off to Timefold solver threads, which run outside this Hibernate session.
-        // Without this, lazy-proxy access in constraint streams silently returns null
-        // (the Hibernate session is thread-local and unavailable in solver threads),
-        // causing every constraint to see 0 violations and the solver to ignore conflicts.
         initializeLazyAssociations(sessions, teachers, rooms, subjects, batches, sections);
 
         TimetableSolution problem = new TimetableSolution();
@@ -399,9 +422,16 @@ public class TimetableSolverService {
     // Solver invocation
     // ------------------------------------------------------------------
 
-    private TimetableSolution runSolver(TimetableSolution problem) {
+    private TimetableSolution runSolver(TimetableSolution problem, Integer solvingTimeSeconds) {
         UUID problemId = UUID.randomUUID();
-        SolverJob<TimetableSolution, UUID> job = solverManager.solve(problemId, problem);
+        int timeLimit = (solvingTimeSeconds != null && solvingTimeSeconds > 0) ? solvingTimeSeconds : 30;
+        SolverJob<TimetableSolution, UUID> job = solverManager.solveBuilder()
+                .withProblemId(problemId)
+                .withProblem(problem)
+                .withConfigOverride(new SolverConfigOverride<TimetableSolution>()
+                        .withTerminationConfig(new TerminationConfig()
+                                .withSecondsSpentLimit((long) timeLimit)))
+                .run();
         try {
             return job.getFinalBestSolution();
         } catch (InterruptedException e) {

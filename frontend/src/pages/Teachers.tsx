@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, ConfirmDialog } from '../components/ui'
 import type { Column } from '../components/ui/Table'
+import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { teacherApi, subjectApi, timeslotApi, buildingApi } from '../services/api'
 import type { Teacher, TeacherRequest, Subject, Timeslot, Building, SchoolDay } from '../types'
+import { useToast } from '../contexts/ToastContext'
 
 const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
 
@@ -19,6 +21,7 @@ const EMPTY: TeacherRequest = {
 }
 
 export default function Teachers() {
+  const { toast } = useToast()
   const [items, setItems] = useState<Teacher[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [timeslots, setTimeslots] = useState<Timeslot[]>([])
@@ -28,7 +31,8 @@ export default function Teachers() {
   const [editing, setEditing] = useState<Teacher | null>(null)
   const [form, setForm] = useState<TeacherRequest>(EMPTY)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -39,49 +43,56 @@ export default function Teachers() {
 
   useEffect(() => { load() }, [])
 
-  const openAdd = () => { setEditing(null); setForm(EMPTY); setError(null); setOpen(true) }
+  const openAdd = () => { setEditing(null); setForm(EMPTY); setOpen(true) }
   const openEdit = (t: Teacher) => {
     setEditing(t)
     setForm({
       name: t.name,
       subjectIds: t.subjectIds ?? [],
-      availableTimeslotIds: [],
-      preferredBuildingIds: [],
+      availableTimeslotIds: t.availableTimeslotIds ?? [],
+      preferredBuildingIds: t.preferredBuildingIds ?? [],
       maxDailyHours: t.maxDailyHours,
       maxWeeklyHours: t.maxWeeklyHours,
       maxConsecutiveClasses: t.maxConsecutiveClasses,
       movementPenalty: t.movementPenalty,
       preferredFreeDay: t.preferredFreeDay,
     })
-    setError(null)
     setOpen(true)
   }
 
   const handleSave = async () => {
-    if (!form.name.trim()) { setError('Name is required'); return }
+    if (!form.name.trim()) { toast.error('Name is required'); return }
     setSaving(true)
     try {
       if (editing) {
         await teacherApi.update(editing.id, form)
+        toast.success('Teacher updated')
       } else {
         await teacherApi.create(form)
+        toast.success('Teacher created')
       }
       setOpen(false)
       load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'An error occurred')
+      toast.error(e instanceof Error ? e.message : 'An error occurred')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this teacher?')) return
+  const handleDelete = async () => {
+    if (confirmId == null) return
+    setDeleting(true)
     try {
-      await teacherApi.delete(id)
+      await teacherApi.delete(confirmId)
+      toast.success('Teacher deleted')
+      setConfirmId(null)
       load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'An error occurred')
+      toast.error(e instanceof Error ? e.message : 'Delete failed')
+      setConfirmId(null)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -106,7 +117,11 @@ export default function Teachers() {
   }, {} as Record<SchoolDay, Timeslot[]>)
 
   const columns: Column<Teacher>[] = [
-    { key: 'name', header: 'Name', render: (t) => <span className="font-medium">{t.name}</span> },
+    {
+      key: 'name', header: 'Name',
+      sortValue: (t) => t.name,
+      render: (t) => <span className="font-medium">{t.name}</span>,
+    },
     {
       key: 'subjects', header: 'Subjects',
       render: (t) => <span className="text-sm text-gray-600">{(t.subjectNames ?? []).join(', ') || '—'}</span>,
@@ -119,23 +134,31 @@ export default function Teachers() {
       render: (t) => (
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(t)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => handleDelete(t.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(t.id)}>Delete</Button>
         </div>
       ),
     },
   ]
 
+  const getContextItems = (t: Teacher): ContextMenuItem[] => [
+    { label: 'Edit', icon: <Pencil size={13} />, onClick: () => openEdit(t) },
+    { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(t.id) },
+  ]
+
   return (
     <>
-      {error && !open && (
-        <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
       <Card title="Teachers" description="Manage teaching staff"
         actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Teacher</Button>}
       >
-        <Table columns={columns} data={items} loading={loading} keyExtractor={(t) => t.id} />
+        <Table
+          columns={columns}
+          data={items}
+          loading={loading}
+          keyExtractor={(t) => t.id}
+          searchable
+          searchKeys={[(t) => t.name, (t) => (t.subjectNames ?? []).join(' ')]}
+          onRowContextMenu={getContextItems}
+        />
       </Card>
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Teacher' : 'Add Teacher'} size="xl"
@@ -147,12 +170,6 @@ export default function Teachers() {
         }
       >
         <div className="space-y-5">
-          {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
           <Input label="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Dr. Jane Smith" />
 
           <div className="grid grid-cols-3 gap-4">
@@ -231,6 +248,17 @@ export default function Teachers() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        title="Delete Teacher"
+        message="This will remove the teacher and clear related session assignments. This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmId(null)}
+      />
     </>
   )
 }

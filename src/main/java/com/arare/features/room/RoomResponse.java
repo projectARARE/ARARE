@@ -2,6 +2,7 @@ package com.arare.features.room;
 
 import com.arare.common.enums.LabSubtype;
 import com.arare.common.enums.RoomType;
+import java.util.List;
 
 public record RoomResponse(
     Long id,
@@ -10,5 +11,6 @@ public record RoomResponse(
     String roomNumber,
     RoomType type,
     LabSubtype labSubtype,
-    int capacity
+    int capacity,
+    List<Long> availableTimeslotIds
 ) {}

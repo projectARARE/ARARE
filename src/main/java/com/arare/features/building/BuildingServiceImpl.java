@@ -1,6 +1,8 @@
 package com.arare.features.building;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.room.RoomRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +15,8 @@ import java.util.List;
 public class BuildingServiceImpl implements BuildingService {
 
     private final BuildingRepository repo;
+    private final RoomRepository roomRepo;
+    private final ClassSessionRepository sessionRepo;
 
     @Override
     @Transactional
@@ -47,6 +51,14 @@ public class BuildingServiceImpl implements BuildingService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        // 1. Unassign any rooms in this building from scheduled sessions
+        sessionRepo.clearRoomsByBuildingId(id);
+        // 2. Delete rooms (Hibernate cleans up room_availability join table per room)
+        roomRepo.deleteAll(roomRepo.findByBuildingId(id));
+        // 3. Remove building from join tables (department_buildings, teacher_preferred_buildings)
+        repo.removeDepartmentAssociations(id);
+        repo.removeTeacherAssociations(id);
+        // 4. Delete the building itself
         repo.deleteById(id);
     }
 

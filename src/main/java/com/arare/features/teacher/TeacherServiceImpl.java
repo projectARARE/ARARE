@@ -2,6 +2,7 @@ package com.arare.features.teacher;
 
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.building.BuildingRepository;
+import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.subject.SubjectRepository;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ public class TeacherServiceImpl implements TeacherService {
     private final SubjectRepository subjectRepo;
     private final TimeslotRepository timeslotRepo;
     private final BuildingRepository buildingRepo;
+    private final ClassSessionRepository sessionRepo;
 
     @Override
     @Transactional
@@ -54,9 +56,7 @@ public class TeacherServiceImpl implements TeacherService {
     }
 
     @Override
-    public TeacherResponse findById(Long id) {
-        return toResponse(findEntity(id));
-    }
+    public TeacherResponse findById(Long id) { return toResponse(findEntity(id)); }
 
     @Override
     public List<TeacherResponse> findAll() {
@@ -67,6 +67,7 @@ public class TeacherServiceImpl implements TeacherService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        sessionRepo.clearTeacherById(id);   // Unassign from schedules, keep sessions
         repo.deleteById(id);
     }
 
@@ -77,9 +78,12 @@ public class TeacherServiceImpl implements TeacherService {
     private TeacherResponse toResponse(Teacher t) {
         List<Long> subjectIds = t.getSubjects().stream().map(s -> s.getId()).toList();
         List<String> subjectNames = t.getSubjects().stream().map(s -> s.getName()).toList();
+        List<Long> availableTimeslotIds = t.getAvailableTimeslots().stream().map(ts -> ts.getId()).toList();
+        List<Long> preferredBuildingIds = t.getPreferredBuildings().stream().map(b -> b.getId()).toList();
         return new TeacherResponse(
             t.getId(), t.getName(),
             subjectIds, subjectNames,
+            availableTimeslotIds, preferredBuildingIds,
             t.getMaxDailyHours(), t.getMaxWeeklyHours(), t.getMaxConsecutiveClasses(),
             t.getMovementPenalty(), t.getPreferredFreeDay()
         );

@@ -26,6 +26,11 @@ public class ClassSectionController {
         return ResponseEntity.ok(service.update(id, req));
     }
 
+    @GetMapping
+    public ResponseEntity<List<ClassSectionResponse>> findAll() {
+        return ResponseEntity.ok(service.findAll());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ClassSectionResponse> findById(@PathVariable Long id) {
         return ResponseEntity.ok(service.findById(id));

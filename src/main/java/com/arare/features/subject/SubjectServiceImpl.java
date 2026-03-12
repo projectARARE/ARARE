@@ -1,6 +1,7 @@
 package com.arare.features.subject;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.department.Department;
 import com.arare.features.department.DepartmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ public class SubjectServiceImpl implements SubjectService {
 
     private final SubjectRepository repo;
     private final DepartmentRepository departmentRepo;
+    private final ClassSessionRepository sessionRepo;
 
     @Override
     @Transactional
@@ -81,6 +83,8 @@ public class SubjectServiceImpl implements SubjectService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        sessionRepo.deleteBySubjectId(id);
+        repo.removeTeacherAssociations(id);  // Clean up teacher_subjects join table
         repo.deleteById(id);
     }
 

@@ -17,6 +17,15 @@ export default {
           900: '#1e3a8a',
         },
       },
+      keyframes: {
+        'slide-in': {
+          from: { opacity: '0', transform: 'translateY(8px) scale(0.97)' },
+          to:   { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+      },
+      animation: {
+        'slide-in': 'slide-in 0.2s ease-out',
+      },
     },
   },
   plugins: [],

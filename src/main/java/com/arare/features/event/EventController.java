@@ -20,6 +20,12 @@ public class EventController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(req));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<EventResponse> update(@PathVariable Long id,
+                                                @Valid @RequestBody EventRequest req) {
+        return ResponseEntity.ok(service.update(id, req));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<EventResponse> findById(@PathVariable Long id) {
         return ResponseEntity.ok(service.findById(id));

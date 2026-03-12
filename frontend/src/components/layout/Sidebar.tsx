@@ -14,6 +14,7 @@ import {
   CalendarX2,
   Layers,
   Zap,
+  CalendarDays,
 } from 'lucide-react'
 
 interface NavItem {
@@ -37,6 +38,7 @@ const nav: NavGroup[] = [
     items: [
       { to: '/schedule/generate', icon: CalendarPlus, label: 'Generate Schedule' },
       { to: '/schedule/history', icon: History, label: 'History' },
+      { to: '/academic-terms', icon: CalendarDays, label: 'Academic Terms' },
       { to: '/events', icon: CalendarX2, label: 'Events' },
     ],
   },

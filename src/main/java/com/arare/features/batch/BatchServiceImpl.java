@@ -1,6 +1,8 @@
 package com.arare.features.batch;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.classsection.ClassSectionRepository;
+import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.department.Department;
 import com.arare.features.department.DepartmentRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,8 @@ public class BatchServiceImpl implements BatchService {
 
     private final BatchRepository repo;
     private final DepartmentRepository departmentRepo;
+    private final ClassSessionRepository sessionRepo;
+    private final ClassSectionRepository sectionRepo;
 
     @Override
     @Transactional
@@ -69,6 +73,13 @@ public class BatchServiceImpl implements BatchService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        // Delete sessions referencing this batch (directly or via its sections)
+        List<Long> sectionIds = sectionRepo.findByBatchId(id).stream().map(s -> s.getId()).toList();
+        for (Long sectionId : sectionIds) {
+            sessionRepo.deleteBySectionId(sectionId);
+        }
+        sessionRepo.deleteByBatchId(id);
+        sectionRepo.deleteByBatchId(id);
         repo.deleteById(id);
     }
 

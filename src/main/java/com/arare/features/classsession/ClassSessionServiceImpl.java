@@ -1,5 +1,12 @@
 package com.arare.features.classsession;
 
+import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.room.Room;
+import com.arare.features.room.RoomRepository;
+import com.arare.features.teacher.Teacher;
+import com.arare.features.teacher.TeacherRepository;
+import com.arare.features.timeslot.Timeslot;
+import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +19,9 @@ import java.util.List;
 public class ClassSessionServiceImpl implements ClassSessionService {
 
     private final ClassSessionRepository repo;
+    private final TeacherRepository teacherRepo;
+    private final RoomRepository roomRepo;
+    private final TimeslotRepository timeslotRepo;
 
     @Override
     public List<ClassSessionResponse> findBySchedule(Long scheduleId) {
@@ -28,6 +38,39 @@ public class ClassSessionServiceImpl implements ClassSessionService {
         return repo.findByScheduleIdAndTeacherId(scheduleId, teacherId).stream().map(this::toResponse).toList();
     }
 
+    @Override
+    @Transactional
+    public ClassSessionResponse updateAssignment(Long sessionId, SessionAssignmentRequest req) {
+        ClassSession s = repo.findById(sessionId)
+            .orElseThrow(() -> new ResourceNotFoundException("ClassSession", sessionId));
+
+        if (req.teacherId() != null) {
+            Teacher t = teacherRepo.findById(req.teacherId())
+                .orElseThrow(() -> new ResourceNotFoundException("Teacher", req.teacherId()));
+            s.setTeacher(t);
+        } else if (req.teacherId() == null && req.locked() == null) {
+            // explicit null means "keep current"
+        }
+
+        if (req.roomId() != null) {
+            Room r = roomRepo.findById(req.roomId())
+                .orElseThrow(() -> new ResourceNotFoundException("Room", req.roomId()));
+            s.setRoom(r);
+        }
+
+        if (req.timeslotId() != null) {
+            Timeslot ts = timeslotRepo.findById(req.timeslotId())
+                .orElseThrow(() -> new ResourceNotFoundException("Timeslot", req.timeslotId()));
+            s.setTimeslot(ts);
+        }
+
+        if (req.locked() != null) {
+            s.setLocked(req.locked());
+        }
+
+        return toResponse(repo.save(s));
+    }
+
     private ClassSessionResponse toResponse(ClassSession s) {
         String batchLabel = s.getSection() != null
             ? s.getSection().getBatch().getDepartment().getName()
@@ -42,6 +85,7 @@ public class ClassSessionServiceImpl implements ClassSessionService {
 
         return new ClassSessionResponse(
             s.getId(),
+            s.getSubject().getId(),
             s.getSubject().getName(),
             s.getSubject().isLab(),
             s.getBatch() != null ? s.getBatch().getId() : null,

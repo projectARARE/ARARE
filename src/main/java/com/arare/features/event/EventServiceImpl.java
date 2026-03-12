@@ -47,6 +47,21 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
+    @Transactional
+    public EventResponse update(Long id, EventRequest req) {
+        Event e = findEntity(id);
+        e.setTitle(req.title());
+        e.setType(req.type());
+        e.setStartDate(req.startDate());
+        e.setEndDate(req.endDate());
+        e.setDescription(req.description());
+        if (req.affectedRoomIds() != null)     e.setAffectedRooms(roomRepo.findAllById(req.affectedRoomIds()));
+        if (req.affectedTeacherIds() != null)  e.setAffectedTeachers(teacherRepo.findAllById(req.affectedTeacherIds()));
+        if (req.affectedTimeslotIds() != null) e.setAffectedTimeslots(timeslotRepo.findAllById(req.affectedTimeslotIds()));
+        return toResponse(repo.save(e));
+    }
+
+    @Override
     public EventResponse findById(Long id) {
         return toResponse(findEntity(id));
     }

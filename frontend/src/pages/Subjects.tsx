@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, Badge } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog } from '../components/ui'
 import type { Column } from '../components/ui/Table'
+import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { subjectApi, departmentApi } from '../services/api'
 import type { Subject, SubjectRequest, Department, LabSubtype, RoomType } from '../types'
+import { useToast } from '../contexts/ToastContext'
 
 const LAB_SUBTYPES: LabSubtype[] = [
   'COMPUTER_LAB', 'ELECTRONICS_LAB', 'CHEMISTRY_LAB', 'PHYSICS_LAB',
@@ -30,6 +32,7 @@ const EMPTY: SubjectRequest = {
 }
 
 export default function Subjects() {
+  const { toast } = useToast()
   const [items, setItems] = useState<Subject[]>([])
   const [depts, setDepts] = useState<Department[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,7 +40,8 @@ export default function Subjects() {
   const [editing, setEditing] = useState<Subject | null>(null)
   const [form, setForm] = useState<SubjectRequest>(EMPTY)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -51,7 +55,6 @@ export default function Subjects() {
   const openAdd = () => {
     setEditing(null)
     setForm({ ...EMPTY, departmentId: depts[0]?.id ?? 0 })
-    setError(null)
     setOpen(true)
   }
 
@@ -71,14 +74,13 @@ export default function Subjects() {
       minGapBetweenSessions: s.minGapBetweenSessions,
       maxSessionsPerDay: s.maxSessionsPerDay,
     })
-    setError(null)
     setOpen(true)
   }
 
   const handleSave = async () => {
-    if (!form.name.trim()) { setError('Name is required'); return }
-    if (!form.code.trim()) { setError('Code is required'); return }
-    if (!form.departmentId) { setError('Please select a department'); return }
+    if (!form.name.trim()) { toast.error('Name is required'); return }
+    if (!form.code.trim()) { toast.error('Code is required'); return }
+    if (!form.departmentId) { toast.error('Please select a department'); return }
     setSaving(true)
     try {
       const data: SubjectRequest = {
@@ -88,25 +90,33 @@ export default function Subjects() {
       }
       if (editing) {
         await subjectApi.update(editing.id, data)
+        toast.success('Subject updated')
       } else {
         await subjectApi.create(data)
+        toast.success('Subject created')
       }
       setOpen(false)
       load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'An error occurred')
+      toast.error(e instanceof Error ? e.message : 'An error occurred')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this subject?')) return
+  const handleDelete = async () => {
+    if (confirmId == null) return
+    setDeleting(true)
     try {
-      await subjectApi.delete(id)
+      await subjectApi.delete(confirmId)
+      toast.success('Subject deleted')
+      setConfirmId(null)
       load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'An error occurred')
+      toast.error(e instanceof Error ? e.message : 'Delete failed')
+      setConfirmId(null)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -116,6 +126,7 @@ export default function Subjects() {
   const columns: Column<Subject>[] = [
     {
       key: 'name', header: 'Subject',
+      sortValue: (s) => s.name,
       render: (s) => (
         <div>
           <p className="font-medium">{s.name}</p>
@@ -123,7 +134,11 @@ export default function Subjects() {
         </div>
       ),
     },
-    { key: 'dept', header: 'Department', render: (s) => s.departmentName ?? `#${s.departmentId}` },
+    {
+      key: 'dept', header: 'Department',
+      sortValue: (s) => s.departmentName ?? '',
+      render: (s) => s.departmentName ?? `#${s.departmentId}`,
+    },
     { key: 'hours', header: 'Weekly / Chunk', render: (s) => `${s.weeklyHours}h / ${s.chunkHours}h` },
     {
       key: 'lab', header: 'Type',
@@ -134,23 +149,31 @@ export default function Subjects() {
       render: (s) => (
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(s)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => handleDelete(s.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(s.id)}>Delete</Button>
         </div>
       ),
     },
   ]
 
+  const getContextItems = (s: Subject): ContextMenuItem[] => [
+    { label: 'Edit', icon: <Pencil size={13} />, onClick: () => openEdit(s) },
+    { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(s.id) },
+  ]
+
   return (
     <>
-      {error && !open && (
-        <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
       <Card title="Subjects" description="Manage courses and lab sessions"
         actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Subject</Button>}
       >
-        <Table columns={columns} data={items} loading={loading} keyExtractor={(s) => s.id} />
+        <Table
+          columns={columns}
+          data={items}
+          loading={loading}
+          keyExtractor={(s) => s.id}
+          searchable
+          searchKeys={[(s) => s.name, (s) => s.code, (s) => s.departmentName ?? '']}
+          onRowContextMenu={getContextItems}
+        />
       </Card>
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Subject' : 'Add Subject'} size="lg"
@@ -162,11 +185,6 @@ export default function Subjects() {
         }
       >
         <div className="space-y-4">
-          {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Data Structures" />
             <Input label="Code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="CS301" />
@@ -218,6 +236,17 @@ export default function Subjects() {
           )}
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        title="Delete Subject"
+        message="This will remove the subject and clear related session assignments. This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmId(null)}
+      />
     </>
   )
 }

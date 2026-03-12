@@ -3,6 +3,7 @@ package com.arare.features.room;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.building.Building;
 import com.arare.features.building.BuildingRepository;
+import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.timeslot.Timeslot;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ public class RoomServiceImpl implements RoomService {
     private final RoomRepository repo;
     private final BuildingRepository buildingRepo;
     private final TimeslotRepository timeslotRepo;
+    private final ClassSessionRepository sessionRepo;
 
     @Override
     @Transactional
@@ -79,6 +81,7 @@ public class RoomServiceImpl implements RoomService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        sessionRepo.clearRoomById(id);   // Unassign room from sessions, keep sessions
         repo.deleteById(id);
     }
 
@@ -87,6 +90,7 @@ public class RoomServiceImpl implements RoomService {
     }
 
     private RoomResponse toResponse(Room r) {
+        List<Long> availableTimeslotIds = r.getAvailableTimeslots().stream().map(ts -> ts.getId()).toList();
         return new RoomResponse(
             r.getId(),
             r.getBuilding().getId(),
@@ -94,7 +98,8 @@ public class RoomServiceImpl implements RoomService {
             r.getRoomNumber(),
             r.getType(),
             r.getLabSubtype(),
-            r.getCapacity()
+            r.getCapacity(),
+            availableTimeslotIds
         );
     }
 }
