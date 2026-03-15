@@ -2,7 +2,10 @@ package com.arare.features.solver;
 
 import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
 import ai.timefold.solver.core.api.score.stream.*;
+import com.arare.common.enums.TimeslotType;
+import com.arare.features.batch.Batch;
 import com.arare.features.classsession.ClassSession;
+import com.arare.features.timeslot.Timeslot;
 
 /**
  * All scheduling constraints for ARARE, mapped to their spec categories.
@@ -36,9 +39,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             teacherUnavailable(factory),
             roomUnavailable(factory),
             breakSlotViolation(factory),
-            labSessionsMustUseSections(factory),
             teacherRequiredButMissing(factory),
+            teacherAssignedWhenNotRequired(factory),
+            labTeacherRequired(factory),
             roomRequiredButMissing(factory),
+            labMultiSlotMustHaveConsecutiveStart(factory),
 
             // ── Medium ────────────────────────────────────────────────
             teacherDailyHoursCap(factory),
@@ -48,6 +53,7 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             avoidTeacherIdleGaps(factory),
             preferSameTeacherSameSubject(factory),
             preferDepartmentBuildings(factory),
+            preferSplitLabSectionsAtSameTime(factory),
 
             // ── Soft ──────────────────────────────────────────────────
             teacherFreeDayPreference(factory),
@@ -55,6 +61,7 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             preferTeacherBuilding(factory),
             spreadSubjectAcrossWeek(factory),
             avoidSameSubjectMultipleTimesPerDay(factory),
+            preferNonLabMultiSlotConsecutive(factory),
         };
     }
 
@@ -94,8 +101,8 @@ public class TimetableConstraintProvider implements ConstraintProvider {
      */
     Constraint batchConflict(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getBatch() != null && s.getTimeslot() != null)
-            .groupBy(ClassSession::getBatch, ClassSession::getTimeslot,
+            .filter(s -> effectiveBatch(s) != null && s.getTimeslot() != null)
+            .groupBy(TimetableConstraintProvider::effectiveBatch, ClassSession::getTimeslot,
                 ConstraintCollectors.count())
             .filter((batch, timeslot, count) -> count > 1)
             .penalize(HardMediumSoftScore.ONE_HARD, (batch, timeslot, count) -> count - 1)
@@ -192,19 +199,6 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     /**
-     * Lab sessions must be assigned to a ClassSection, not a full Batch.
-     */
-    Constraint labSessionsMustUseSections(ConstraintFactory factory) {
-        return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getSubject() != null
-                && s.getSubject().isLab()
-                && s.getSection() == null
-                && s.getBatch() != null)
-            .penalize(HardMediumSoftScore.ONE_HARD)
-            .asConstraint("Lab session must use ClassSection, not full Batch");
-    }
-
-    /**
      * When a subject requires a teacher, the session must have one assigned.
      */
     Constraint teacherRequiredButMissing(ConstraintFactory factory) {
@@ -215,6 +209,16 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     /**
+     * When a subject does not require a teacher, no teacher should be assigned.
+     */
+    Constraint teacherAssignedWhenNotRequired(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> !s.getSubject().isRequiresTeacher() && s.getTeacher() != null)
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Teacher assigned though not required");
+    }
+
+    /**
      * When a subject requires a room, the session must have one assigned.
      */
     Constraint roomRequiredButMissing(ConstraintFactory factory) {
@@ -222,6 +226,39 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .filter(s -> s.getSubject().isRequiresRoom() && s.getRoom() == null)
             .penalize(HardMediumSoftScore.ONE_HARD)
             .asConstraint("Room required but not assigned");
+    }
+
+    /**
+     * Labs must always have a teacher assigned.
+     */
+    Constraint labTeacherRequired(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> s.getSubject() != null
+                && s.getSubject().isLab()
+                && s.getTeacher() == null)
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Lab teacher required");
+    }
+
+    /**
+     * Multi-slot sessions (chunk > 1) must start at a slot that has an
+     * immediately consecutive next CLASS slot on the same day.
+     *
+     * <p>This enforces 2-hour chunk continuity and prevents starts that cross
+     * a break/gap between class slots.</p>
+     */
+    Constraint labMultiSlotMustHaveConsecutiveStart(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> s.getTimeslot() != null
+                && s.getDuration() > 1
+                && s.getSubject() != null
+                && s.getSubject().isLab())
+            .ifNotExists(Timeslot.class,
+                Joiners.equal(s -> s.getTimeslot().getDay(), Timeslot::getDay),
+                Joiners.equal(s -> s.getTimeslot().getEndTime(), Timeslot::getStartTime),
+                Joiners.filtering((s, next) -> next.getType() == TimeslotType.CLASS))
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Lab multi-slot crosses non-consecutive slot");
     }
 
     // ==================================================================
@@ -277,14 +314,36 @@ public class TimetableConstraintProvider implements ConstraintProvider {
      */
     Constraint avoidStudentIdleGaps(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getBatch() != null && s.getTimeslot() != null)
+            .filter(s -> effectiveBatch(s) != null && s.getTimeslot() != null)
             .join(ClassSession.class,
-                Joiners.equal(ClassSession::getBatch),
+                Joiners.equal(TimetableConstraintProvider::effectiveBatch),
                 Joiners.equal(s -> s.getTimeslot().getDay()),
                 Joiners.lessThan(ClassSession::getId))
-            .filter((s1, s2) -> s2.getTimeslot() != null && hasIdleGap(s1, s2))
+            .filter((s1, s2) -> s2.getTimeslot() != null && effectiveBatch(s2) != null && hasIdleGap(s1, s2))
             .penalize(HardMediumSoftScore.ONE_MEDIUM)
             .asConstraint("Student idle gap");
+    }
+
+    /**
+     * Prefer parallel timing when a lab is split into multiple sections of the same batch.
+     */
+    Constraint preferSplitLabSectionsAtSameTime(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> s.getSubject() != null
+                && s.getSubject().isLab()
+                && s.getSection() != null
+                && s.getTimeslot() != null)
+            .join(ClassSession.class,
+                Joiners.equal(ClassSession::getSubject),
+                Joiners.equal(TimetableConstraintProvider::effectiveBatch),
+                Joiners.equal(ClassSession::getDuration),
+                Joiners.lessThan(ClassSession::getId))
+            .filter((s1, s2) -> s2.getSection() != null
+                && s2.getTimeslot() != null
+                && !s1.getSection().getId().equals(s2.getSection().getId())
+                && !s1.getTimeslot().getId().equals(s2.getTimeslot().getId()))
+            .penalize(HardMediumSoftScore.ONE_MEDIUM)
+            .asConstraint("Split lab sections not aligned in time");
     }
 
     /**
@@ -355,10 +414,10 @@ public class TimetableConstraintProvider implements ConstraintProvider {
      */
     Constraint batchFreeDayPreference(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getBatch() != null
+            .filter(s -> effectiveBatch(s) != null
                 && s.getTimeslot() != null
-                && s.getBatch().getPreferredFreeDay() != null
-                && s.getTimeslot().getDay() == s.getBatch().getPreferredFreeDay())
+                && effectiveBatch(s).getPreferredFreeDay() != null
+                && s.getTimeslot().getDay() == effectiveBatch(s).getPreferredFreeDay())
             .penalize(HardMediumSoftScore.ONE_SOFT)
             .asConstraint("Batch free day violated");
     }
@@ -383,10 +442,10 @@ public class TimetableConstraintProvider implements ConstraintProvider {
      */
     Constraint spreadSubjectAcrossWeek(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getTimeslot() != null && s.getBatch() != null)
+            .filter(s -> s.getTimeslot() != null && effectiveBatch(s) != null)
             .join(ClassSession.class,
                 Joiners.equal(ClassSession::getSubject),
-                Joiners.equal(ClassSession::getBatch),
+                Joiners.equal(TimetableConstraintProvider::effectiveBatch),
                 Joiners.lessThan(ClassSession::getId))
             .filter((s1, s2) -> s2.getTimeslot() != null
                 && s1.getTimeslot().getDay() == s2.getTimeslot().getDay())
@@ -399,8 +458,8 @@ public class TimetableConstraintProvider implements ConstraintProvider {
      */
     Constraint avoidSameSubjectMultipleTimesPerDay(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getBatch() != null && s.getTimeslot() != null)
-            .groupBy(ClassSession::getBatch,
+            .filter(s -> effectiveBatch(s) != null && s.getTimeslot() != null)
+            .groupBy(TimetableConstraintProvider::effectiveBatch,
                 ClassSession::getSubject,
                 s -> s.getTimeslot().getDay(),
                 ConstraintCollectors.count())
@@ -408,6 +467,23 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .penalize(HardMediumSoftScore.ONE_SOFT,
                 (batch, subject, day, count) -> count - subject.getMaxSessionsPerDay())
             .asConstraint("Cognitive load: same subject too many times per day");
+    }
+
+    /**
+     * Non-lab multi-slot sessions should be consecutive when possible.
+     */
+    Constraint preferNonLabMultiSlotConsecutive(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> s.getTimeslot() != null
+                && s.getDuration() > 1
+                && s.getSubject() != null
+                && !s.getSubject().isLab())
+            .ifNotExists(Timeslot.class,
+                Joiners.equal(s -> s.getTimeslot().getDay(), Timeslot::getDay),
+                Joiners.equal(s -> s.getTimeslot().getEndTime(), Timeslot::getStartTime),
+                Joiners.filtering((s, next) -> next.getType() == TimeslotType.CLASS))
+            .penalize(HardMediumSoftScore.ONE_SOFT)
+            .asConstraint("Non-lab multi-slot should be consecutive");
     }
 
     // ==================================================================
@@ -422,5 +498,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
         } else {
             return tB.getEndTime().isBefore(tA.getStartTime());
         }
+    }
+
+    private static Batch effectiveBatch(ClassSession s) {
+        if (s.getBatch() != null) return s.getBatch();
+        if (s.getSection() != null) return s.getSection().getBatch();
+        return null;
     }
 }

@@ -88,7 +88,9 @@ public class ClassSessionServiceImpl implements ClassSessionService {
             s.getSubject().getId(),
             s.getSubject().getName(),
             s.getSubject().isLab(),
-            s.getBatch() != null ? s.getBatch().getId() : null,
+            s.getBatch() != null
+                ? s.getBatch().getId()
+                : (s.getSection() != null ? s.getSection().getBatch().getId() : null),
             s.getSection() != null ? s.getSection().getId() : null,
             batchLabel,
             s.getTeacher() != null ? s.getTeacher().getId() : null,

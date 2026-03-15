@@ -9,6 +9,7 @@ import ai.timefold.solver.core.api.solver.SolverJobBuilder;
 import ai.timefold.solver.core.api.solver.SolverManager;
 import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import com.arare.common.enums.ScheduleStatus;
+import com.arare.common.enums.RoomType;
 import com.arare.common.enums.TimeslotType;
 import com.arare.features.batch.Batch;
 import com.arare.features.batch.BatchRepository;
@@ -225,7 +226,7 @@ public class TimetableSolverService {
             : sectionRepo.findAll();
 
         // Generate or reuse ClassSession planning entities
-        List<ClassSession> sessions = getOrGenerateSessions(schedule, subjects, batches, sections);
+        List<ClassSession> sessions = getOrGenerateSessions(schedule, subjects, batches, sections, rooms);
 
         // Apply pre-allocations (lock manual assignments)
         applyPreAllocations(sessions, schedule.getId());
@@ -272,7 +273,8 @@ public class TimetableSolverService {
         Schedule schedule,
         List<Subject> subjects,
         List<Batch> batches,
-        List<ClassSection> sections
+        List<ClassSection> sections,
+        List<Room> rooms
     ) {
         // If this is a re-optimization, load existing sessions
         List<ClassSession> existing = sessionRepo.findByScheduleId(schedule.getId());
@@ -290,10 +292,48 @@ public class TimetableSolverService {
                 int count = subject.getWeeklyHours() / subject.getChunkHours();
 
                 if (subject.isLab()) {
-                    // One session per lab section
+                    boolean canRunWholeBatch = rooms.stream().anyMatch(room ->
+                        room.getType() == RoomType.LAB
+                            && room.getCapacity() >= batch.getStudentCount()
+                            && (subject.getLabSubtypeRequired() == null
+                                || room.getLabSubtype() == null
+                                || subject.getLabSubtypeRequired().equals(room.getLabSubtype()))
+                    );
+
+                    if (canRunWholeBatch) {
+                        // Capacity exists: keep whole batch together for labs.
+                        for (int i = 0; i < count; i++) {
+                            generated.add(ClassSession.builder()
+                                .subject(subject)
+                                .batch(batch)
+                                .section(null)
+                                .schedule(schedule)
+                                .duration(subject.getChunkHours())
+                                .isLocked(false)
+                                .build());
+                        }
+                        continue;
+                    }
+
+                    // Otherwise split by sections.
                     List<ClassSection> batchSections = sections.stream()
                         .filter(s -> s.getBatch().getId().equals(batch.getId()))
                         .toList();
+
+                    if (batchSections.isEmpty()) {
+                        // Fallback: if no sections defined, still generate the lab at batch level.
+                        for (int i = 0; i < count; i++) {
+                            generated.add(ClassSession.builder()
+                                .subject(subject)
+                                .batch(batch)
+                                .section(null)
+                                .schedule(schedule)
+                                .duration(subject.getChunkHours())
+                                .isLocked(false)
+                                .build());
+                        }
+                        continue;
+                    }
 
                     for (int i = 0; i < count; i++) {
                         for (ClassSection section : batchSections) {
