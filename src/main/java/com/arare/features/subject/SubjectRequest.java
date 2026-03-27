@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-/** Request DTO: create or update a Subject. */
+// Request DTO: create or update a Subject. 
 public record SubjectRequest(
     @NotBlank String name,
     String code,

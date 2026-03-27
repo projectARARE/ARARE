@@ -11,9 +11,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.net.URI;
 import java.util.stream.Collectors;
 
-/**
- * Centralised error handling. Returns RFC-9457 ProblemDetail JSON responses.
- */
+// Centralised error handling. Returns RFC-9457 ProblemDetail JSON responses.
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -48,10 +46,22 @@ public class GlobalExceptionHandler {
         return detail;
     }
 
-    /**
-     * Handles database constraint violations (foreign key, unique, not-null) with
-     * human-readable messages instead of exposing raw SQL error details.
-     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        detail.setType(URI.create("/errors/validation"));
+        return detail;
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ProblemDetail handleIllegalState(IllegalStateException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        detail.setType(URI.create("/errors/infeasible"));
+        return detail;
+    }
+
+// Handles database constraint violations (foreign key, unique, not-null) with
+// human-readable messages instead of exposing raw SQL error details.
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
         String msg = ex.getMessage() != null ? ex.getMessage().toLowerCase() : "";

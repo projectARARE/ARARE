@@ -15,6 +15,7 @@ import TimetableViewer from './pages/TimetableViewer'
 import ScheduleHistory from './pages/ScheduleHistory'
 import Events from './pages/Events'
 import AcademicTerms from './pages/AcademicTerms'
+import DisruptionHandling from './pages/DisruptionHandling'
 import { ToastProvider } from './contexts/ToastContext'
 import ToastContainer from './components/ui/Toast'
 
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="schedule/view/:id" element={<TimetableViewer />} />
           <Route path="schedule/history" element={<ScheduleHistory />} />
           <Route path="events" element={<Events />} />
+          <Route path="disruptions" element={<DisruptionHandling />} />
           <Route path="academic-terms" element={<AcademicTerms />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

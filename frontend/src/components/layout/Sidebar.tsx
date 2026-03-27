@@ -15,6 +15,7 @@ import {
   Layers,
   Zap,
   CalendarDays,
+  AlertTriangle,
 } from 'lucide-react'
 
 interface NavItem {
@@ -40,6 +41,7 @@ const nav: NavGroup[] = [
       { to: '/schedule/history', icon: History, label: 'History' },
       { to: '/academic-terms', icon: CalendarDays, label: 'Academic Terms' },
       { to: '/events', icon: CalendarX2, label: 'Events' },
+      { to: '/disruptions', icon: AlertTriangle, label: 'Disruptions' },
     ],
   },
   {

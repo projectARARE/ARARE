@@ -7,16 +7,12 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 
-/**
- * Represents one version of a generated timetable.
- *
- * <p>Every run of the solver (full or partial) creates a new Schedule.
- * Previous versions are retained for comparison and rollback.</p>
- *
- * <p>The parent-child relationship ({@code parentScheduleId}) links
- * a re-optimization result back to the schedule that triggered it,
- * enabling a full version history tree.</p>
- */
+// Represents one version of a generated timetable.
+// <p>Every run of the solver (full or partial) creates a new Schedule.
+// Previous versions are retained for comparison and rollback.</p>
+// <p>The parent-child relationship ({@code parentScheduleId}) links
+// a re-optimization result back to the schedule that triggered it,
+// enabling a full version history tree.</p>
 @Entity
 @Table(name = "schedules")
 @Getter
@@ -40,26 +36,31 @@ public class Schedule extends BaseEntity {
     @Builder.Default
     private ScheduleStatus status = ScheduleStatus.DRAFT;
 
-    /**
-     * Reference to the schedule this was derived from (partial re-optimization).
-     * Null for the first generated schedule.
-     */
+// Reference to the schedule this was derived from (partial re-optimization).
+// Null for the first generated schedule.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_schedule_id")
     private Schedule parentSchedule;
 
-    /**
-     * Timefold score string serialised as text.
-     * Format: "0hard/0medium/0soft" representing HardMediumSoftScore.
-     * Stored for quick display; parse with ScoreManager when needed.
-     */
+// Timefold score string serialised as text.
+// Format: "0hard/0medium/0soft" representing HardMediumSoftScore.
+// Stored for quick display; parse with ScoreManager when needed.
     @Column
     private String score;
 
-    /**
-     * Human-readable explanation of any unresolved constraint violations,
-     * produced by the solver's score explanation API.
-     */
+// Human-readable explanation of any unresolved constraint violations,
+// produced by the solver's score explanation API.
     @Column(columnDefinition = "TEXT")
     private String scoreExplanation;
+
+    @PrePersist
+    @PreUpdate
+    private void normalize() {
+        if (name != null) {
+            name = name.trim();
+        }
+        if (name == null || name.isEmpty()) {
+            throw new IllegalStateException("Schedule name is required.");
+        }
+    }
 }

@@ -22,31 +22,26 @@ import lombok.Setter;
 
 import java.util.List;
 
-/**
- * The Timefold planning solution for ARARE timetable scheduling.
- *
- * <p>This class is the root object handed to the Timefold solver. It contains:
- * <ul>
- *   <li><b>Problem facts</b> – data the solver reads but does not modify
- *       ({@code @ProblemFactCollectionProperty})</li>
- *   <li><b>Planning entities</b> – objects whose planning variables the solver assigns
- *       ({@code @PlanningEntityCollectionProperty})</li>
- *   <li><b>Planning score</b> – how good the current solution is
- *       ({@code @PlanningScore})</li>
- * </ul>
- * </p>
- *
- * <p><b>Score type: {@link HardMediumSoftScore}</b>
- * <ul>
- *   <li>Hard  – must never be broken (clash, capacity violation, etc.)</li>
- *   <li>Medium – should not be broken (teacher overload, idle gaps, etc.)</li>
- *   <li>Soft   – nice to satisfy (free-day preference, building preference, etc.)</li>
- * </ul>
- * </p>
- *
- * <p><b>Value range providers</b> are referenced by {@code @PlanningVariable} in
- * {@link ClassSession} using the IDs defined here.</p>
- */
+// The Timefold planning solution for ARARE timetable scheduling.
+// <p>This class is the root object handed to the Timefold solver. It contains:
+// <ul>
+// <li><b>Problem facts</b> – data the solver reads but does not modify
+// ({@code @ProblemFactCollectionProperty})</li>
+// <li><b>Planning entities</b> – objects whose planning variables the solver assigns
+// ({@code @PlanningEntityCollectionProperty})</li>
+// <li><b>Planning score</b> – how good the current solution is
+// ({@code @PlanningScore})</li>
+// </ul>
+// </p>
+// <p><b>Score type: {@link HardMediumSoftScore}</b>
+// <ul>
+// <li>Hard  – must never be broken (clash, capacity violation, etc.)</li>
+// <li>Medium – should not be broken (teacher overload, idle gaps, etc.)</li>
+// <li>Soft   – nice to satisfy (free-day preference, building preference, etc.)</li>
+// </ul>
+// </p>
+// <p><b>Value range providers</b> are referenced by {@code @PlanningVariable} in
+// {@link ClassSession} using the IDs defined here.</p>
 @PlanningSolution
 @Getter
 @Setter
@@ -58,7 +53,7 @@ public class TimetableSolution {
     // Problem Facts – the solver reads these; they never change
     // ------------------------------------------------------------------
 
-    /** All schedulable timeslots (type == CLASS). */
+    // All schedulable timeslots (type == CLASS). 
     @ValueRangeProvider(id = "timeslotRange")
     @ProblemFactCollectionProperty
     private List<Timeslot> timeslots;
@@ -83,7 +78,7 @@ public class TimetableSolution {
     @ProblemFactCollectionProperty
     private List<Building> buildings;
 
-    /** Active university configuration (used by constraints). */
+    // Active university configuration (used by constraints). 
     @ProblemFactCollectionProperty
     private List<UniversityConfig> configs;
 

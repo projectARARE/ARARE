@@ -6,31 +6,25 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * BFS-based impact analyzer.
- *
- * <p>Given a disruption event and the dependency graph of a schedule,
- * produces the <em>minimal</em> set of session IDs that must be rescheduled.</p>
- *
- * <h3>Traversal rules</h3>
- * <ol>
- *   <li>Seed the queue with sessions <em>directly</em> affected by the disruption
- *       (same teacher/room/timeslot on the affected day).</li>
- *   <li>BFS: for each session, follow dependency edges to connected sessions.</li>
- *   <li>Stop expanding from a locked session — it stays in the impacted set
- *       (so the caller can report it) but its own neighbors are not traversed.</li>
- *   <li>Sessions on a different day are ignored for teacher/room disruptions.</li>
- * </ol>
- */
+// BFS-based impact analyzer.
+// <p>Given a disruption event and the dependency graph of a schedule,
+// produces the <em>minimal</em> set of session IDs that must be rescheduled.</p>
+// <h3>Traversal rules</h3>
+// <ol>
+// <li>Seed the queue with sessions <em>directly</em> affected by the disruption
+// (same teacher/room/timeslot on the affected day).</li>
+// <li>BFS: for each session, follow dependency edges to connected sessions.</li>
+// <li>Stop expanding from a locked session — it stays in the impacted set
+// (so the caller can report it) but its own neighbors are not traversed.</li>
+// <li>Sessions on a different day are ignored for teacher/room disruptions.</li>
+// </ol>
 @Component
 public class ImpactAnalyzer {
 
-    /**
-     * @param event    The disruption to analyze.
-     * @param graph    Pre-built dependency graph of the schedule.
-     * @param sessions All ClassSessions belonging to the schedule (used for seed selection).
-     * @return Ordered set of session IDs that are impacted (BFS order = closest first).
-     */
+// @param event    The disruption to analyze.
+// @param graph    Pre-built dependency graph of the schedule.
+// @param sessions All ClassSessions belonging to the schedule (used for seed selection).
+// @return Ordered set of session IDs that are impacted (BFS order = closest first).
     public Set<Long> analyze(DisruptionRequest event,
                              DependencyGraph graph,
                              List<ClassSession> sessions) {
@@ -66,10 +60,21 @@ public class ImpactAnalyzer {
     // ------------------------------------------------------------------
 
     private List<Long> findInitialSessions(DisruptionRequest event, List<ClassSession> sessions) {
-        return sessions.stream()
-                .filter(s -> isDirectlyAffected(s, event))
+        List<Long> initial = sessions.stream()
+            .filter(s -> isDirectlyAffected(s, event))
+            .map(ClassSession::getId)
+            .collect(Collectors.toList());
+
+        // Timeslot blocking must also re-consider currently unassigned sessions;
+        // otherwise they can be newly assigned into the blocked slot after re-solve.
+        if (event.type() == DisruptionType.TIMESLOT_BLOCKED) {
+            sessions.stream()
+                .filter(s -> s.getTimeslot() == null)
                 .map(ClassSession::getId)
-                .collect(Collectors.toList());
+                .forEach(initial::add);
+        }
+
+        return initial;
     }
 
     private boolean isDirectlyAffected(ClassSession s, DisruptionRequest event) {
@@ -91,15 +96,14 @@ public class ImpactAnalyzer {
             case SESSION_CANCELLED ->
                     s.getId().equals(event.affectedEntityId());
 
-            case SPECIAL_EVENT -> false; // SPECIAL_EVENT seeds are caller-provided
+            case SPECIAL_EVENT ->
+                    s.getTimeslot() != null && matchesDay(s, event);
         };
     }
 
-    /**
-     * For weekly timetables: the disruption date's day-of-week must match
-     * the session's timeslot day (e.g. date is a Monday → only Monday sessions).
-     * If no date is provided, all sessions are candidates.
-     */
+// For weekly timetables: the disruption date's day-of-week must match
+// the session's timeslot day (e.g. date is a Monday → only Monday sessions).
+// If no date is provided, all sessions are candidates.
     private boolean matchesDay(ClassSession s, DisruptionRequest event) {
         if (event.date() == null || s.getTimeslot() == null) return true;
         String disruptionDay = event.date().getDayOfWeek().name(); // e.g. "MONDAY"
@@ -110,13 +114,10 @@ public class ImpactAnalyzer {
     // Expansion rule
     // ------------------------------------------------------------------
 
-    /**
-     * Controls how far BFS expands.
-     * Currently expands all dependency types — every session sharing a resource
-     * with an impacted session is considered potentially conflicted.
-     *
-     * <p>In future: add granularity (e.g. only expand TEACHER edges, not BATCH edges).</p>
-     */
+// Controls how far BFS expands.
+// Currently expands all dependency types — every session sharing a resource
+// with an impacted session is considered potentially conflicted.
+// <p>In future: add granularity (e.g. only expand TEACHER edges, not BATCH edges).</p>
     private boolean shouldExpand(DependencyEdge edge) {
         return true;
     }

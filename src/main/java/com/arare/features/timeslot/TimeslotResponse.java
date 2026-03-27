@@ -9,5 +9,6 @@ public record TimeslotResponse(
     SchoolDay day,
     LocalTime startTime,
     LocalTime endTime,
+    Integer slotNumber,
     TimeslotType type
 ) {}

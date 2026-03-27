@@ -9,23 +9,22 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
-/**
- * Physical room available for scheduling.
- *
- * <p>Hard constraints enforced by the solver:
- * <ul>
- *   <li>Room cannot host multiple sessions at the same timeslot.</li>
- *   <li>Room capacity must be >= class/section student count.</li>
- *   <li>Room type must match the subject's required room type.</li>
- *   <li>Lab subtype must match when the subject requires a specific lab.</li>
- * </ul>
- * </p>
- */
+// Physical room available for scheduling.
+// <p>Hard constraints enforced by the solver:
+// <ul>
+// <li>Room cannot host multiple sessions at the same timeslot.</li>
+// <li>Room capacity must be >= class/section student count.</li>
+// <li>Room type must match the subject's required room type.</li>
+// <li>Lab subtype must match when the subject requires a specific lab.</li>
+// </ul>
+// </p>
 @Entity
 @Table(
     name = "rooms",
@@ -44,6 +43,7 @@ public class Room extends BaseEntity {
     private Building building;
 
     @NotBlank
+    @Size(max = 30)
     @Column(name = "room_number", nullable = false)
     private String roomNumber;
 
@@ -52,10 +52,8 @@ public class Room extends BaseEntity {
     @Column(nullable = false)
     private RoomType type;
 
-    /**
-     * Populated only when type == LAB.
-     * Allows matching subject.labSubtypeRequired against room.labSubtype.
-     */
+// Populated only when type == LAB.
+// Allows matching subject.labSubtypeRequired against room.labSubtype.
     @Enumerated(EnumType.STRING)
     @Column
     private LabSubtype labSubtype;
@@ -64,11 +62,9 @@ public class Room extends BaseEntity {
     @Column(nullable = false)
     private int capacity;
 
-    /**
-     * Timeslots during which this room is available.
-     * If empty, the room is assumed available for all CLASS-type timeslots.
-     * Hard constraint: room must not be scheduled in an unavailable timeslot.
-     */
+// Timeslots during which this room is available.
+// If empty, the room is assumed available for all CLASS-type timeslots.
+// Hard constraint: room must not be scheduled in an unavailable timeslot.
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "room_availability",
@@ -77,4 +73,22 @@ public class Room extends BaseEntity {
     )
     @Builder.Default
     private List<Timeslot> availableTimeslots = new ArrayList<>();
+
+    @PrePersist
+    @PreUpdate
+    private void normalizeAndValidate() {
+        if (roomNumber != null) {
+            roomNumber = roomNumber.trim().toUpperCase();
+        }
+        if (availableTimeslots != null && !availableTimeslots.isEmpty()) {
+            availableTimeslots = new ArrayList<>(new LinkedHashSet<>(availableTimeslots));
+        }
+
+        if (type == RoomType.LAB && labSubtype == null) {
+            throw new IllegalStateException("LAB room must define labSubtype.");
+        }
+        if (type != RoomType.LAB) {
+            labSubtype = null;
+        }
+    }
 }

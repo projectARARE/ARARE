@@ -10,11 +10,11 @@ import java.util.List;
 @Repository
 public interface TeacherRepository extends JpaRepository<Teacher, Long> {
 
-    /** Find teachers qualified for a given subject. */
+    // Find teachers qualified for a given subject. 
     @Query("SELECT t FROM Teacher t JOIN t.subjects s WHERE s.id = :subjectId")
     List<Teacher> findBySubjectId(@Param("subjectId") Long subjectId);
 
-    /** Find teachers who prefer a given building. */
+    // Find teachers who prefer a given building. 
     @Query("SELECT t FROM Teacher t JOIN t.preferredBuildings b WHERE b.id = :buildingId")
     List<Teacher> findByPreferredBuildingId(@Param("buildingId") Long buildingId);
 }

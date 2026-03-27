@@ -14,19 +14,16 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * A real-world disruption that triggers partial re-optimization.
- *
- * <p>When an event is recorded the SolverService:
- * <ol>
- *   <li>Marks affected timeslots as {@code BLOCKED}.</li>
- *   <li>Marks affected teachers as unavailable for those timeslots.</li>
- *   <li>Marks affected rooms as unavailable for those timeslots.</li>
- *   <li>Identifies the impacted {@link com.arare.features.classsession.ClassSession}s.</li>
- *   <li>Runs a partial re-solve for only those sessions.</li>
- * </ol>
- * </p>
- */
+// A real-world disruption that triggers partial re-optimization.
+// <p>When an event is recorded the SolverService:
+// <ol>
+// <li>Marks affected timeslots as {@code BLOCKED}.</li>
+// <li>Marks affected teachers as unavailable for those timeslots.</li>
+// <li>Marks affected rooms as unavailable for those timeslots.</li>
+// <li>Identifies the impacted {@link com.arare.features.classsession.ClassSession}s.</li>
+// <li>Runs a partial re-solve for only those sessions.</li>
+// </ol>
+// </p>
 @Entity
 @Table(name = "events")
 @Getter
@@ -54,7 +51,7 @@ public class Event extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    /** Rooms that are unavailable due to this event. */
+    // Rooms that are unavailable due to this event. 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "event_affected_rooms",
@@ -64,7 +61,7 @@ public class Event extends BaseEntity {
     @Builder.Default
     private List<Room> affectedRooms = new ArrayList<>();
 
-    /** Teachers unavailable due to this event (e.g. leave, seminar participation). */
+    // Teachers unavailable due to this event (e.g. leave, seminar participation). 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "event_affected_teachers",
@@ -74,7 +71,7 @@ public class Event extends BaseEntity {
     @Builder.Default
     private List<Teacher> affectedTeachers = new ArrayList<>();
 
-    /** Timeslots blocked by this event (e.g. exam blocks specific periods). */
+    // Timeslots blocked by this event (e.g. exam blocks specific periods). 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "event_affected_timeslots",
@@ -83,4 +80,22 @@ public class Event extends BaseEntity {
     )
     @Builder.Default
     private List<Timeslot> affectedTimeslots = new ArrayList<>();
+
+    @PrePersist
+    @PreUpdate
+    private void normalizeAndValidate() {
+        if (title != null) {
+            title = title.trim();
+        }
+        if (description != null) {
+            description = description.trim();
+            if (description.isEmpty()) {
+                description = null;
+            }
+        }
+
+        if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
+            throw new IllegalStateException("Event endDate cannot be before startDate.");
+        }
+    }
 }

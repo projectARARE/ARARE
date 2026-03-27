@@ -36,10 +36,8 @@ public class EventController {
         return ResponseEntity.ok(service.findAll());
     }
 
-    /**
-     * Applies the event to an active schedule (marks blocked slots,
-     * triggers partial re-optimization).
-     */
+// Applies the event to an active schedule (marks blocked slots,
+// triggers partial re-optimization).
     @PostMapping("/{eventId}/apply/{scheduleId}")
     public ResponseEntity<Void> applyToSchedule(@PathVariable Long eventId,
                                                 @PathVariable Long scheduleId) {

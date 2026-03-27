@@ -14,7 +14,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     List<Event> findByType(EventType type);
 
-    /** Find active events overlapping with a given date. */
+    // Find active events overlapping with a given date. 
     @Query("SELECT e FROM Event e WHERE e.startDate <= :date AND e.endDate >= :date")
     List<Event> findActiveByDate(@Param("date") LocalDate date);
 }

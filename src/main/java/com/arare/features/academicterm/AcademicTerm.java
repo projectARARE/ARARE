@@ -9,12 +9,9 @@ import lombok.*;
 
 import java.time.LocalDate;
 
-/**
- * Represents one academic term (semester / trimester) within a university year.
- *
- * <p>Schedules generated in ARARE can be linked to an academic term
- * to provide temporal versioning — e.g. "CSE Dept – Sem 1 2026".</p>
- */
+// Represents one academic term (semester / trimester) within a university year.
+// <p>Schedules generated in ARARE can be linked to an academic term
+// to provide temporal versioning — e.g. "CSE Dept – Sem 1 2026".</p>
 @Entity
 @Table(name = "academic_terms")
 @Getter
@@ -24,12 +21,12 @@ import java.time.LocalDate;
 @Builder
 public class AcademicTerm extends BaseEntity {
 
-    /** Human-readable name, e.g. "Semester 1 2025–26". */
+    // Human-readable name, e.g. "Semester 1 2025–26". 
     @NotBlank
     @Column(nullable = false)
     private String name;
 
-    /** Academic year label, e.g. "2025-26". */
+    // Academic year label, e.g. "2025-26". 
     @Column
     private String academicYear;
 
@@ -41,11 +38,11 @@ public class AcademicTerm extends BaseEntity {
     @Column(nullable = false)
     private LocalDate endDate;
 
-    /** Date when exam period begins (optional — used to block scheduling). */
+    // Date when exam period begins (optional — used to block scheduling). 
     @Column
     private LocalDate examPeriodStart;
 
-    /** Date when exam period ends (optional). */
+    // Date when exam period ends (optional). 
     @Column
     private LocalDate examPeriodEnd;
 
@@ -56,4 +53,31 @@ public class AcademicTerm extends BaseEntity {
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @PrePersist
+    @PreUpdate
+    private void normalizeAndValidate() {
+        if (name != null) {
+            name = name.trim();
+        }
+        if (academicYear != null) {
+            academicYear = academicYear.trim();
+            if (academicYear.isEmpty()) {
+                academicYear = null;
+            }
+        }
+        if (description != null) {
+            description = description.trim();
+            if (description.isEmpty()) {
+                description = null;
+            }
+        }
+
+        if (endDate.isBefore(startDate)) {
+            throw new IllegalStateException("Academic term endDate cannot be before startDate.");
+        }
+        if (examPeriodStart != null && examPeriodEnd != null && examPeriodEnd.isBefore(examPeriodStart)) {
+            throw new IllegalStateException("Exam period end cannot be before exam period start.");
+        }
+    }
 }

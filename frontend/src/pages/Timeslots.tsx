@@ -10,7 +10,7 @@ import { useToast } from '../contexts/ToastContext'
 const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
 const TYPES: TimeslotType[] = ['CLASS', 'BREAK', 'BLOCKED']
 
-const EMPTY: TimeslotRequest = { day: 'MONDAY', startTime: '08:00', endTime: '09:00', type: 'CLASS' }
+const EMPTY: TimeslotRequest = { day: 'MONDAY', startTime: '08:00', endTime: '09:00', slotNumber: 1, type: 'CLASS' }
 
 const typeVariant = (t: TimeslotType): 'green' | 'yellow' | 'red' =>
   t === 'CLASS' ? 'green' : t === 'BREAK' ? 'yellow' : 'red'
@@ -36,7 +36,7 @@ export default function Timeslots() {
   const openAdd = () => { setEditing(null); setForm(EMPTY); setOpen(true) }
   const openEdit = (t: Timeslot) => {
     setEditing(t)
-    setForm({ day: t.day, startTime: t.startTime, endTime: t.endTime, type: t.type })
+    setForm({ day: t.day, startTime: t.startTime, endTime: t.endTime, slotNumber: t.slotNumber, type: t.type })
     setOpen(true)
   }
 
@@ -92,6 +92,11 @@ export default function Timeslots() {
       render: (t) => t.startTime,
     },
     { key: 'end', header: 'End', render: (t) => t.endTime },
+    {
+      key: 'slotNumber', header: 'Slot',
+      sortValue: (t) => String(t.slotNumber ?? 0).padStart(3, '0'),
+      render: (t) => t.slotNumber ?? '-',
+    },
     { key: 'type', header: 'Type', render: (t) => <Badge label={t.type} variant={typeVariant(t.type)} /> },
     {
       key: 'actions', header: '', width: '96px',
@@ -139,6 +144,13 @@ export default function Timeslots() {
             <Input label="Start Time" type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
             <Input label="End Time" type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
           </div>
+          <Input
+            label="Slot Number"
+            type="number"
+            min={1}
+            value={String(form.slotNumber ?? '')}
+            onChange={(e) => setForm({ ...form, slotNumber: e.target.value ? Number.parseInt(e.target.value, 10) : undefined })}
+          />
           <Select label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as TimeslotType })} options={typeOptions} />
         </div>
       </Modal>

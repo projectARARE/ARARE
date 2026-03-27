@@ -1,10 +1,10 @@
 package com.arare.common.enums;
 
 public enum ScheduleScope {
-    /** Single department only. */
+    // Single department only. 
     DEPARTMENT,
-    /** Multiple departments within one college; shared rooms allowed. */
+    // Multiple departments within one college; shared rooms allowed. 
     COLLEGE,
-    /** Multiple colleges; shared buildings and rooms. */
+    // Multiple colleges; shared buildings and rooms. 
     UNIVERSITY
 }

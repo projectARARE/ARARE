@@ -10,14 +10,11 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
 
-/**
- * Common auditing fields shared by all entities.
- * Extend this class in every @Entity to avoid boilerplate.
- *
- * <p>equals/hashCode based on database ID so that Timefold Constraint Stream
- * joiners (which use Objects.equals) correctly match entities that may be
- * different Java instances (e.g. Hibernate proxies vs eager-loaded objects).</p>
- */
+// Common auditing fields shared by all entities.
+// Extend this class in every @Entity to avoid boilerplate.
+// <p>equals/hashCode based on database ID so that Timefold Constraint Stream
+// joiners (which use Objects.equals) correctly match entities that may be
+// different Java instances (e.g. Hibernate proxies vs eager-loaded objects).</p>
 @Getter
 @Setter
 @EqualsAndHashCode(of = "id")
@@ -30,9 +27,14 @@ public abstract class BaseEntity {
     private Long id;
 
     @CreatedDate
-    @Column(updatable = false)
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @LastModifiedDate
+    @Column(nullable = false)
     private LocalDateTime updatedAt;
+
+    @Version
+    @Column(nullable = false)
+    private Long version;
 }

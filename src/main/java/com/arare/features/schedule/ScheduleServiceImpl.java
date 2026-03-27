@@ -22,10 +22,22 @@ public class ScheduleServiceImpl implements ScheduleService {
     private final ScheduleRepository repo;
     private final TimetableSolverService solverService;
     private final ClassSessionRepository sessionRepo;
+    private final FeasibilityCheckService feasibilityCheckService;
 
     @Override
     @Transactional
     public ScheduleResponse generate(ScheduleRequest req) {
+        FeasibilityCheckResult feasibility = feasibilityCheckService.check(req);
+        if (!feasibility.feasible()) {
+            String detail = feasibility.issues().stream()
+                .filter(i -> i.severity() == FeasibilityIssue.Severity.ERROR)
+                .map(FeasibilityIssue::message)
+                .limit(3)
+                .reduce((a, b) -> a + " | " + b)
+                .orElse("Resolve feasibility errors before generating a schedule.");
+            throw new IllegalStateException("Schedule request is infeasible: " + detail);
+        }
+
         Schedule parent = req.parentScheduleId() != null
             ? repo.findById(req.parentScheduleId())
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule", req.parentScheduleId()))

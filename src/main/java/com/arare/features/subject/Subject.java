@@ -8,30 +8,27 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
-/**
- * An academic subject (course component).
- *
- * <p>Lectures and labs for the same course are modelled as <b>separate Subject records</b>
- * to allow independent room-type and teacher assignment. For example:
- * <ul>
- *   <li>DSA Lecture  – roomTypeRequired=LECTURE, isLab=false</li>
- *   <li>DSA Lab      – roomTypeRequired=LAB, isLab=true</li>
- * </ul>
- * </p>
- *
- * <p>Key scheduling fields used by the constraint provider:
- * <ul>
- *   <li>{@code weeklyHours}         – total hours per week → determines how many ClassSessions to generate</li>
- *   <li>{@code chunkHours}          – duration of one session (e.g. 1 for lecture, 2 for lab)</li>
- *   <li>{@code maxSessionsPerDay}   – soft/medium cap; default 1</li>
- *   <li>{@code minGapBetweenSess}   – minimum timeslot gap between two sessions of same subject</li>
- *   <li>{@code requiresTeacher}     – false for self-study / project sessions</li>
- *   <li>{@code requiresRoom}        – false for field work / off-campus activities</li>
- * </ul>
- * </p>
- */
+// An academic subject (course component).
+// <p>Lectures and labs for the same course are modelled as <b>separate Subject records</b>
+// to allow independent room-type and teacher assignment. For example:
+// <ul>
+// <li>DSA Lecture  – roomTypeRequired=LECTURE, isLab=false</li>
+// <li>DSA Lab      – roomTypeRequired=LAB, isLab=true</li>
+// </ul>
+// </p>
+// <p>Key scheduling fields used by the constraint provider:
+// <ul>
+// <li>{@code weeklyHours}         – total weekly slot units → determines how many ClassSessions to generate</li>
+// <li>{@code chunkHours}          – size of one session in slot units (e.g. 1 for lecture, 2 for lab)</li>
+// <li>{@code maxSessionsPerDay}   – soft/medium cap; default 1</li>
+// <li>{@code minGapBetweenSess}   – minimum timeslot gap between two sessions of same subject</li>
+// <li>{@code requiresTeacher}     – false for self-study / project sessions</li>
+// <li>{@code requiresRoom}        – false for field work / off-campus activities</li>
+// </ul>
+// </p>
 @Entity
 @Table(name = "subjects")
 @Getter
@@ -45,7 +42,8 @@ public class Subject extends BaseEntity {
     @Column(nullable = false)
     private String name;
 
-    /** Short course code, e.g. "CS301". Displayed in the timetable grid. */
+    // Short course code, e.g. "CS301". Displayed in the timetable grid. 
+    @Size(max = 30)
     @Column
     private String code;
 
@@ -54,15 +52,13 @@ public class Subject extends BaseEntity {
     @JoinColumn(name = "department_id", nullable = false)
     private Department department;
 
-    /** Total contact hours per week (e.g. 4). */
+    // Total contact load per week, expressed in slot units (e.g. 4). 
     @Min(1)
     @Column(nullable = false)
     private int weeklyHours;
 
-    /**
-     * Duration of one session in hours (e.g. 1 for lecture, 2 or 3 for lab).
-     * weeklyHours / chunkHours = number of ClassSessions to create per week.
-     */
+// Size of one session in slot units (e.g. 1 for lecture, 2 or 3 for lab).
+// weeklyHours / chunkHours = number of ClassSessions to create per week.
     @Min(1)
     @Column(nullable = false)
     @Builder.Default
@@ -74,7 +70,7 @@ public class Subject extends BaseEntity {
     @Builder.Default
     private RoomType roomTypeRequired = RoomType.LECTURE;
 
-    /** Required lab subtype; null for lecture subjects. */
+    // Required lab subtype; null for lecture subjects. 
     @Enumerated(EnumType.STRING)
     @Column
     private LabSubtype labSubtypeRequired;
@@ -83,35 +79,55 @@ public class Subject extends BaseEntity {
     @Builder.Default
     private boolean isLab = false;
 
-    /**
-     * When false the solver will not assign a teacher (self-study, project, seminar).
-     */
+// When false the solver will not assign a teacher (self-study, project, seminar).
     @Column(nullable = false)
     @Builder.Default
     private boolean requiresTeacher = true;
 
-    /**
-     * When false the solver will not assign a room (field work, off-campus).
-     */
+// When false the solver will not assign a room (field work, off-campus).
     @Column(nullable = false)
     @Builder.Default
     private boolean requiresRoom = true;
 
-    /**
-     * Minimum number of timeslots between two sessions of this subject.
-     * Supports the "spread sessions across the week" soft constraint.
-     */
+// Minimum number of timeslots between two sessions of this subject.
+// Supports the "spread sessions across the week" soft constraint.
     @Min(0)
     @Column(nullable = false)
     @Builder.Default
     private int minGapBetweenSessions = 0;
 
-    /**
-     * Soft/medium constraint: max sessions of this subject per day.
-     * Default 1 implements the cognitive-load constraint.
-     */
+// Soft/medium constraint: max sessions of this subject per day.
+// Default 1 implements the cognitive-load constraint.
     @Min(1)
     @Column(nullable = false)
     @Builder.Default
     private int maxSessionsPerDay = 1;
+
+    @PrePersist
+    @PreUpdate
+    private void normalizeAndValidate() {
+        if (name != null) {
+            name = name.trim();
+        }
+        if (code != null) {
+            code = code.trim().toUpperCase();
+            if (code.isEmpty()) {
+                code = null;
+            }
+        }
+
+        if (weeklyHours < chunkHours) {
+            throw new IllegalStateException("weeklyHours must be >= chunkHours for subject " + name);
+        }
+        if (weeklyHours % chunkHours != 0) {
+            throw new IllegalStateException("weeklyHours must be divisible by chunkHours for subject " + name);
+        }
+
+        if (isLab && roomTypeRequired != RoomType.LAB) {
+            throw new IllegalStateException("Lab subject must require LAB room type: " + name);
+        }
+        if (!isLab) {
+            labSubtypeRequired = null;
+        }
+    }
 }

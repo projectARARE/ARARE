@@ -1,21 +1,24 @@
 package com.arare.features.event;
 
-import com.arare.common.enums.TimeslotType;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.impact.DisruptionRequest;
+import com.arare.features.impact.DisruptionService;
+import com.arare.features.impact.DisruptionType;
 import com.arare.features.room.RoomRepository;
 import com.arare.features.schedule.ScheduleRepository;
 import com.arare.features.solver.TimetableSolverService;
 import com.arare.features.teacher.TeacherRepository;
-import com.arare.features.timeslot.Timeslot;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
+import java.time.LocalDate;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +32,7 @@ public class EventServiceImpl implements EventService {
     private final ClassSessionRepository sessionRepo;
     private final ScheduleRepository scheduleRepo;
     private final TimetableSolverService solverService;
+    private final DisruptionService disruptionService;
 
     @Override
     @Transactional
@@ -78,28 +82,64 @@ public class EventServiceImpl implements EventService {
         scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
 
-        // 1. Block affected timeslots
-        for (Timeslot slot : event.getAffectedTimeslots()) {
-            slot.setType(TimeslotType.BLOCKED);
-            timeslotRepo.save(slot);
+        Set<Long> impacted = new HashSet<>();
+        List<LocalDate> dates = eventDates(event);
+
+        for (LocalDate date : dates) {
+            for (var room : event.getAffectedRooms()) {
+                impacted.addAll(disruptionService.previewImpact(scheduleId,
+                        new DisruptionRequest(DisruptionType.ROOM_UNAVAILABLE, room.getId(), date, event.getDescription()))
+                    .impactedSessionIds());
+            }
+            for (var teacher : event.getAffectedTeachers()) {
+                impacted.addAll(disruptionService.previewImpact(scheduleId,
+                        new DisruptionRequest(DisruptionType.TEACHER_UNAVAILABLE, teacher.getId(), date, event.getDescription()))
+                    .impactedSessionIds());
+            }
+            for (var timeslot : event.getAffectedTimeslots()) {
+                impacted.addAll(disruptionService.previewImpact(scheduleId,
+                        new DisruptionRequest(DisruptionType.TIMESLOT_BLOCKED, timeslot.getId(), date, event.getDescription()))
+                    .impactedSessionIds());
+            }
         }
 
-        // 2. Collect impacted session IDs
-        List<Long> impacted = new ArrayList<>();
-
-        for (var room : event.getAffectedRooms()) {
-            sessionRepo.findUnlockedByScheduleIdAndRoomId(scheduleId, room.getId())
-                .forEach(s -> impacted.add(s.getId()));
-        }
-        for (var teacher : event.getAffectedTeachers()) {
-            sessionRepo.findUnlockedByScheduleIdAndTeacherId(scheduleId, teacher.getId())
-                .forEach(s -> impacted.add(s.getId()));
+        // If event is broad (no specific entities), treat it as a special event impact.
+        if (event.getAffectedRooms().isEmpty()
+            && event.getAffectedTeachers().isEmpty()
+            && event.getAffectedTimeslots().isEmpty()) {
+            LocalDate date = dates.isEmpty() ? null : dates.get(0);
+            impacted.addAll(disruptionService.previewImpact(scheduleId,
+                    new DisruptionRequest(DisruptionType.SPECIAL_EVENT, null, date, event.getDescription()))
+                .impactedSessionIds());
         }
 
-        // 3. Partial re-solve for impacted sessions
         if (!impacted.isEmpty()) {
-            solverService.partialResolve(scheduleId, impacted.stream().distinct().toList());
+            solverService.partialResolve(scheduleId, impacted.stream().toList());
         }
+    }
+
+    private List<LocalDate> eventDates(Event event) {
+        if (event.getStartDate() == null && event.getEndDate() == null) {
+            return Collections.singletonList(null);
+        }
+        LocalDate start = event.getStartDate() != null ? event.getStartDate() : event.getEndDate();
+        LocalDate end = event.getEndDate() != null ? event.getEndDate() : event.getStartDate();
+        if (start == null || end == null) {
+            return Collections.singletonList(null);
+        }
+        if (end.isBefore(start)) {
+            LocalDate tmp = start;
+            start = end;
+            end = tmp;
+        }
+
+        List<LocalDate> dates = new java.util.ArrayList<>();
+        LocalDate cur = start;
+        while (!cur.isAfter(end)) {
+            dates.add(cur);
+            cur = cur.plusDays(1);
+        }
+        return dates;
     }
 
     @Override

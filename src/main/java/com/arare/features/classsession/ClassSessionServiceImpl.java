@@ -48,20 +48,24 @@ public class ClassSessionServiceImpl implements ClassSessionService {
             Teacher t = teacherRepo.findById(req.teacherId())
                 .orElseThrow(() -> new ResourceNotFoundException("Teacher", req.teacherId()));
             s.setTeacher(t);
-        } else if (req.teacherId() == null && req.locked() == null) {
-            // explicit null means "keep current"
+        } else if (Boolean.TRUE.equals(req.clearTeacher())) {
+            s.setTeacher(null);
         }
 
         if (req.roomId() != null) {
             Room r = roomRepo.findById(req.roomId())
                 .orElseThrow(() -> new ResourceNotFoundException("Room", req.roomId()));
             s.setRoom(r);
+        } else if (Boolean.TRUE.equals(req.clearRoom())) {
+            s.setRoom(null);
         }
 
         if (req.timeslotId() != null) {
             Timeslot ts = timeslotRepo.findById(req.timeslotId())
                 .orElseThrow(() -> new ResourceNotFoundException("Timeslot", req.timeslotId()));
             s.setTimeslot(ts);
+        } else if (Boolean.TRUE.equals(req.clearTimeslot())) {
+            s.setTimeslot(null);
         }
 
         if (req.locked() != null) {

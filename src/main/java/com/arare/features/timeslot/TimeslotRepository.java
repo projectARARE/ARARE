@@ -14,7 +14,7 @@ public interface TimeslotRepository extends JpaRepository<Timeslot, Long> {
 
     List<Timeslot> findByType(TimeslotType type);
 
-    /** Returns all timeslots available for scheduling (not breaks or blocked). */
+    // Returns all timeslots available for scheduling (not breaks or blocked). 
     List<Timeslot> findByTypeNot(TimeslotType type);
 
     List<Timeslot> findByDayAndType(SchoolDay day, TimeslotType type);

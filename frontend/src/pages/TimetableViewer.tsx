@@ -80,9 +80,12 @@ export default function TimetableViewer() {
         setBatches(b)
         setTeachers(t)
         setRooms(r)
-        if (b.length > 0) setBatchFilterId(b[0].id)
-        if (t.length > 0) setTeacherFilterId(t[0].id)
-        if (r.length > 0) setRoomFilterId(r[0].id)
+        const batchInSessions = new Set(sess.map((s) => s.batchId).filter((id): id is number => id != null))
+        const teacherInSessions = new Set(sess.map((s) => s.teacherId).filter((id): id is number => id != null))
+        const roomInSessions = new Set(sess.map((s) => s.roomId).filter((id): id is number => id != null))
+        setBatchFilterId(b.find((x) => batchInSessions.has(x.id))?.id)
+        setTeacherFilterId(t.find((x) => teacherInSessions.has(x.id))?.id)
+        setRoomFilterId(r.find((x) => roomInSessions.has(x.id))?.id)
       })
       .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to load schedule'))
       .finally(() => setLoading(false))
@@ -118,7 +121,10 @@ export default function TimetableViewer() {
 
   const buildDisruptionRequest = (): DisruptionRequest => ({
     type: disruptionType,
-    affectedEntityId: disruptionEntityId ? +disruptionEntityId : 0,
+    affectedEntityId:
+      disruptionType === 'SPECIAL_EVENT'
+        ? null
+        : (disruptionEntityId ? +disruptionEntityId : undefined),
     date: disruptionDate || undefined,
     description: disruptionDescription || undefined,
   })
@@ -174,13 +180,18 @@ export default function TimetableViewer() {
         teacherId: editTeacherId ? +editTeacherId : null,
         roomId: editRoomId ? +editRoomId : null,
         timeslotId: editTimeslotId ? +editTimeslotId : null,
+        clearTeacher: !editTeacherId,
+        clearRoom: !editRoomId,
+        clearTimeslot: !editTimeslotId,
         locked: editLocked,
       })
       setSelectedSession(null)
       setEditMode(false)
       toast.success('Session assignment updated')
       // Reload only sessions (not full data) to keep it fast
-      scheduleApi.getSessions(scheduleId).then(setSessions).catch(() => {})
+      scheduleApi.getSessions(scheduleId)
+        .then(setSessions)
+        .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to reload sessions'))
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Failed to save assignment')
     } finally {

@@ -179,6 +179,7 @@ export interface Timeslot {
   day: SchoolDay
   startTime: string
   endTime: string
+  slotNumber?: number
   type: TimeslotType
   createdAt?: string
 }
@@ -186,6 +187,7 @@ export interface TimeslotRequest {
   day: SchoolDay
   startTime: string
   endTime: string
+  slotNumber?: number
   type: TimeslotType
 }
 
@@ -320,6 +322,9 @@ export interface SessionAssignmentRequest {
   roomId?: number | null
   timeslotId?: number | null
   locked?: boolean
+  clearTeacher?: boolean
+  clearRoom?: boolean
+  clearTimeslot?: boolean
 }
 
 // ─── AcademicTerm ─────────────────────────────────────────────────────────────
@@ -361,7 +366,7 @@ export type DisruptionType =
 
 export interface DisruptionRequest {
   type: DisruptionType
-  affectedEntityId: number
+  affectedEntityId?: number | null
   date?: string              // ISO date e.g. "2026-03-15"
   description?: string
 }

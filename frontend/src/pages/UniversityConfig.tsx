@@ -24,7 +24,7 @@ export default function UniversityConfigPage() {
   useEffect(() => {
     universityConfigApi.get()
       .then((cfg) => { if (cfg) setForm(cfg) })
-      .catch(() => {})
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load configuration'))
       .finally(() => setLoading(false))
   }, [])
 

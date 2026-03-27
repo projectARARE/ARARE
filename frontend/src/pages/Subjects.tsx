@@ -139,7 +139,7 @@ export default function Subjects() {
       sortValue: (s) => s.departmentName ?? '',
       render: (s) => s.departmentName ?? `#${s.departmentId}`,
     },
-    { key: 'hours', header: 'Weekly / Chunk', render: (s) => `${s.weeklyHours}h / ${s.chunkHours}h` },
+    { key: 'hours', header: 'Weekly / Chunk', render: (s) => `${s.weeklyHours} slots / ${s.chunkHours} slots` },
     {
       key: 'lab', header: 'Type',
       render: (s) => s.isLab ? <Badge label="Lab" variant="purple" /> : <Badge label="Lecture" variant="blue" />,
@@ -196,8 +196,8 @@ export default function Subjects() {
               options={ROOM_TYPE_OPTIONS}
               helpText="Type of room this subject needs"
             />
-            <Input label="Weekly Hours" type="number" min={1} value={form.weeklyHours} onChange={(e) => setForm({ ...form, weeklyHours: +e.target.value })} />
-            <Input label="Chunk Hours (per session)" type="number" min={1} value={form.chunkHours} onChange={(e) => setForm({ ...form, chunkHours: +e.target.value })} />
+            <Input label="Weekly Slot Units" type="number" min={1} value={form.weeklyHours} onChange={(e) => setForm({ ...form, weeklyHours: +e.target.value })} />
+            <Input label="Chunk Size (slots per session)" type="number" min={1} value={form.chunkHours} onChange={(e) => setForm({ ...form, chunkHours: +e.target.value })} />
             <Input label="Max Sessions / Day" type="number" min={1} value={form.maxSessionsPerDay} onChange={(e) => setForm({ ...form, maxSessionsPerDay: +e.target.value })} />
             <Input
               label="Min Gap Between Sessions (slots)"

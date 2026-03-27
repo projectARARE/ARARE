@@ -45,7 +45,11 @@ export default function TimetableGrid({
     for (const day of days) {
       map[day] = timeslots
         .filter((t) => t.day === day)
-        .sort((a, b) => a.startTime.localeCompare(b.startTime))
+        .sort((a, b) => {
+          const slotCmp = (a.slotNumber ?? Number.MAX_SAFE_INTEGER) - (b.slotNumber ?? Number.MAX_SAFE_INTEGER)
+          if (slotCmp !== 0) return slotCmp
+          return a.startTime.localeCompare(b.startTime)
+        })
     }
     return map
   }, [timeslots, days])
@@ -106,7 +110,24 @@ export default function TimetableGrid({
       const startIdx = daySlots.findIndex((t) => t.id === s.timeslotId)
       if (startIdx < 0) continue
 
-      const endIdx = Math.min(daySlots.length - 1, startIdx + s.duration - 1)
+      const requiredSlots = s.duration
+      let coveredSlots = 0
+      let endIdx = startIdx
+
+      for (let idx = startIdx; idx < daySlots.length; idx += 1) {
+        if (idx > startIdx) {
+          const prev = daySlots[idx - 1]
+          const current = daySlots[idx]
+          // Stop coverage on gaps; multi-slot sessions must occupy contiguous slots.
+          if (prev.endTime !== current.startTime) break
+        }
+
+        coveredSlots += 1
+        endIdx = idx
+
+        if (coveredSlots >= requiredSlots) break
+      }
+
       const startSlot = daySlots[startIdx]
       const endSlot = daySlots[endIdx]
 

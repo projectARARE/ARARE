@@ -27,12 +27,12 @@ public interface SubjectRepository extends JpaRepository<Subject, Long> {
     @Query("DELETE FROM Subject s WHERE s.department.id = :departmentId")
     void deleteByDepartmentId(@Param("departmentId") Long departmentId);
 
-    /** Remove one subject from teacher_subjects join table before single-subject deletion. */
+    // Remove one subject from teacher_subjects join table before single-subject deletion. 
     @Transactional @Modifying
     @Query(nativeQuery = true, value = "DELETE FROM teacher_subjects WHERE subject_id = :id")
     void removeTeacherAssociations(@Param("id") Long id);
 
-    /** Bulk-remove all subjects of a department from the teacher_subjects join table. */
+    // Bulk-remove all subjects of a department from the teacher_subjects join table. 
     @Transactional @Modifying
     @Query(nativeQuery = true,
            value = "DELETE FROM teacher_subjects WHERE subject_id IN " +

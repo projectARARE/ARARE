@@ -63,7 +63,9 @@ export default function ScheduleGenerator() {
           }))
         }
       }
-    }).catch(() => {})
+    }).catch((e) => {
+      setError(e instanceof Error ? e.message : 'Failed to load scheduling prerequisites')
+    })
   }, [])
 
   // Filter batches by selected department in department scope

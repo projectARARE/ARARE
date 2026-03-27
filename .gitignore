@@ -8,6 +8,7 @@ pnpm-debug.log*
 # Production builds
 dist/
 build/
+target/
 *.tsbuildinfo
 
 # Environment variables
@@ -94,6 +95,8 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+.tmp-curl/
+.tmp-*/
 
 # Vite
 .vite/

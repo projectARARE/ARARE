@@ -7,6 +7,9 @@ import com.arare.features.schedule.Schedule;
 import com.arare.features.schedule.ScheduleRepository;
 import com.arare.features.schedule.ScheduleResponse;
 import com.arare.features.schedule.ScheduleService;
+import com.arare.features.teacher.TeacherRepository;
+import com.arare.features.room.RoomRepository;
+import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,10 +30,15 @@ public class DisruptionServiceImpl implements DisruptionService {
     private final ImpactAnalyzer           impactAnalyzer;
     private final ScheduleService          scheduleService;
 
+    private final TeacherRepository        teacherRepo;
+    private final RoomRepository           roomRepo;
+    private final TimeslotRepository       timeslotRepo;
+
     @Override
     @Transactional(readOnly = true)
     public DisruptionResponse previewImpact(Long scheduleId, DisruptionRequest request) {
         validateSchedule(scheduleId);
+        validateRequest(request);
         List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId);
 
         DependencyGraph graph = graphBuilder.build(sessions);
@@ -61,6 +69,7 @@ public class DisruptionServiceImpl implements DisruptionService {
     @Transactional
     public ScheduleResponse applyDisruption(Long scheduleId, DisruptionRequest request) {
         validateSchedule(scheduleId);
+        validateRequest(request);
         List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId);
 
         DependencyGraph graph = graphBuilder.build(sessions);
@@ -87,22 +96,23 @@ public class DisruptionServiceImpl implements DisruptionService {
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
     }
 
+    private void validateRequest(DisruptionRequest request) {
+        boolean needsEntity = request.type() != DisruptionType.SPECIAL_EVENT;
+        if (needsEntity && request.affectedEntityId() == null) {
+            throw new IllegalArgumentException("affectedEntityId is required for disruption type " + request.type());
+        }
+    }
+
     private String resolveEntityName(DisruptionRequest request, List<ClassSession> sessions) {
         return switch (request.type()) {
-            case TEACHER_UNAVAILABLE -> sessions.stream()
-                    .filter(s -> s.getTeacher() != null && s.getTeacher().getId().equals(request.affectedEntityId()))
-                    .findFirst()
-                    .map(s -> s.getTeacher().getName())
+            case TEACHER_UNAVAILABLE -> teacherRepo.findById(request.affectedEntityId())
+                    .map(com.arare.features.teacher.Teacher::getName)
                     .orElse("Unknown Teacher");
-            case ROOM_UNAVAILABLE -> sessions.stream()
-                    .filter(s -> s.getRoom() != null && s.getRoom().getId().equals(request.affectedEntityId()))
-                    .findFirst()
-                    .map(s -> s.getRoom().getRoomNumber())
+            case ROOM_UNAVAILABLE -> roomRepo.findById(request.affectedEntityId())
+                    .map(com.arare.features.room.Room::getRoomNumber)
                     .orElse("Unknown Room");
-            case TIMESLOT_BLOCKED -> sessions.stream()
-                    .filter(s -> s.getTimeslot() != null && s.getTimeslot().getId().equals(request.affectedEntityId()))
-                    .findFirst()
-                    .map(s -> s.getTimeslot().getDay() + " " + s.getTimeslot().getStartTime())
+            case TIMESLOT_BLOCKED -> timeslotRepo.findById(request.affectedEntityId())
+                    .map(ts -> ts.getDay() + " " + ts.getStartTime())
                     .orElse("Unknown Timeslot");
             case SESSION_CANCELLED -> sessions.stream()
                     .filter(s -> s.getId().equals(request.affectedEntityId()))

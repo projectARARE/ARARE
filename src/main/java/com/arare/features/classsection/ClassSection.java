@@ -4,28 +4,28 @@ import com.arare.common.BaseEntity;
 import com.arare.features.batch.Batch;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
-/**
- * A sub-division of a {@link Batch} for labs where room capacity is smaller
- * than the full batch size.
- *
- * <p>Example:
- * <pre>
- *   Batch CSE-2A: 60 students
- *   Lab capacity: 36
- *
- *   Section A: 30 students  → assigned to Lab slot 1
- *   Section B: 30 students  → assigned to Lab slot 2
- * </pre>
- * </p>
- *
- * <p>Each ClassSection generates its own {@link com.arare.features.classsession.ClassSession}
- * for lab subjects, enabling independent room and timeslot assignment.</p>
- */
+// A sub-division of a {@link Batch} for labs where room capacity is smaller
+// than the full batch size.
+// <p>Example:
+// <pre>
+// Batch CSE-2A: 60 students
+// Lab capacity: 36
+// Section A: 30 students  → assigned to Lab slot 1
+// Section B: 30 students  → assigned to Lab slot 2
+// </pre>
+// </p>
+// <p>Each ClassSection generates its own {@link com.arare.features.classsession.ClassSession}
+// for lab subjects, enabling independent room and timeslot assignment.</p>
 @Entity
-@Table(name = "class_sections")
+@Table(
+    name = "class_sections",
+    uniqueConstraints = @UniqueConstraint(columnNames = {"batch_id", "label"})
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -38,7 +38,9 @@ public class ClassSection extends BaseEntity {
     @JoinColumn(name = "batch_id", nullable = false)
     private Batch batch;
 
-    /** Label for the section, e.g. "A", "B". */
+    // Label for the section, e.g. "A", "B". 
+    @NotBlank
+    @Size(max = 10)
     @Column(nullable = false)
     @Builder.Default
     private String label = "A";
@@ -46,4 +48,12 @@ public class ClassSection extends BaseEntity {
     @Min(1)
     @Column(nullable = false)
     private int size;
+
+    @PrePersist
+    @PreUpdate
+    private void normalize() {
+        if (label != null) {
+            label = label.trim().toUpperCase();
+        }
+    }
 }

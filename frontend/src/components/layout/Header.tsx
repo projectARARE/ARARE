@@ -14,6 +14,7 @@ const titles: Record<string, string> = {
   '/schedule/generate': 'Generate Schedule',
   '/schedule/history': 'Schedule History',
   '/events': 'Events',
+  '/disruptions': 'Disruptions',
 }
 
 export default function Header() {

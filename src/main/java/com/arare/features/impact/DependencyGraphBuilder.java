@@ -7,19 +7,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Constructs a {@link DependencyGraph} from the sessions belonging to one schedule.
- *
- * <p>Three types of edges are created:</p>
- * <ul>
- *   <li><b>TEACHER</b> — sessions sharing the same teacher conflict on the same timeslot.</li>
- *   <li><b>ROOM</b>    — sessions sharing the same room conflict on the same timeslot.</li>
- *   <li><b>BATCH</b>   — sessions for the same batch conflict with each other.</li>
- * </ul>
- *
- * <p>O(n²) in the worst case per resource group, but in practice each group is small
- * (a typical teacher has 10–20 sessions), so the graph build is very fast.</p>
- */
+// Constructs a {@link DependencyGraph} from the sessions belonging to one schedule.
+// <p>Three types of edges are created:</p>
+// <ul>
+// <li><b>TEACHER</b> — sessions sharing the same teacher conflict on the same timeslot.</li>
+// <li><b>ROOM</b>    — sessions sharing the same room conflict on the same timeslot.</li>
+// <li><b>BATCH</b>   — sessions for the same batch conflict with each other.</li>
+// </ul>
+// <p>O(n²) in the worst case per resource group, but in practice each group is small
+// (a typical teacher has 10–20 sessions), so the graph build is very fast.</p>
 @Component
 public class DependencyGraphBuilder {
 
@@ -52,7 +48,7 @@ public class DependencyGraphBuilder {
         return graph;
     }
 
-    /** Creates bidirectional edges between every pair of sessions in the group. */
+    // Creates bidirectional edges between every pair of sessions in the group. 
     private void connectAll(DependencyGraph graph, List<ClassSession> group, DependencyType type) {
         for (int i = 0; i < group.size(); i++) {
             for (int j = i + 1; j < group.size(); j++) {

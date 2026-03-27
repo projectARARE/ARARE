@@ -12,14 +12,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * Exports a solved schedule to CSV format.
- *
- * <p>The CSV output is a flat list of assigned sessions ordered by
- * day-of-week then start time, suitable for import into Excel or
- * any spreadsheet application.  An UTF-8 BOM is prepended so Excel
- * opens the file with the correct encoding without a manual import step.</p>
- */
+// Exports a solved schedule to CSV format.
+// <p>The CSV output is a flat list of assigned sessions ordered by
+// day-of-week then start time, suitable for import into Excel or
+// any spreadsheet application.  An UTF-8 BOM is prepended so Excel
+// opens the file with the correct encoding without a manual import step.</p>
 @Service
 @RequiredArgsConstructor
 public class TimetableExportService {
