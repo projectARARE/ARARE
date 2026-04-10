@@ -301,6 +301,23 @@ export interface ScoreExplanation {
   constraints: ConstraintBreakdown[]
 }
 
+export interface ConflictSuggestion {
+  timeslotId: number
+  label: string
+  preview: string
+  scoreHint: string
+  hardConflicts: number
+  softPenalties: number
+}
+
+export interface CsvImportResponse {
+  entityType: string
+  created: number
+  updated: number
+  skipped: number
+  errors: string[]
+}
+
 // ─── University Config Entry (key-value) ─────────────────────────────────────
 
 export interface UniversityConfigEntry {

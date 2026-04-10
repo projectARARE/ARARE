@@ -1,7 +1,5 @@
 package com.arare.features.classsession;
 
-// View DTO for a solved ClassSession, used by the timetable viewer UI.
-// <p>Includes denormalized display names to avoid extra round-trips from the frontend.</p>
 public record ClassSessionResponse(
     Long id,
     Long subjectId,

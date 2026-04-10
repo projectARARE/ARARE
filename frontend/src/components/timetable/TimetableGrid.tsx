@@ -20,9 +20,22 @@ interface TimetableGridProps {
   timeslots: Timeslot[]
   activeDays?: SchoolDay[]
   onSessionClick?: (session: ClassSession) => void
+  onSessionHover?: (session: ClassSession | null) => void
+  onSessionDragStart?: (session: ClassSession) => void
+  onSessionDragEnd?: () => void
+  onSlotDragHover?: (slot: Timeslot | null) => void
+  onSlotDrop?: (slot: Timeslot) => void
   filterBatchId?: number
   filterTeacherId?: number
   filterRoomId?: number
+  heatmapEnabled?: boolean
+  heatBySessionId?: Record<number, { hard: number; soft: number; notes: string[] }>
+  highlightedSessionIds?: Set<number>
+  dragPreview?: {
+    slotId: number
+    severity: 'hard' | 'soft' | 'clean'
+    label: string
+  } | null
 }
 
 export default function TimetableGrid({
@@ -30,9 +43,18 @@ export default function TimetableGrid({
   timeslots,
   activeDays,
   onSessionClick,
+  onSessionHover,
+  onSessionDragStart,
+  onSessionDragEnd,
+  onSlotDragHover,
+  onSlotDrop,
   filterBatchId,
   filterTeacherId,
   filterRoomId,
+  heatmapEnabled = false,
+  heatBySessionId = {},
+  highlightedSessionIds,
+  dragPreview,
 }: TimetableGridProps) {
   // Determine which days to show
   const days = activeDays?.length
@@ -190,20 +212,61 @@ export default function TimetableGrid({
                   ? sessionIndex[`${day}:${slot.id}`] ?? []
                   : []
                 const rowSpan = spanMeta.rowSpanByCell.get(cellKey) ?? 1
+                const activePreview = dragPreview?.slotId === slot?.id ? dragPreview : null
 
                 return (
                   <td
                     key={day}
                     rowSpan={rowSpan}
                     className="border border-gray-200 px-2 py-2 align-top min-h-[60px]"
+                    onDragOver={(e) => {
+                      if (!slot) return
+                      e.preventDefault()
+                      onSlotDragHover?.(slot)
+                    }}
+                    onDragLeave={() => onSlotDragHover?.(null)}
+                    onDrop={(e) => {
+                      if (!slot) return
+                      e.preventDefault()
+                      onSlotDrop?.(slot)
+                    }}
                   >
+                    {activePreview && (
+                      <div className={`mb-1 rounded-md border px-2 py-1 text-[11px] font-medium ${
+                        activePreview.severity === 'hard'
+                          ? 'border-rose-300 bg-rose-50 text-rose-700'
+                          : activePreview.severity === 'soft'
+                            ? 'border-amber-300 bg-amber-50 text-amber-700'
+                            : 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                      }`}>
+                        {activePreview.label}
+                      </div>
+                    )}
                     <div className="space-y-1">
                       {cellSessions.map((s) => (
+                        (() => {
+                          const heat = heatBySessionId[s.id] ?? { hard: 0, soft: 0, notes: [] }
+                          const heatState = !heatmapEnabled
+                            ? 'none'
+                            : heat.hard > 0
+                              ? 'hard'
+                              : heat.soft > 0
+                                ? 'soft'
+                                : 'none'
+                          return (
                         <SessionCell
                           key={s.id}
                           session={s}
                           onClick={onSessionClick}
+                          onHover={onSessionHover}
+                          onDragStart={onSessionDragStart}
+                          onDragEnd={onSessionDragEnd}
+                          heatState={heatState}
+                          inspectorNotes={heat.notes}
+                          highlighted={highlightedSessionIds?.has(s.id) ?? false}
                         />
+                          )
+                        })()
                       ))}
                     </div>
                   </td>

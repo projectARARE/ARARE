@@ -8,11 +8,14 @@ import com.arare.features.classsession.ClassSession;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.classsession.ClassSessionResponse;
 import com.arare.features.solver.ScoreExplanationResponse;
+import com.arare.features.timeslot.Timeslot;
+import com.arare.features.timeslot.TimeslotRepository;
 import com.arare.features.solver.TimetableSolverService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -23,6 +26,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     private final TimetableSolverService solverService;
     private final ClassSessionRepository sessionRepo;
     private final FeasibilityCheckService feasibilityCheckService;
+    private final TimeslotRepository timeslotRepo;
 
     @Override
     @Transactional
@@ -51,7 +55,6 @@ public class ScheduleServiceImpl implements ScheduleService {
             .build();
         schedule = repo.save(schedule);
 
-        // Run solver synchronously; for long runs consider @Async or a job queue
         solverService.solveSchedule(schedule.getId(), req.departmentId(),
             req.batchIds(), req.teacherIds(), req.roomIds(), req.solvingTimeSeconds());
 
@@ -110,9 +113,32 @@ public class ScheduleServiceImpl implements ScheduleService {
                 .toList();
     }
 
-    // ------------------------------------------------------------------
-    // Private helpers
-    // ------------------------------------------------------------------
+    @Override
+    @Transactional(readOnly = true)
+    public List<ConflictSuggestionResponse> suggestFixes(Long scheduleId, Long sessionId, int limit) {
+        findEntity(scheduleId);
+
+        ClassSession target = sessionRepo.findById(sessionId)
+            .orElseThrow(() -> new ResourceNotFoundException("ClassSession", sessionId));
+        if (target.getSchedule() == null || !target.getSchedule().getId().equals(scheduleId)) {
+            throw new IllegalStateException("Session does not belong to schedule " + scheduleId);
+        }
+
+        List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId);
+        List<Timeslot> classTimeslots = timeslotRepo.findByType(com.arare.common.enums.TimeslotType.CLASS);
+
+        int maxSuggestions = Math.max(1, limit);
+        return classTimeslots.stream()
+            .filter(slot -> target.getTimeslot() == null || !slot.getId().equals(target.getTimeslot().getId()))
+            .map(slot -> buildSuggestion(target, slot, sessions))
+            .sorted(Comparator
+                .comparingInt(ConflictSuggestionResponse::hardConflicts)
+                .thenComparingInt(ConflictSuggestionResponse::softPenalties)
+                .thenComparing(ConflictSuggestionResponse::label))
+            .limit(maxSuggestions)
+            .toList();
+    }
+
 
     private Schedule findEntity(Long id) {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Schedule", id));
@@ -128,7 +154,6 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     private ClassSessionResponse toSessionResponse(ClassSession cs) {
-        // Construct a human-readable batch/section label
         String batchLabel = null;
         if (cs.getSection() != null) {
             batchLabel = cs.getSection().getLabel();
@@ -169,5 +194,79 @@ public class ScheduleServiceImpl implements ScheduleService {
                 cs.getDuration(),
                 cs.isLocked()
         );
+    }
+
+    private ConflictSuggestionResponse buildSuggestion(ClassSession target, Timeslot slot, List<ClassSession> sessions) {
+        int hard = 0;
+        int soft = 0;
+
+        for (ClassSession other : sessions) {
+            if (other.getId().equals(target.getId()) || other.getTimeslot() == null) {
+                continue;
+            }
+            if (!other.getTimeslot().getId().equals(slot.getId())) {
+                continue;
+            }
+
+            if (target.getTeacher() != null
+                && other.getTeacher() != null
+                && target.getTeacher().getId().equals(other.getTeacher().getId())) {
+                hard += 1;
+            }
+            if (target.getRoom() != null
+                && other.getRoom() != null
+                && target.getRoom().getId().equals(other.getRoom().getId())) {
+                hard += 1;
+            }
+
+            Long targetBatchId = effectiveBatchId(target);
+            Long otherBatchId = effectiveBatchId(other);
+            if (targetBatchId != null && otherBatchId != null && targetBatchId.equals(otherBatchId)) {
+                hard += 1;
+            }
+        }
+
+        Long targetBatchId = effectiveBatchId(target);
+        for (ClassSession other : sessions) {
+            if (other.getId().equals(target.getId()) || other.getTimeslot() == null) {
+                continue;
+            }
+            if (targetBatchId == null || !targetBatchId.equals(effectiveBatchId(other))) {
+                continue;
+            }
+            if (target.getSubject() != null
+                && other.getSubject() != null
+                && target.getSubject().getId().equals(other.getSubject().getId())
+                && other.getTimeslot().getDay() == slot.getDay()) {
+                soft += 1;
+            }
+        }
+
+        String label = slot.getDay().name() + " " + slot.getStartTime() + "-" + slot.getEndTime();
+        String preview = hard > 0
+            ? hard + " hard conflict(s) remain"
+            : "No hard conflicts, " + soft + " soft issue(s)";
+        String scoreHint = hard > 0
+            ? "HARD +" + hard
+            : (soft > 0 ? "Soft +" + soft : "Best move");
+
+        return new ConflictSuggestionResponse(
+            slot.getId(),
+            label,
+            preview,
+            scoreHint,
+            hard,
+            soft
+        );
+    }
+
+    private Long effectiveBatchId(ClassSession session) {
+        if (session.getBatch() != null) {
+            return session.getBatch().getId();
+        }
+        if (session.getSection() != null && session.getSection().getBatch() != null) {
+            return session.getSection().getBatch().getId();
+        }
+        return null;
     }
 }

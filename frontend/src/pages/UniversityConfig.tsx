@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { Card, Button, Input } from '../components/ui'
-import { universityConfigApi } from '../services/api'
+import { useState, useEffect, useMemo } from 'react'
+import { Card, Button, Input, AvailabilityPainter } from '../components/ui'
+import { universityConfigApi, timeslotApi } from '../services/api'
 import type { UniversityConfig, SchoolDay } from '../types'
+import type { Timeslot } from '../types'
 
 const ALL_DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
 
@@ -20,10 +21,43 @@ export default function UniversityConfigPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [timeslots, setTimeslots] = useState<Timeslot[]>([])
+  const [paintedAvailableTimeslotIds, setPaintedAvailableTimeslotIds] = useState<number[]>([])
+
+  const painterTimeslots = useMemo<Timeslot[]>(() => {
+    const classTimeslots = timeslots.filter((ts) => ts.type === 'CLASS')
+    if (classTimeslots.length > 0) return timeslots
+
+    const days = form.workingDays.length > 0 ? form.workingDays : ALL_DAYS.slice(0, Math.max(5, Math.min(6, form.daysPerWeek)))
+    const slotsPerDay = Math.max(1, form.timeslotsPerDay || 1)
+    const preview: Timeslot[] = []
+    let nextId = 100000
+
+    for (const day of days) {
+      for (let slot = 0; slot < slotsPerDay; slot++) {
+        const hour = 9 + slot
+        const startHour = String(hour).padStart(2, '0')
+        const endHour = String(hour + 1).padStart(2, '0')
+        preview.push({
+          id: nextId++,
+          day,
+          startTime: `${startHour}:00`,
+          endTime: `${endHour}:00`,
+          slotNumber: slot,
+          type: 'CLASS',
+        })
+      }
+    }
+
+    return preview
+  }, [timeslots, form.workingDays, form.daysPerWeek, form.timeslotsPerDay])
 
   useEffect(() => {
-    universityConfigApi.get()
-      .then((cfg) => { if (cfg) setForm(cfg) })
+    Promise.all([universityConfigApi.get(), timeslotApi.getAll()])
+      .then(([cfg, allTimeslots]) => {
+        if (cfg) setForm(cfg)
+        setTimeslots(allTimeslots)
+      })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load configuration'))
       .finally(() => setLoading(false))
   }, [])
@@ -130,6 +164,23 @@ export default function UniversityConfigPage() {
                 setForm({ ...form, breakSlotIndices: indices })
               }}
               placeholder="3, 6"
+            />
+          </div>
+
+          <div>
+            <p className="block text-sm font-medium text-gray-700 mb-1">Visual Availability Painter (Preview)</p>
+            <p className="text-xs text-gray-500 mb-2">
+              Paint the campus-wide preferred available windows. Use this to prototype operating hours quickly.
+            </p>
+            {timeslots.filter((ts) => ts.type === 'CLASS').length === 0 && (
+              <p className="text-xs text-amber-700 mb-2">
+                No class timeslots found yet. Showing a generated preview grid based on current configuration.
+              </p>
+            )}
+            <AvailabilityPainter
+              timeslots={painterTimeslots}
+              selectedIds={paintedAvailableTimeslotIds}
+              onChange={setPaintedAvailableTimeslotIds}
             />
           </div>
 

@@ -32,8 +32,6 @@ public class ClassSessionController {
         return ResponseEntity.ok(service.findByScheduleAndTeacher(scheduleId, teacherId));
     }
 
-// Manually reassign teacher, room, or timeslot for a session.
-// Also supports locking/unlocking a session.
     @PatchMapping("/{id}")
     public ResponseEntity<ClassSessionResponse> updateAssignment(
         @PathVariable Long id,

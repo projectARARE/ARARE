@@ -74,9 +74,17 @@ public class StandardSessionGenerator implements SessionGenerator {
         boolean canRunWholeBatch = rooms.stream().anyMatch(room ->
             room.getType() == RoomType.LAB
                 && room.getCapacity() >= batch.getStudentCount()
-                && (subject.getLabSubtypeRequired() == null
-                    || room.getLabSubtype() == null
-                    || subject.getLabSubtypeRequired().equals(room.getLabSubtype()))
+                && roomMatchesLabSubtype(subject, room)
+        );
+
+        List<ClassSection> batchSections = sections.stream()
+            .filter(s -> s.getBatch().getId().equals(batch.getId()))
+            .toList();
+
+        boolean canRunBySections = !batchSections.isEmpty() && batchSections.stream().allMatch(section ->
+            rooms.stream().anyMatch(room -> room.getType() == RoomType.LAB
+                && room.getCapacity() >= section.getSize()
+                && roomMatchesLabSubtype(subject, room))
         );
 
         if (canRunWholeBatch) {
@@ -86,11 +94,7 @@ public class StandardSessionGenerator implements SessionGenerator {
             return;
         }
 
-        List<ClassSection> batchSections = sections.stream()
-            .filter(s -> s.getBatch().getId().equals(batch.getId()))
-            .toList();
-
-        if (batchSections.isEmpty()) {
+        if (!canRunBySections) {
             for (int i = 0; i < count; i++) {
                 generated.add(createSession(schedule, subject, batch, null));
             }
@@ -125,5 +129,10 @@ public class StandardSessionGenerator implements SessionGenerator {
             .duration(subject.getChunkHours())
             .isLocked(false)
             .build();
+    }
+
+    private boolean roomMatchesLabSubtype(Subject subject, Room room) {
+        return subject.getLabSubtypeRequired() == null
+            || subject.getLabSubtypeRequired().equals(room.getLabSubtype());
     }
 }

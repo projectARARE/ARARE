@@ -16,6 +16,11 @@ import {
   Zap,
   CalendarDays,
   AlertTriangle,
+  BarChart3,
+  GitCompare,
+  SlidersHorizontal,
+  Link2,
+  FileSpreadsheet,
 } from 'lucide-react'
 
 interface NavItem {
@@ -32,13 +37,17 @@ interface NavGroup {
 const nav: NavGroup[] = [
   {
     group: 'Overview',
-    items: [{ to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' }],
+    items: [
+      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+      { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+    ],
   },
   {
     group: 'Scheduling',
     items: [
       { to: '/schedule/generate', icon: CalendarPlus, label: 'Generate Schedule' },
       { to: '/schedule/history', icon: History, label: 'History' },
+      { to: '/what-if', icon: GitCompare, label: 'What-If Compare' },
       { to: '/academic-terms', icon: CalendarDays, label: 'Academic Terms' },
       { to: '/events', icon: CalendarX2, label: 'Events' },
       { to: '/disruptions', icon: AlertTriangle, label: 'Disruptions' },
@@ -64,7 +73,12 @@ const nav: NavGroup[] = [
   },
   {
     group: 'Configuration',
-    items: [{ to: '/config', icon: Settings, label: 'University Config' }],
+    items: [
+      { to: '/config', icon: Settings, label: 'University Config' },
+      { to: '/constraints', icon: SlidersHorizontal, label: 'Constraint Tuning' },
+      { to: '/portal', icon: Link2, label: 'Calendar Portal' },
+      { to: '/import/csv', icon: FileSpreadsheet, label: 'CSV Import' },
+    ],
   },
 ]
 

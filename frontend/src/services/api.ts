@@ -30,6 +30,8 @@ import type {
   DisruptionRequest,
   DisruptionResponse,
   FeasibilityCheckResult,
+  ConflictSuggestion,
+  CsvImportResponse,
 } from '../types'
 
 const api = axios.create({ baseURL: '/api/v1' })
@@ -160,8 +162,28 @@ export const scheduleApi = {
     api.post<Schedule>(`/schedules/${id}/disruption/apply`, data).then((r) => r.data),
   exportCsv: (id: number) =>
     api.get(`/schedules/${id}/export/csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  getTeacherIcalUrl: (teacherId: number, scheduleId?: number) =>
+    `/api/v1/schedules/ical/teacher/${teacherId}${scheduleId ? `?scheduleId=${scheduleId}` : ''}`,
+  getBatchIcalUrl: (batchId: number, scheduleId?: number) =>
+    `/api/v1/schedules/ical/batch/${batchId}${scheduleId ? `?scheduleId=${scheduleId}` : ''}`,
+  downloadTeacherIcal: (teacherId: number, scheduleId?: number) =>
+    api.get(`/schedules/ical/teacher/${teacherId}`, {
+      params: scheduleId ? { scheduleId } : undefined,
+      responseType: 'blob',
+    }).then((r) => r.data as Blob),
+  downloadBatchIcal: (batchId: number, scheduleId?: number) =>
+    api.get(`/schedules/ical/batch/${batchId}`, {
+      params: scheduleId ? { scheduleId } : undefined,
+      responseType: 'blob',
+    }).then((r) => r.data as Blob),
   checkFeasibility: (req: Partial<ScheduleRequest>) =>
     api.post<FeasibilityCheckResult>('/schedules/feasibility-check', req).then((r) => r.data),
+  getConflictSuggestions: (scheduleId: number, sessionId: number, limit = 4) =>
+    api
+      .get<ConflictSuggestion[]>(`/schedules/${scheduleId}/sessions/${sessionId}/suggestions`, {
+        params: { limit },
+      })
+      .then((r) => r.data),
 }
 
 // Sessions (manual editing of timetable)
@@ -191,5 +213,12 @@ export const academicTermApi = {
   update: (id: number, data: AcademicTermRequest) =>
     api.put<AcademicTerm>(`/academic-terms/${id}`, data).then((r) => r.data),
   delete: (id: number) => api.delete(`/academic-terms/${id}`),
+}
+
+export const importApi = {
+  importCsv: (entityType: string, csvContent: string) =>
+    api
+      .post<CsvImportResponse>(`/import/csv/${entityType}`, { csvContent })
+      .then((r) => r.data),
 }
 

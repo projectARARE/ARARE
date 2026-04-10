@@ -24,9 +24,9 @@ public class ScheduleController {
     private final ScheduleService          service;
     private final DisruptionService        disruptionService;
     private final TimetableExportService   exportService;
+    private final TimetableCalendarExportService calendarExportService;
     private final FeasibilityCheckService  feasibilityCheckService;
 
-    // Generates a new timetable. Triggers the solver. 
     @PostMapping("/generate")
     public ResponseEntity<ScheduleResponse> generate(@Valid @RequestBody ScheduleRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.generate(req));
@@ -42,8 +42,6 @@ public class ScheduleController {
         return ResponseEntity.ok(service.findAll());
     }
 
-// Triggers partial re-optimization.
-// Body: list of impacted ClassSession IDs.
     @PostMapping("/{id}/partial-resolve")
     public ResponseEntity<ScheduleResponse> partialResolve(
         @PathVariable Long id,
@@ -52,18 +50,22 @@ public class ScheduleController {
         return ResponseEntity.ok(service.partialResolve(id, impactedSessionIds));
     }
 
-// Returns a constraint-by-constraint score explanation for the schedule.
-// Useful for the UI "Why is my schedule scoring X?" panel.
     @GetMapping("/{id}/score-explanation")
     public ResponseEntity<ScoreExplanationResponse> scoreExplanation(@PathVariable Long id) {
         return ResponseEntity.ok(service.explainScore(id));
     }
 
-// Returns the stored plain-text score explanation that was generated
-// when the schedule was last solved.
     @GetMapping("/{id}/explanation")
     public ResponseEntity<String> getExplanation(@PathVariable Long id) {
         return ResponseEntity.ok(service.getExplanation(id));
+    }
+
+    @GetMapping("/{id}/sessions/{sessionId}/suggestions")
+    public ResponseEntity<List<ConflictSuggestionResponse>> suggestFixes(
+            @PathVariable Long id,
+            @PathVariable Long sessionId,
+            @RequestParam(defaultValue = "4") int limit) {
+        return ResponseEntity.ok(service.suggestFixes(id, sessionId, limit));
     }
 
     @GetMapping("/{id}/sessions")
@@ -77,10 +79,6 @@ public class ScheduleController {
         return ResponseEntity.noContent().build();
     }
 
-    // ─── Disruption / Impact Analyzer ──────────────────────────────────────────
-
-// Preview which sessions would be impacted by a disruption.
-// Does NOT re-solve. Use this to show the user what will change before committing.
     @PostMapping("/{id}/disruption/preview")
     public ResponseEntity<DisruptionResponse> previewDisruption(
             @PathVariable Long id,
@@ -88,20 +86,12 @@ public class ScheduleController {
         return ResponseEntity.ok(disruptionService.previewImpact(id, request));
     }
 
-// Apply a disruption: automatically identifies impacted sessions via the
-// Dependency Graph and triggers partial re-optimization on only those sessions.
     @PostMapping("/{id}/disruption/apply")
     public ResponseEntity<ScheduleResponse> applyDisruption(
             @PathVariable Long id,
             @Valid @RequestBody DisruptionRequest request) {
         return ResponseEntity.ok(disruptionService.applyDisruption(id, request));
     }
-
-    // ─── Export ────────────────────────────────────────────────────────────────
-
-// Downloads the solved timetable as a CSV file.
-// Only assigned sessions are included (sessions with a timeslot).
-// A UTF-8 BOM is included so Excel opens the file correctly.
     @GetMapping("/{id}/export/csv")
     public ResponseEntity<byte[]> exportCsv(@PathVariable Long id) {
         byte[] csv = exportService.exportCsv(id);
@@ -112,13 +102,32 @@ public class ScheduleController {
         return new ResponseEntity<>(csv, headers, HttpStatus.OK);
     }
 
-    // ─── Feasibility Check (Constraint Propagation) ────────────────────────────
+    @GetMapping(value = "/ical/teacher/{teacherId}", produces = "text/calendar; charset=UTF-8")
+    public ResponseEntity<byte[]> exportTeacherIcal(
+            @PathVariable Long teacherId,
+            @RequestParam(required = false) Long scheduleId
+    ) {
+        byte[] ics = calendarExportService.exportTeacherCalendar(teacherId, scheduleId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("text/calendar; charset=UTF-8"));
+        headers.setContentDisposition(
+            ContentDisposition.inline().filename("teacher-" + teacherId + ".ics").build());
+        return new ResponseEntity<>(ics, headers, HttpStatus.OK);
+    }
 
-// Pre-solve feasibility check — runs before the solver to surface hard errors
-// and warnings without wasting solver time on infeasible configurations.
-// <p>Accepts the same filtering fields as {@code /generate} (scope, departmentId,
-// batchIds, teacherIds, roomIds) but does NOT require a schedule name or trigger
-// any database writes.</p>
+    @GetMapping(value = "/ical/batch/{batchId}", produces = "text/calendar; charset=UTF-8")
+    public ResponseEntity<byte[]> exportBatchIcal(
+            @PathVariable Long batchId,
+            @RequestParam(required = false) Long scheduleId
+    ) {
+        byte[] ics = calendarExportService.exportBatchCalendar(batchId, scheduleId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("text/calendar; charset=UTF-8"));
+        headers.setContentDisposition(
+            ContentDisposition.inline().filename("batch-" + batchId + ".ics").build());
+        return new ResponseEntity<>(ics, headers, HttpStatus.OK);
+    }
+
     @PostMapping("/feasibility-check")
     public ResponseEntity<FeasibilityCheckResult> checkFeasibility(
             @RequestBody ScheduleRequest req) {

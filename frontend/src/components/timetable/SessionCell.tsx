@@ -19,21 +19,51 @@ function colorForSubject(id: number): string {
 interface SessionCellProps {
   session: ClassSession
   onClick?: (session: ClassSession) => void
+  onHover?: (session: ClassSession | null) => void
+  onDragStart?: (session: ClassSession) => void
+  onDragEnd?: () => void
+  highlighted?: boolean
+  heatState?: 'none' | 'soft' | 'hard'
+  inspectorNotes?: string[]
 }
 
-export default function SessionCell({ session, onClick }: SessionCellProps) {
+export default function SessionCell({
+  session,
+  onClick,
+  onHover,
+  onDragStart,
+  onDragEnd,
+  highlighted = false,
+  heatState = 'none',
+  inspectorNotes = [],
+}: SessionCellProps) {
+  const heatClass =
+    heatState === 'hard'
+      ? 'ring-1 ring-rose-400 animate-cell-pulse'
+      : heatState === 'soft'
+        ? 'ring-1 ring-amber-400'
+        : ''
+
   return (
     <div
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
+      draggable
       onClick={() => onClick?.(session)}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.(session)}
+      onMouseEnter={() => onHover?.(session)}
+      onMouseLeave={() => onHover?.(null)}
+      onDragStart={() => onDragStart?.(session)}
+      onDragEnd={() => onDragEnd?.()}
+      title={inspectorNotes.join(' | ')}
       className={`
         rounded-md border p-1.5 text-xs leading-tight
         transition-shadow hover:shadow-md select-none
         ${colorForSubject(session.subjectId ?? session.id)}
+        ${heatClass}
+        ${highlighted ? 'outline outline-2 outline-offset-1 outline-cyan-400' : ''}
         ${session.isLocked ? 'ring-2 ring-offset-1 ring-amber-400' : ''}
-        ${onClick ? 'cursor-pointer' : ''}
+        ${(onClick || onDragStart) ? 'cursor-pointer' : ''}
       `}
     >
       <p className="font-semibold truncate">{session.subjectName}</p>
