@@ -60,8 +60,8 @@ public class GlobalExceptionHandler {
         return detail;
     }
 
-// Handles database constraint violations (foreign key, unique, not-null) with
-// human-readable messages instead of exposing raw SQL error details.
+    // Handles database constraint violations (foreign key, unique, not-null) with
+    // human-readable messages instead of exposing raw SQL error details.
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
         String msg = ex.getMessage() != null ? ex.getMessage().toLowerCase() : "";

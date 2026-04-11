@@ -21,7 +21,7 @@ import java.time.LocalDate;
 @Builder
 public class AcademicTerm extends BaseEntity {
 
-    // Human-readable name, e.g. "Semester 1 2025–26". 
+    // e.g. "Semester 1 2025–26". 
     @NotBlank
     @Column(nullable = false)
     private String name;

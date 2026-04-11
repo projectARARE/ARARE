@@ -47,7 +47,7 @@ public class FeasibilityCheckService {
     public FeasibilityCheckResult check(ScheduleRequest req) {
         List<FeasibilityIssue> issues = new ArrayList<>();
 
-        // ── 1. Load entities scoped to the request ────────────────────────────
+        //  1. Load entities scoped to the request 
         List<Batch>   batches  = loadBatches(req);
         List<Teacher> teachers = loadTeachers(req);
         List<Room>    rooms    = loadRooms(req);
@@ -81,7 +81,7 @@ public class FeasibilityCheckService {
                     null, null));
         }
 
-        // ── 2. No CLASS timeslots ──────────────────────────────────────────────
+        //  2. No CLASS timeslots 
         if (classTimeslotCount == 0) {
             issues.add(error("TIMESLOT",
                     "No CLASS-type timeslots are configured. Add timeslots before generating a schedule.",
@@ -89,7 +89,7 @@ public class FeasibilityCheckService {
             return result(issues, 0, 0);
         }
 
-        // ── 3. Subject → teacher qualification check (ERROR if none) ──────────
+        //  3. Subject → teacher qualification check (ERROR if none) 
         for (Subject s : subjects) {
             if (s.getChunkHours() <= 0) {
             issues.add(error("SUBJECT",
@@ -115,7 +115,7 @@ public class FeasibilityCheckService {
             }
         }
 
-        // ── 3b. Multi-slot subjects need deterministic slot ordering ─────────
+        //  3b. Multi-slot subjects need deterministic slot ordering 
         int maxChunkUnits = subjects.stream().mapToInt(Subject::getChunkHours).max().orElse(1);
         if (maxChunkUnits > 1) {
             boolean hasSlotNumbers = classTimeslots.stream().anyMatch(t -> t.getSlotNumber() != null);
@@ -136,7 +136,7 @@ public class FeasibilityCheckService {
             }
         }
 
-        // ── 4. Lab subject → room type check (ERROR if no room of required type)
+        //  4. Lab subject → room type check (ERROR if no room of required type)
         for (Subject s : subjects) {
             if (!s.isLab() || !s.isRequiresRoom()) continue;
             boolean hasRoom = rooms.stream()
@@ -148,7 +148,7 @@ public class FeasibilityCheckService {
             }
         }
 
-        // ── 5. Estimate total sessions & global capacity ──────────────────────
+        //  5. Estimate total sessions & global capacity 
         List<Long> batchIds = batches.stream().map(Batch::getId).toList();
         List<ClassSection> sections = batchIds.isEmpty()
                 ? Collections.emptyList()
@@ -180,7 +180,7 @@ public class FeasibilityCheckService {
                     null, null));
         }
 
-        // ── 6. Subjects with more required sessions than available timeslots ──
+        //  6. Subjects with more required sessions than available timeslots 
         for (Subject s : subjects) {
             int sessionsPerBatch = s.getWeeklyHours() / s.getChunkHours();
             if (sessionsPerBatch > classTimeslotCount) {
@@ -200,9 +200,6 @@ public class FeasibilityCheckService {
         return result(issues, totalSessions, classTimeslotCount);
     }
 
-    // ------------------------------------------------------------------
-    // Private helpers
-    // ------------------------------------------------------------------
 
     private List<Batch> loadBatches(ScheduleRequest req) {
         if (req.batchIds() != null && !req.batchIds().isEmpty())

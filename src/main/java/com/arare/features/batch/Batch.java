@@ -14,11 +14,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 
-// A student batch (cohort) – equivalent to the "Class" entity in the spec.
-// <p>Named {@code Batch} because {@code class} is a reserved keyword in Java.</p>
 // <p>Examples: CSE-2A, CSE-2B, IT-3A.</p>
 // <p>Hard constraint: no two sessions can be assigned to the same batch
 // at the same timeslot.</p>
+
 @Entity
 @Table(
     name = "batches",

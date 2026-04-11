@@ -50,10 +50,6 @@ public class ClassSession {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // ------------------------------------------------------------------
-    // Problem facts (fixed inputs; never changed by the solver)
-    // ------------------------------------------------------------------
-
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "subject_id", nullable = false)
     private Subject subject;
@@ -87,9 +83,6 @@ public class ClassSession {
     @Builder.Default
     private boolean isLocked = false;
 
-    // ------------------------------------------------------------------
-    // Planning variables (assigned by Timefold solver)
-    // ------------------------------------------------------------------
 
 // Assigned teacher. {@code allowsUnassigned = true}: null when
 // {@code subject.requiresTeacher == false} (self-study, project, seminar).
@@ -111,9 +104,6 @@ public class ClassSession {
     @JoinColumn(name = "timeslot_id")
     private Timeslot timeslot;
 
-    // ------------------------------------------------------------------
-    // Convenience helpers (not persisted)
-    // ------------------------------------------------------------------
 
     // Returns the student count relevant for room capacity checking. 
     @Transient

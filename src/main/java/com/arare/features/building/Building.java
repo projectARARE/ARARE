@@ -20,7 +20,6 @@ public class Building extends BaseEntity {
     @Column(nullable = false)
     private String name;
 
-    // Human-readable campus location, e.g. "North Campus Block A". 
     @Column
     private String location;
 

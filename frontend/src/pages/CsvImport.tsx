@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Button, Card, Select } from '../components/ui'
 import { importApi } from '../services/api'
 import type { CsvImportResponse } from '../types'
@@ -114,9 +114,11 @@ const CSV_EXAMPLES: Record<EntityType, string> = {
 export default function CsvImport() {
   const [entityType, setEntityType] = useState<EntityType>('timeslots')
   const [csvContent, setCsvContent] = useState(CSV_TEMPLATES.timeslots)
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<CsvImportResponse | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const currentTemplate = useMemo(() => CSV_TEMPLATES[entityType], [entityType])
 
@@ -126,8 +128,33 @@ export default function CsvImport() {
 
   const clearInput = () => {
     setCsvContent('')
+    setSelectedFileName(null)
     setResult(null)
     setError(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const triggerFilePicker = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    try {
+      const content = await file.text()
+      setCsvContent(content)
+      setSelectedFileName(file.name)
+      setResult(null)
+      setError(null)
+    } catch {
+      setError('Unable to read the selected file.')
+    }
   }
 
   const downloadTemplate = (type: EntityType) => {
@@ -197,12 +224,24 @@ export default function CsvImport() {
               options={ENTITY_OPTIONS}
             />
             <div className="space-y-2">
+              <input
+                ref={fileInputRef}
+                id="csv-file-input"
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <Button variant="secondary" onClick={triggerFilePicker}>Choose CSV File</Button>
               <Button variant="secondary" onClick={loadTemplate}>Load Template</Button>
               <Button variant="secondary" onClick={downloadCurrentTemplate}>Download Current Template</Button>
               <Button variant="secondary" onClick={downloadAllTemplates}>Download All Templates</Button>
               <Button variant="secondary" onClick={downloadExampleDataPack}>Download Example Data Pack</Button>
               <Button variant="ghost" onClick={clearInput}>Clear</Button>
             </div>
+            {selectedFileName && (
+              <p className="text-xs text-gray-600">Selected file: {selectedFileName}</p>
+            )}
             <p className="text-xs text-gray-500">
               Multi-value fields use ; or | separators. Timeslot token format: DAY@HH:mm-HH:mm.
             </p>

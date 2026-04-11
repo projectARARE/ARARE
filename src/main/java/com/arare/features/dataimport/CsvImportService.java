@@ -49,7 +49,7 @@ public class CsvImportService {
 
     @Transactional
     public CsvImportResponse importCsv(String entityTypeRaw, String csvContent) {
-        String entityType = normalize(entityTypeRaw);
+        String entityType = normalize(entityTypeRaw).toLowerCase(Locale.ROOT);
         List<Map<String, String>> rows = parseRows(csvContent);
 
         int created = 0;
@@ -456,7 +456,7 @@ public class CsvImportService {
         }
 
         List<String> headersRaw = parseCsvLine(lines[0]);
-        List<String> headers = headersRaw.stream().map(CsvImportService::normalize).toList();
+        List<String> headers = headersRaw.stream().map(CsvImportService::normalizeHeader).toList();
 
         List<Map<String, String>> rows = new ArrayList<>();
         for (int i = 1; i < lines.length; i++) {
@@ -585,7 +585,20 @@ public class CsvImportService {
         if (value == null) {
             return "";
         }
-        return value.trim().toUpperCase(Locale.ROOT);
+        return value
+            .replace("\uFEFF", "")
+            .trim()
+            .toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeHeader(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+            .replace("\uFEFF", "")
+            .trim()
+            .toLowerCase(Locale.ROOT);
     }
 
     private static <T> List<T> dedupe(List<T> source) {
