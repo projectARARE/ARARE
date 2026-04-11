@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Card, Button, Modal, Input, Select, Table, ConfirmDialog } from '../components/ui'
 import type { Column } from '../components/ui/Table'
@@ -34,10 +34,27 @@ export default function Teachers() {
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const subjectNameById = useMemo(
+    () => new Map(subjects.map((s) => [s.id, s.name])),
+    [subjects],
+  )
+
+  const getTeacherSubjectNames = (t: Teacher) => {
+    if (t.subjectNames && t.subjectNames.length > 0) return t.subjectNames
+    return (t.subjectIds ?? []).map((id) => subjectNameById.get(id) ?? `Subject #${id}`)
+  }
+
   const load = () => {
     setLoading(true)
-    Promise.all([teacherApi.getAll(), subjectApi.getAll(), timeslotApi.getAll(), buildingApi.getAll()])
-      .then(([t, s, ts, b]) => { setItems(t); setSubjects(s); setTimeslots(ts); setBuildings(b) })
+    Promise.allSettled([teacherApi.getAll(), subjectApi.getAll(), timeslotApi.getAll(), buildingApi.getAll()])
+      .then(([t, s, ts, b]) => {
+        if (t.status === 'fulfilled') setItems(t.value)
+        if (s.status === 'fulfilled') setSubjects(s.value)
+        if (ts.status === 'fulfilled') setTimeslots(ts.value)
+        if (b.status === 'fulfilled') setBuildings(b.value)
+        const failed = [t, s, ts, b].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some teacher data failed to refresh (${failed}/4)`)
+      })
       .finally(() => setLoading(false))
   }
 
@@ -64,11 +81,19 @@ export default function Teachers() {
     if (!form.name.trim()) { toast.error('Name is required'); return }
     setSaving(true)
     try {
+      const payload: TeacherRequest = {
+        ...form,
+        subjectIds: (form.subjectIds ?? []).map(Number),
+        availableTimeslotIds: (form.availableTimeslotIds ?? []).map(Number),
+        preferredBuildingIds: (form.preferredBuildingIds ?? []).map(Number),
+      }
       if (editing) {
-        await teacherApi.update(editing.id, form)
+        const updated = await teacherApi.update(editing.id, payload)
+        setItems((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
         toast.success('Teacher updated')
       } else {
-        await teacherApi.create(form)
+        const created = await teacherApi.create(payload)
+        setItems((prev) => [created, ...prev])
         toast.success('Teacher created')
       }
       setOpen(false)
@@ -85,6 +110,7 @@ export default function Teachers() {
     setDeleting(true)
     try {
       await teacherApi.delete(confirmId)
+      setItems((prev) => prev.filter((t) => t.id !== confirmId))
       toast.success('Teacher deleted')
       setConfirmId(null)
       load()
@@ -124,7 +150,7 @@ export default function Teachers() {
     },
     {
       key: 'subjects', header: 'Subjects',
-      render: (t) => <span className="text-sm text-gray-600">{(t.subjectNames ?? []).join(', ') || '—'}</span>,
+      render: (t) => <span className="text-sm text-gray-600">{getTeacherSubjectNames(t).join(', ') || '—'}</span>,
     },
     { key: 'hours', header: 'Max Hours', render: (t) => `${t.maxDailyHours}d / ${t.maxWeeklyHours}w` },
     { key: 'consecutive', header: 'Max Consec.', render: (t) => t.maxConsecutiveClasses },
@@ -156,7 +182,7 @@ export default function Teachers() {
           loading={loading}
           keyExtractor={(t) => t.id}
           searchable
-          searchKeys={[(t) => t.name, (t) => (t.subjectNames ?? []).join(' ')]}
+          searchKeys={[(t) => t.name, (t) => getTeacherSubjectNames(t).join(' ')]}
           onRowContextMenu={getContextItems}
         />
       </Card>

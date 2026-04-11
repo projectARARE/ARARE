@@ -30,8 +30,13 @@ export default function Batches() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([batchApi.getAll(), departmentApi.getAll()])
-      .then(([b, d]) => { setItems(b); setDepts(d) })
+    Promise.allSettled([batchApi.getAll(), departmentApi.getAll()])
+      .then(([b, d]) => {
+        if (b.status === 'fulfilled') setItems(b.value)
+        if (d.status === 'fulfilled') setDepts(d.value)
+        const failed = [b, d].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some batch data failed to refresh (${failed}/2)`)
+      })
       .finally(() => setLoading(false))
   }
 
@@ -62,10 +67,12 @@ export default function Batches() {
     setSaving(true)
     try {
       if (editing) {
-        await batchApi.update(editing.id, form)
+        const updated = await batchApi.update(editing.id, form)
+        setItems((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
         toast.success('Batch updated')
       } else {
-        await batchApi.create(form)
+        const created = await batchApi.create(form)
+        setItems((prev) => [created, ...prev])
         toast.success('Batch created')
       }
       setOpen(false)
@@ -82,6 +89,7 @@ export default function Batches() {
     setDeleting(true)
     try {
       await batchApi.delete(confirmId)
+      setItems((prev) => prev.filter((b) => b.id !== confirmId))
       toast.success('Batch deleted')
       setConfirmId(null)
       load()

@@ -39,10 +39,12 @@ export default function Buildings() {
     setSaving(true)
     try {
       if (editing) {
-        await buildingApi.update(editing.id, form)
+        const updated = await buildingApi.update(editing.id, form)
+        setItems((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
         toast.success('Building updated')
       } else {
-        await buildingApi.create(form)
+        const created = await buildingApi.create(form)
+        setItems((prev) => [created, ...prev])
         toast.success('Building created')
       }
       setOpen(false)
@@ -59,6 +61,7 @@ export default function Buildings() {
     setDeleting(true)
     try {
       await buildingApi.delete(confirmId)
+      setItems((prev) => prev.filter((b) => b.id !== confirmId))
       toast.success('Building deleted')
       setConfirmId(null)
       load()

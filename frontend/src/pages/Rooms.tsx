@@ -31,8 +31,14 @@ export default function Rooms() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([roomApi.getAll(), buildingApi.getAll(), timeslotApi.getAll()])
-      .then(([rooms, bldgs, ts]) => { setItems(rooms); setBuildings(bldgs); setTimeslots(ts) })
+    Promise.allSettled([roomApi.getAll(), buildingApi.getAll(), timeslotApi.getAll()])
+      .then(([rooms, bldgs, ts]) => {
+        if (rooms.status === 'fulfilled') setItems(rooms.value)
+        if (bldgs.status === 'fulfilled') setBuildings(bldgs.value)
+        if (ts.status === 'fulfilled') setTimeslots(ts.value)
+        const failed = [rooms, bldgs, ts].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some room data failed to refresh (${failed}/3)`)
+      })
       .finally(() => setLoading(false))
   }
 
@@ -56,10 +62,12 @@ export default function Rooms() {
     try {
       const data: RoomRequest = { ...form, labSubtype: form.type === 'LAB' ? form.labSubtype : undefined }
       if (editing) {
-        await roomApi.update(editing.id, data)
+        const updated = await roomApi.update(editing.id, data)
+        setItems((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
         toast.success('Room updated')
       } else {
-        await roomApi.create(data)
+        const created = await roomApi.create(data)
+        setItems((prev) => [created, ...prev])
         toast.success('Room created')
       }
       setOpen(false)
@@ -76,6 +84,7 @@ export default function Rooms() {
     setDeleting(true)
     try {
       await roomApi.delete(confirmId)
+      setItems((prev) => prev.filter((r) => r.id !== confirmId))
       toast.success('Room deleted')
       setConfirmId(null)
       load()

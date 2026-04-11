@@ -15,12 +15,19 @@ export default function DisruptionHandling() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([scheduleApi.getAll(), eventApi.getAll()])
+    Promise.allSettled([scheduleApi.getAll(), eventApi.getAll()])
       .then(([s, e]) => {
-        const active = s.filter((x) => x.status === 'ACTIVE' || x.status === 'PARTIAL')
-        setSchedules(active)
-        setEvents(e)
-        if (active.length) setSelectedSchedule(String(active[0].id))
+        if (s.status === 'fulfilled') {
+          const active = s.value.filter((x) => x.status === 'ACTIVE' || x.status === 'PARTIAL')
+          setSchedules(active)
+          if (active.length) setSelectedSchedule(String(active[0].id))
+        }
+        if (e.status === 'fulfilled') {
+          setEvents(e.value)
+        }
+        if (s.status === 'rejected' || e.status === 'rejected') {
+          setError('Some disruption data failed to refresh')
+        }
       })
       .finally(() => setLoading(false))
   }
@@ -33,6 +40,7 @@ export default function DisruptionHandling() {
     setError(null)
     try {
       await eventApi.applyToSchedule(eventId, +selectedSchedule)
+      load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to apply event')
     } finally {

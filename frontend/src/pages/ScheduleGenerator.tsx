@@ -66,32 +66,36 @@ export default function ScheduleGenerator() {
   const [insights, setInsights] = useState<string[]>(INSIGHT_LIBRARY.slice(0, 4))
 
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       departmentApi.getAll(),
       batchApi.getAll(),
       teacherApi.getAll(),
       roomApi.getAll(),
       scheduleApi.getAll(),
     ]).then(([d, b, t, r, s]) => {
-      setDepartments(d)
-      setAllBatches(b)
-      setAllTeachers(t)
-      setAllRooms(r)
-      setAllSchedules(s)
-      const parentId = searchParams.get('parentId')
-      if (parentId) {
-        const parent = s.find((sc: Schedule) => sc.id === +parentId)
-        if (parent) {
-          setForm((prev) => ({
-            ...prev,
-            parentScheduleId: parent.id,
-            scope: parent.scope,
-            name: `${parent.name} (re-solve)`,
-          }))
+      if (d.status === 'fulfilled') setDepartments(d.value)
+      if (b.status === 'fulfilled') setAllBatches(b.value)
+      if (t.status === 'fulfilled') setAllTeachers(t.value)
+      if (r.status === 'fulfilled') setAllRooms(r.value)
+      if (s.status === 'fulfilled') {
+        setAllSchedules(s.value)
+        const parentId = searchParams.get('parentId')
+        if (parentId) {
+          const parent = s.value.find((sc: Schedule) => sc.id === +parentId)
+          if (parent) {
+            setForm((prev) => ({
+              ...prev,
+              parentScheduleId: parent.id,
+              scope: parent.scope,
+              name: `${parent.name} (re-solve)`,
+            }))
+          }
         }
       }
-    }).catch((e) => {
-      setError(e instanceof Error ? e.message : 'Failed to load scheduling prerequisites')
+      const failed = [d, b, t, r, s].filter((x) => x.status === 'rejected').length
+      if (failed > 0) {
+        setError(`Some prerequisites failed to load (${failed}/5)`)
+      }
     })
   }, [])
 
@@ -160,7 +164,25 @@ export default function ScheduleGenerator() {
       const schedule = await scheduleApi.generate(request)
       navigate(`/schedule/view/${schedule.id}`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Generation failed')
+      const msg = e instanceof Error ? e.message : 'Generation failed'
+      setError(msg)
+
+      // If generation is infeasible, immediately fetch structured diagnostics for the UI.
+      if (/infeasible|unprocessable|hard score/i.test(msg)) {
+        try {
+          const request: ScheduleRequest = {
+            ...form,
+            batchIds: builderMode && selectedBatchIds.length > 0 ? selectedBatchIds : undefined,
+            teacherIds: builderMode && selectedTeacherIds.length > 0 ? selectedTeacherIds : undefined,
+            roomIds: builderMode && selectedRoomIds.length > 0 ? selectedRoomIds : undefined,
+          }
+          const result = await scheduleApi.checkFeasibility(request)
+          setFeasibility(result)
+          if (wizardStep < 4) setWizardStep(4)
+        } catch {
+          // Keep original generation error visible if feasibility endpoint also fails.
+        }
+      }
     } finally {
       setRunning(false)
     }

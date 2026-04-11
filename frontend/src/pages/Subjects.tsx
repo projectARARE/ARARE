@@ -45,8 +45,13 @@ export default function Subjects() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([subjectApi.getAll(), departmentApi.getAll()])
-      .then(([subs, d]) => { setItems(subs); setDepts(d) })
+    Promise.allSettled([subjectApi.getAll(), departmentApi.getAll()])
+      .then(([subs, d]) => {
+        if (subs.status === 'fulfilled') setItems(subs.value)
+        if (d.status === 'fulfilled') setDepts(d.value)
+        const failed = [subs, d].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some subject data failed to refresh (${failed}/2)`)
+      })
       .finally(() => setLoading(false))
   }
 
@@ -68,7 +73,7 @@ export default function Subjects() {
       chunkHours: s.chunkHours,
       roomTypeRequired: s.roomTypeRequired,
       labSubtypeRequired: s.labSubtypeRequired,
-      isLab: s.isLab,
+      isLab: s.isLab || s.roomTypeRequired === 'LAB',
       requiresTeacher: s.requiresTeacher,
       requiresRoom: s.requiresRoom,
       minGapBetweenSessions: s.minGapBetweenSessions,
@@ -89,10 +94,12 @@ export default function Subjects() {
         roomTypeRequired: form.isLab ? 'LAB' : (form.roomTypeRequired ?? 'LECTURE'),
       }
       if (editing) {
-        await subjectApi.update(editing.id, data)
+        const updated = await subjectApi.update(editing.id, data)
+        setItems((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
         toast.success('Subject updated')
       } else {
-        await subjectApi.create(data)
+        const created = await subjectApi.create(data)
+        setItems((prev) => [created, ...prev])
         toast.success('Subject created')
       }
       setOpen(false)
@@ -109,6 +116,7 @@ export default function Subjects() {
     setDeleting(true)
     try {
       await subjectApi.delete(confirmId)
+      setItems((prev) => prev.filter((s) => s.id !== confirmId))
       toast.success('Subject deleted')
       setConfirmId(null)
       load()
@@ -192,7 +200,15 @@ export default function Subjects() {
             <Select
               label="Room Type Required"
               value={form.isLab ? 'LAB' : (form.roomTypeRequired ?? 'LECTURE')}
-              onChange={(e) => setForm({ ...form, roomTypeRequired: e.target.value as RoomType })}
+              onChange={(e) => {
+                const nextRoomType = e.target.value as RoomType
+                setForm({
+                  ...form,
+                  roomTypeRequired: nextRoomType,
+                  isLab: nextRoomType === 'LAB',
+                  labSubtypeRequired: nextRoomType === 'LAB' ? form.labSubtypeRequired : undefined,
+                })
+              }}
               options={ROOM_TYPE_OPTIONS}
               helpText="Type of room this subject needs"
             />

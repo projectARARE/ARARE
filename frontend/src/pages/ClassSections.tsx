@@ -23,8 +23,13 @@ export default function ClassSections() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([classSectionApi.getAll(), batchApi.getAll()])
-      .then(([s, b]) => { setItems(s); setBatches(b) })
+    Promise.allSettled([classSectionApi.getAll(), batchApi.getAll()])
+      .then(([s, b]) => {
+        if (s.status === 'fulfilled') setItems(s.value)
+        if (b.status === 'fulfilled') setBatches(b.value)
+        const failed = [s, b].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some section data failed to refresh (${failed}/2)`)
+      })
       .finally(() => setLoading(false))
   }
 
@@ -48,10 +53,12 @@ export default function ClassSections() {
     setSaving(true)
     try {
       if (editing) {
-        await classSectionApi.update(editing.id, form)
+        const updated = await classSectionApi.update(editing.id, form)
+        setItems((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
         toast.success('Section updated')
       } else {
-        await classSectionApi.create(form)
+        const created = await classSectionApi.create(form)
+        setItems((prev) => [created, ...prev])
         toast.success('Section created')
       }
       setOpen(false)
@@ -68,6 +75,7 @@ export default function ClassSections() {
     setDeleting(true)
     try {
       await classSectionApi.delete(confirmId)
+      setItems((prev) => prev.filter((x) => x.id !== confirmId))
       toast.success('Section deleted')
       setConfirmId(null)
       load()

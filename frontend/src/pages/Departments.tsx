@@ -23,8 +23,13 @@ export default function Departments() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([departmentApi.getAll(), buildingApi.getAll()])
-      .then(([deps, bldgs]) => { setItems(deps); setBuildings(bldgs) })
+    Promise.allSettled([departmentApi.getAll(), buildingApi.getAll()])
+      .then(([deps, bldgs]) => {
+        if (deps.status === 'fulfilled') setItems(deps.value)
+        if (bldgs.status === 'fulfilled') setBuildings(bldgs.value)
+        const failed = [deps, bldgs].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some department data failed to refresh (${failed}/2)`)
+      })
       .finally(() => setLoading(false))
   }
 
@@ -47,10 +52,12 @@ export default function Departments() {
     setSaving(true)
     try {
       if (editing) {
-        await departmentApi.update(editing.id, form)
+        const updated = await departmentApi.update(editing.id, form)
+        setItems((prev) => prev.map((d) => (d.id === updated.id ? updated : d)))
         toast.success('Department updated')
       } else {
-        await departmentApi.create(form)
+        const created = await departmentApi.create(form)
+        setItems((prev) => [created, ...prev])
         toast.success('Department created')
       }
       setOpen(false)
@@ -67,6 +74,7 @@ export default function Departments() {
     setDeleting(true)
     try {
       await departmentApi.delete(confirmId)
+      setItems((prev) => prev.filter((d) => d.id !== confirmId))
       toast.success('Department deleted')
       setConfirmId(null)
       load()

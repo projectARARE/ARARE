@@ -126,6 +126,9 @@ public class Subject extends BaseEntity {
         if (isLab && roomTypeRequired != RoomType.LAB) {
             throw new IllegalStateException("Lab subject must require LAB room type: " + name);
         }
+        if (!isLab && roomTypeRequired == RoomType.LAB) {
+            throw new IllegalStateException("Lecture subject cannot require LAB room type: " + name);
+        }
         if (!isLab) {
             labSubtypeRequired = null;
         }

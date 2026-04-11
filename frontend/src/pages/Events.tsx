@@ -42,9 +42,15 @@ export default function Events() {
 
   const load = () => {
     setLoading(true)
-    Promise.all([eventApi.getAll(), scheduleApi.getAll(), teacherApi.getAll(), roomApi.getAll()])
-      .then(([evs, scheds, t, r]) => { setItems(evs); setSchedules(scheds); setTeachers(t); setRooms(r) })
-      .catch(() => toast.error('Failed to load events'))
+    Promise.allSettled([eventApi.getAll(), scheduleApi.getAll(), teacherApi.getAll(), roomApi.getAll()])
+      .then(([evs, scheds, t, r]) => {
+        if (evs.status === 'fulfilled') setItems(evs.value)
+        if (scheds.status === 'fulfilled') setSchedules(scheds.value)
+        if (t.status === 'fulfilled') setTeachers(t.value)
+        if (r.status === 'fulfilled') setRooms(r.value)
+        const failed = [evs, scheds, t, r].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some event data failed to refresh (${failed}/4)`)
+      })
       .finally(() => setLoading(false))
   }
 
@@ -70,10 +76,12 @@ export default function Events() {
     setSaving(true)
     try {
       if (editing) {
-        await eventApi.update(editing.id, form)
+        const updated = await eventApi.update(editing.id, form)
+        setItems((prev) => prev.map((ev) => (ev.id === updated.id ? updated : ev)))
         toast.success('Event updated')
       } else {
-        await eventApi.create(form)
+        const created = await eventApi.create(form)
+        setItems((prev) => [created, ...prev])
         toast.success('Event created')
       }
       setOpen(false)
@@ -90,6 +98,7 @@ export default function Events() {
     setDeleting(true)
     try {
       await eventApi.delete(confirmId)
+      setItems((prev) => prev.filter((ev) => ev.id !== confirmId))
       toast.success('Event deleted')
       setConfirmId(null)
       load()
@@ -108,6 +117,7 @@ export default function Events() {
       await eventApi.applyToSchedule(applyTarget.eventId, +applyTarget.scheduleId)
       setApplyTarget({ eventId: 0, scheduleId: '' })
       toast.success('Event applied to schedule')
+      load()
     } catch (e) {
       setApplyError(e instanceof Error ? e.message : 'Failed to apply event')
     } finally {

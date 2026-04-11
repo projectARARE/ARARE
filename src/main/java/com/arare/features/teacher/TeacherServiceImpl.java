@@ -3,6 +3,7 @@ package com.arare.features.teacher;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.building.BuildingRepository;
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.subject.Subject;
 import com.arare.features.subject.SubjectRepository;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +45,6 @@ public class TeacherServiceImpl implements TeacherService {
     public TeacherResponse update(Long id, TeacherRequest req) {
         Teacher t = findEntity(id);
         t.setName(req.name());
-        if (req.subjectIds() != null)           t.setSubjects(subjectRepo.findAllById(req.subjectIds()));
         if (req.availableTimeslotIds() != null)  t.setAvailableTimeslots(timeslotRepo.findAllById(req.availableTimeslotIds()));
         if (req.preferredBuildingIds() != null)  t.setPreferredBuildings(buildingRepo.findAllById(req.preferredBuildingIds()));
         t.setMaxDailyHours(req.maxDailyHours());
@@ -52,7 +52,20 @@ public class TeacherServiceImpl implements TeacherService {
         t.setMaxConsecutiveClasses(req.maxConsecutiveClasses());
         t.setMovementPenalty(req.movementPenalty());
         t.setPreferredFreeDay(req.preferredFreeDay());
-        return toResponse(repo.save(t));
+
+        Teacher saved = repo.save(t);
+
+        // Explicitly sync subject mappings to guarantee persistence across varying DB schemas.
+        if (req.subjectIds() != null) {
+            List<Long> subjectIds = subjectRepo.findAllById(req.subjectIds()).stream()
+                .map(Subject::getId)
+                .distinct()
+                .toList();
+            repo.deleteSubjectMappings(saved.getId());
+            subjectIds.forEach(subjectId -> repo.insertSubjectMapping(saved.getId(), subjectId));
+        }
+
+        return toResponse(findEntity(saved.getId()));
     }
 
     @Override
@@ -76,8 +89,8 @@ public class TeacherServiceImpl implements TeacherService {
     }
 
     private TeacherResponse toResponse(Teacher t) {
-        List<Long> subjectIds = t.getSubjects().stream().map(s -> s.getId()).toList();
-        List<String> subjectNames = t.getSubjects().stream().map(s -> s.getName()).toList();
+        List<Long> subjectIds = t.getSubjects().stream().map(s -> s.getId()).distinct().toList();
+        List<String> subjectNames = t.getSubjects().stream().map(s -> s.getName()).distinct().toList();
         List<Long> availableTimeslotIds = t.getAvailableTimeslots().stream().map(ts -> ts.getId()).toList();
         List<Long> preferredBuildingIds = t.getPreferredBuildings().stream().map(b -> b.getId()).toList();
         return new TeacherResponse(
