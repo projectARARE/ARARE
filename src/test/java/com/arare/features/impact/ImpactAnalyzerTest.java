@@ -2,7 +2,9 @@ package com.arare.features.impact;
 
 import com.arare.common.enums.SchoolDay;
 import com.arare.common.enums.TimeslotType;
+import com.arare.features.batch.Batch;
 import com.arare.features.classsession.ClassSession;
+import com.arare.features.teacher.Teacher;
 import com.arare.features.timeslot.Timeslot;
 import org.junit.jupiter.api.Test;
 
@@ -11,75 +13,112 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * P6 regression: teacher/room edges must be same-timeslot scoped so that
+ * blocking one day does not flood the teacher's whole week.
+ */
 class ImpactAnalyzerTest {
 
-    @Test
-    void timeslotBlockedIncludesUnassignedSessions() {
-        Timeslot blocked = Timeslot.builder()
-            .day(SchoolDay.MONDAY)
-            .startTime(LocalTime.of(8, 0))
-            .endTime(LocalTime.of(9, 0))
-            .type(TimeslotType.CLASS)
-            .build();
-        blocked.setId(100L);
+    private final DependencyGraphBuilder builder = new DependencyGraphBuilder();
+    private final ImpactAnalyzer analyzer = new ImpactAnalyzer();
 
-        ClassSession assigned = ClassSession.builder().timeslot(blocked).duration(1).isLocked(false).build();
-        assigned.setId(1L);
-        ClassSession unassigned = ClassSession.builder().timeslot(null).duration(1).isLocked(false).build();
-        unassigned.setId(2L);
-
-        DependencyGraph graph = new DependencyGraph();
-        graph.addNode(new SessionNode(1L, null, null, null, null, 100L, "MONDAY", false));
-        graph.addNode(new SessionNode(2L, null, null, null, null, null, null, false));
-
-        ImpactAnalyzer analyzer = new ImpactAnalyzer();
-        Set<Long> impacted = analyzer.analyze(
-            new DisruptionRequest(DisruptionType.TIMESLOT_BLOCKED, 100L, null, null),
-            graph,
-            List.of(assigned, unassigned)
-        );
-
-        assertTrue(impacted.contains(1L));
-        assertTrue(impacted.contains(2L));
+    private Timeslot slot(Long id, SchoolDay day, LocalTime start) {
+        Timeslot ts = Timeslot.builder()
+            .day(day).startTime(start).endTime(start.plusHours(1))
+            .slotNumber(1).type(TimeslotType.CLASS).build();
+        ts.setId(id);
+        return ts;
     }
 
+    private ClassSession session(Long id, Teacher teacher, Batch batch, Timeslot ts) {
+        return ClassSession.builder()
+            .id(id).teacher(teacher).batch(batch).timeslot(ts)
+            .duration(1).isLocked(false).build();
+    }
+
+    /**
+     * Same teacher teaches two sessions: S1 on MONDAY 9-10, S2 on TUESDAY 9-10.
+     * Blocking the teacher on Monday must impact only S1's direct Monday
+     * conflicts — S2 is on a different day and must NOT be flagged, even
+     * though it shares the same teacher (and batch). Before the fix the
+     * builder connected S1 and S2 (grouping by teacher regardless of
+     * timeslot), so BFS flooded S2.
+     */
     @Test
-    void specialEventUsesDayMatching() {
-        Timeslot monday = Timeslot.builder()
-            .day(SchoolDay.MONDAY)
-            .startTime(LocalTime.of(10, 0))
-            .endTime(LocalTime.of(11, 0))
-            .type(TimeslotType.CLASS)
-            .build();
-        monday.setId(10L);
+    void teacherDisruptionOnOneDayDoesNotFloodToOtherDays() {
+        Teacher teacher = Teacher.builder().name("T").build();
+        teacher.setId(1L);
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(2L);
+        Timeslot mon = slot(100L, SchoolDay.MONDAY, LocalTime.of(9, 0));
+        Timeslot tue = slot(101L, SchoolDay.TUESDAY, LocalTime.of(9, 0));
 
-        Timeslot tuesday = Timeslot.builder()
-            .day(SchoolDay.TUESDAY)
-            .startTime(LocalTime.of(10, 0))
-            .endTime(LocalTime.of(11, 0))
-            .type(TimeslotType.CLASS)
-            .build();
-        tuesday.setId(11L);
+        ClassSession s1 = session(1L, teacher, batch, mon);
+        ClassSession s2 = session(2L, teacher, batch, tue);
 
-        ClassSession sMon = ClassSession.builder().timeslot(monday).duration(1).isLocked(false).build();
-        sMon.setId(10L);
-        ClassSession sTue = ClassSession.builder().timeslot(tuesday).duration(1).isLocked(false).build();
-        sTue.setId(11L);
+        DependencyGraph graph = builder.build(List.of(s1, s2));
 
-        DependencyGraph graph = new DependencyGraph();
-        graph.addNode(new SessionNode(10L, null, null, null, null, 10L, "MONDAY", false));
-        graph.addNode(new SessionNode(11L, null, null, null, null, 11L, "TUESDAY", false));
+        DisruptionRequest event = new DisruptionRequest(
+            DisruptionType.TEACHER_UNAVAILABLE, teacher.getId(),
+            LocalDate.of(2024, 1, 1), // Monday per ISO DayOfWeek.MONDAY
+            "teacher sick monday");
 
-        ImpactAnalyzer analyzer = new ImpactAnalyzer();
-        Set<Long> impacted = analyzer.analyze(
-            new DisruptionRequest(DisruptionType.SPECIAL_EVENT, null, LocalDate.parse("2026-03-30"), "event"),
-            graph,
-            List.of(sMon, sTue)
-        );
+        Set<Long> impacted = analyzer.analyze(event, graph, List.of(s1, s2));
 
-        assertTrue(impacted.contains(10L));
-        assertTrue(!impacted.contains(11L));
+        assertTrue(impacted.contains(1L), "S1 (Monday, directly hit) must be impacted");
+        assertFalse(impacted.contains(2L), "S2 (Tuesday) must NOT be flooded by Monday teacher block");
+    }
+
+    /**
+     * Two sessions same teacher, same day, same timeslot (different rooms) —
+     * these genuinely conflict, so both must be impacted.
+     */
+    @Test
+    void sameTimeslotConflictsAreImpacted() {
+        Teacher teacher = Teacher.builder().name("T").build();
+        teacher.setId(1L);
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(2L);
+        Timeslot mon = slot(100L, SchoolDay.MONDAY, LocalTime.of(9, 0));
+
+        ClassSession s1 = session(1L, teacher, batch, mon);
+        ClassSession s2 = session(2L, teacher, batch, mon);;
+
+        DependencyGraph graph = builder.build(List.of(s1, s2));
+        DisruptionRequest event = new DisruptionRequest(
+            DisruptionType.TEACHER_UNAVAILABLE, teacher.getId(),
+            LocalDate.of(2024, 1, 1), "monday");
+
+        Set<Long> impacted = analyzer.analyze(event, graph, List.of(s1, s2));
+        assertTrue(impacted.contains(1L) && impacted.contains(2L),
+            "both Monday-same-timeslot sessions must be impacted");
+    }
+
+    /**
+     * P6 step 4: a dateless SPECIAL_EVENT must NOT match every session.
+     * Before the fix, matchesDay() returned true whenever event.date()==null,
+     * so a SPECIAL_EVENT with no date flagged the entire schedule. A dateless
+     * event has no defined scope and must therefore match nothing.
+     */
+    @Test
+    void datelessSpecialEventDoesNotFlagEverything() {
+        Teacher teacher = Teacher.builder().name("T").build();
+        teacher.setId(1L);
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(2L);
+        Timeslot mon = slot(100L, SchoolDay.MONDAY, LocalTime.of(9, 0));
+        Timeslot tue = slot(101L, SchoolDay.TUESDAY, LocalTime.of(9, 0));
+
+        ClassSession s1 = session(1L, teacher, batch, mon);
+        ClassSession s2 = session(2L, teacher, batch, tue);
+
+        DependencyGraph graph = builder.build(List.of(s1, s2));
+        DisruptionRequest dateless = new DisruptionRequest(
+            DisruptionType.SPECIAL_EVENT, null, null, "unscoped event");
+
+        Set<Long> impacted = analyzer.analyze(dateless, graph, List.of(s1, s2));
+        assertTrue(impacted.isEmpty(), "dateless special event must not flood the schedule");
     }
 }
