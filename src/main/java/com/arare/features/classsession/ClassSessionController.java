@@ -1,5 +1,6 @@
 package com.arare.features.classsession;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -35,7 +36,7 @@ public class ClassSessionController {
     @PatchMapping("/{id}")
     public ResponseEntity<ClassSessionResponse> updateAssignment(
         @PathVariable Long id,
-        @RequestBody SessionAssignmentRequest req
+        @Valid @RequestBody SessionAssignmentRequest req
     ) {
         return ResponseEntity.ok(service.updateAssignment(id, req));
     }
