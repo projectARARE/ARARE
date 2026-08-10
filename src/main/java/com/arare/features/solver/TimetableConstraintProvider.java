@@ -56,7 +56,10 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             preferTeacherBuilding(factory),
             minimizeBatchBuildingChanges(factory),
             roomStability(factory),
-            spreadSubjectAcrossWeek(factory),
+            // Same-day density is intentionally owned by avoidSameSubjectMultipleTimesPerDay
+            // (gated by Subject.maxSessionsPerDay). The previous spreadSubjectAcrossWeek
+            // constraint duplicated that same-day penalty and double-counted the cap, so it
+            // was removed in favour of the single configurable rule.
             preferNonLabMultiSlotConsecutive(factory),
         };
     }
@@ -134,7 +137,8 @@ public class TimetableConstraintProvider implements ConstraintProvider {
 
     Constraint teacherNotQualified(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getTeacher() != null
+            .filter(s -> s.getSubject() != null
+                && s.getTeacher() != null
                 && s.getSubject().isRequiresTeacher()
                 && !s.getTeacher().getSubjects().contains(s.getSubject()))
             .penalize(HardMediumSoftScore.ONE_HARD)
@@ -171,21 +175,27 @@ public class TimetableConstraintProvider implements ConstraintProvider {
 
     Constraint teacherRequiredButMissing(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getSubject().isRequiresTeacher() && s.getTeacher() == null)
+            .filter(s -> s.getSubject() != null
+                && s.getSubject().isRequiresTeacher()
+                && s.getTeacher() == null)
             .penalize(HardMediumSoftScore.ONE_HARD)
             .asConstraint("Teacher required but not assigned");
     }
 
     Constraint teacherAssignedWhenNotRequired(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> !s.getSubject().isRequiresTeacher() && s.getTeacher() != null)
+            .filter(s -> s.getSubject() != null
+                && !s.getSubject().isRequiresTeacher()
+                && s.getTeacher() != null)
             .penalize(HardMediumSoftScore.ONE_HARD)
             .asConstraint("Teacher assigned though not required");
     }
 
     Constraint roomRequiredButMissing(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getSubject().isRequiresRoom() && s.getRoom() == null)
+            .filter(s -> s.getSubject() != null
+                && s.getSubject().isRequiresRoom()
+                && s.getRoom() == null)
             .penalize(HardMediumSoftScore.ONE_HARD)
             .asConstraint("Room required but not assigned");
     }
@@ -372,19 +382,6 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .asConstraint("Teacher building preference violated");
     }
 
-    Constraint spreadSubjectAcrossWeek(ConstraintFactory factory) {
-        return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> s.getTimeslot() != null && effectiveBatch(s) != null)
-            .join(ClassSession.class,
-                Joiners.equal(ClassSession::getSubject),
-                Joiners.equal(TimetableConstraintProvider::effectiveBatch),
-                Joiners.lessThan(ClassSession::getId))
-            .filter((s1, s2) -> s2.getTimeslot() != null
-                && s1.getTimeslot().getDay() == s2.getTimeslot().getDay())
-            .penalize(HardMediumSoftScore.ONE_MEDIUM)
-            .asConstraint("Same subject scheduled twice on same day");
-    }
-
     Constraint minimizeTeacherBuildingChanges(ConstraintFactory factory) {
         return factory.forEachUniquePair(
                 ClassSession.class,
@@ -437,12 +434,15 @@ public class TimetableConstraintProvider implements ConstraintProvider {
 
     Constraint avoidSameSubjectMultipleTimesPerDay(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> effectiveBatch(s) != null && s.getTimeslot() != null)
+            .filter(s -> s.getSubject() != null
+                && effectiveBatch(s) != null
+                && s.getTimeslot() != null)
             .groupBy(TimetableConstraintProvider::effectiveBatch,
                 ClassSession::getSubject,
                 s -> s.getTimeslot().getDay(),
                 ConstraintCollectors.count())
-            .filter((batch, subject, day, count) -> count > subject.getMaxSessionsPerDay())
+            .filter((batch, subject, day, count) -> subject.getMaxSessionsPerDay() > 0
+                && count > subject.getMaxSessionsPerDay())
             .penalize(HardMediumSoftScore.ONE_MEDIUM,
                 (batch, subject, day, count) -> count - subject.getMaxSessionsPerDay())
             .asConstraint("Cognitive load: same subject too many times per day");
@@ -498,9 +498,7 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     private static Batch effectiveBatch(ClassSession s) {
-        if (s.getBatch() != null) return s.getBatch();
-        if (s.getSection() != null) return s.getSection().getBatch();
-        return null;
+        return s.getEffectiveBatch();
     }
 
     private static boolean roomMatchesSubjectRequirements(ClassSession s) {
@@ -565,14 +563,7 @@ public class TimetableConstraintProvider implements ConstraintProvider {
         return slotBasedExcess;
     }
 
-    private static boolean isMiddayClassSlot(Timeslot timeslot) {
-        return timeslot != null
-            && timeslot.getType() == TimeslotType.CLASS
-            && timeslot.getStartTime().isBefore(MIDDAY_BREAK_END)
-            && timeslot.getEndTime().isAfter(MIDDAY_BREAK_START);
-    }
-
-    private static boolean areBackToBackBySlotNumber(ClassSession a, ClassSession b) {
+private static boolean areBackToBackBySlotNumber(ClassSession a, ClassSession b) {
         Integer aStart = a.getTimeslot().getSlotNumber();
         Integer bStart = b.getTimeslot().getSlotNumber();
         if (aStart == null || bStart == null) {
@@ -649,14 +640,15 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             return aStartSlot < bEndExclusive && bStartSlot < aEndExclusive;
         }
 
-        if (a.getDuration() == 1 && b.getDuration() == 1) {
-            var aStart = a.getTimeslot().getStartTime();
-            var aEnd = a.getTimeslot().getEndTime();
-            var bStart = b.getTimeslot().getStartTime();
-            var bEnd = b.getTimeslot().getEndTime();
-            return aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
-        }
-
-        return true;
+        // Fallback when slot_number is unavailable: compare by the actual
+        // scheduled start/end times. This is correct on the P1 backfilled
+        // data (slot_number is populated) and avoids the old "always
+        // conflict" branch that fired for any multi-slot session missing
+        // its slot number.
+        var aStart = a.getTimeslot().getStartTime();
+        var aEnd = a.getTimeslot().getEndTime();
+        var bStart = b.getTimeslot().getStartTime();
+        var bEnd = b.getTimeslot().getEndTime();
+        return aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
     }
 }
