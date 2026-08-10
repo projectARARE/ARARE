@@ -1,6 +1,5 @@
 package com.arare.features.solver;
 
-import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
 import ai.timefold.solver.test.api.score.stream.ConstraintVerifier;
 import com.arare.common.enums.LabSubtype;
 import com.arare.common.enums.RoomType;
@@ -21,7 +20,7 @@ class TimetableConstraintProviderTest {
     ConstraintVerifier<TimetableConstraintProvider, TimetableSolution> constraintVerifier =
             ConstraintVerifier.build(new TimetableConstraintProvider(), TimetableSolution.class, ClassSession.class);
 
-    // ── Teacher daily hours cap should be MEDIUM, not HARD ──
+    // -- Teacher daily hours cap should be MEDIUM, not HARD --
 
     @Test
     void teacherDailyHoursCapPenalizesMedium() {
@@ -36,13 +35,13 @@ class TimetableConstraintProviderTest {
         ClassSession s2 = buildSession(2L, teacher, ts2);
         ClassSession s3 = buildSession(3L, teacher, ts3);
 
-        // Total 3 hours, max is 2 → penalty = 1
+        // Total 3 hours, max is 2 -- penalty = 1
         constraintVerifier.verifyThat(TimetableConstraintProvider::teacherDailyHoursCap)
                 .given(s1, s2, s3)
                 .penalizesBy(1);
     }
 
-    // ── Teacher weekly hours cap should be MEDIUM, not HARD ──
+    // -- Teacher weekly hours cap should be MEDIUM, not HARD --
 
     @Test
     void teacherWeeklyHoursCapPenalizesMedium() {
@@ -57,13 +56,13 @@ class TimetableConstraintProviderTest {
         ClassSession s2 = buildSession(2L, teacher, ts2);
         ClassSession s3 = buildSession(3L, teacher, ts3);
 
-        // Total 3 hours across week, max is 2 → penalty = 1
+        // Total 3 hours across week, max is 2 -- penalty = 1
         constraintVerifier.verifyThat(TimetableConstraintProvider::teacherWeeklyHoursCap)
                 .given(s1, s2, s3)
                 .penalizesBy(1);
     }
 
-    // ── Teacher consecutive classes cap should be MEDIUM, not HARD ──
+    // -- Teacher consecutive classes cap should be MEDIUM, not HARD --
 
     @Test
     void teacherConsecutiveClassesCapPenalizesMedium() {
@@ -78,7 +77,7 @@ class TimetableConstraintProviderTest {
         ClassSession s2 = buildSession(2L, teacher, ts2);
         ClassSession s3 = buildSession(3L, teacher, ts3);
 
-        // 3 classes on same day, max consecutive is 2 → penalty = 1
+        // 3 classes on same day, max consecutive is 2 -- penalty = 1
         constraintVerifier.verifyThat(TimetableConstraintProvider::teacherConsecutiveClassesCap)
                 .given(s1, s2, s3)
                 .penalizesBy(1);
@@ -154,7 +153,102 @@ class TimetableConstraintProviderTest {
             .penalizesBy(1);
         }
 
-    // ── Helpers ──
+    // -- Malformed data: sessions with a null subject must never NPE --
+
+    @Test
+    void nullSubjectSessionsDoNotBreakTeacherRequiredConstraint() {
+        Teacher teacher = Teacher.builder().build();
+        teacher.setId(1L);
+
+        ClassSession s1 = ClassSession.builder()
+            .id(1L)
+            .teacher(teacher)
+            .duration(1)
+            .build();
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::teacherRequiredButMissing)
+            .given(s1)
+            .penalizesBy(0);
+    }
+
+    @Test
+    void nullSubjectSessionsDoNotBreakTeacherNotQualifiedConstraint() {
+        Teacher teacher = Teacher.builder().build();
+        teacher.setId(1L);
+
+        ClassSession s1 = ClassSession.builder()
+            .id(1L)
+            .teacher(teacher)
+            .duration(1)
+            .build();
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::teacherNotQualified)
+            .given(s1)
+            .penalizesBy(0);
+    }
+
+    @Test
+    void nullSubjectSessionsDoNotBreakTeacherNotRequiredConstraint() {
+        Teacher teacher = Teacher.builder().build();
+        teacher.setId(1L);
+
+        ClassSession s1 = ClassSession.builder()
+            .id(1L)
+            .teacher(teacher)
+            .duration(1)
+            .build();
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::teacherAssignedWhenNotRequired)
+            .given(s1)
+            .penalizesBy(0);
+    }
+
+    @Test
+    void nullSubjectSessionsDoNotBreakRoomRequiredConstraint() {
+        Room room = Room.builder().type(RoomType.LECTURE).capacity(40).build();
+        room.setId(1L);
+
+        ClassSession s1 = ClassSession.builder()
+            .id(1L)
+            .room(room)
+            .duration(1)
+            .build();
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::roomRequiredButMissing)
+            .given(s1)
+            .penalizesBy(0);
+    }
+
+    @Test
+    void nullSubjectSessionsDoNotBreakSameDayDensityConstraint() {
+        Timeslot ts1 = buildTimeslot(10L, SchoolDay.MONDAY, 8, 9, 1);
+        Timeslot ts2 = buildTimeslot(11L, SchoolDay.MONDAY, 9, 10, 2);
+
+        ClassSession s1 = ClassSession.builder().id(1L).timeslot(ts1).duration(1).build();
+        ClassSession s2 = ClassSession.builder().id(2L).timeslot(ts2).duration(1).build();
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::avoidSameSubjectMultipleTimesPerDay)
+            .given(s1, s2)
+            .penalizesBy(0);
+    }
+
+    @Test
+    void subjectWithoutMaxSessionsPerDayDoesNotBreakSameDayDensityConstraint() {
+        Subject subject = Subject.builder().name("Unbounded Subject").build();
+        subject.setId(1L);
+
+        Timeslot ts1 = buildTimeslot(10L, SchoolDay.MONDAY, 8, 9, 1);
+        Timeslot ts2 = buildTimeslot(11L, SchoolDay.MONDAY, 9, 10, 2);
+
+        ClassSession s1 = ClassSession.builder().id(1L).subject(subject).timeslot(ts1).duration(1).build();
+        ClassSession s2 = ClassSession.builder().id(2L).subject(subject).timeslot(ts2).duration(1).build();
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::avoidSameSubjectMultipleTimesPerDay)
+            .given(s1, s2)
+            .penalizesBy(0);
+    }
+
+    // -- Helpers --
 
     private Timeslot buildTimeslot(Long id, SchoolDay day, int startHour, int endHour, int slotNumber) {
         Timeslot ts = Timeslot.builder()
