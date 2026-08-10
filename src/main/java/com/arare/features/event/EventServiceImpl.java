@@ -1,16 +1,17 @@
 package com.arare.features.event;
 
 import com.arare.exception.ResourceNotFoundException;
-import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.impact.DisruptionRequest;
 import com.arare.features.impact.DisruptionService;
 import com.arare.features.impact.DisruptionType;
 import com.arare.features.room.RoomRepository;
 import com.arare.features.schedule.ScheduleRepository;
-import com.arare.features.solver.TimetableSolverService;
+import com.arare.features.solvejob.SolveJobResponse;
+import com.arare.features.solvejob.SolveJobService;
 import com.arare.features.teacher.TeacherRepository;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -29,9 +31,8 @@ public class EventServiceImpl implements EventService {
     private final RoomRepository roomRepo;
     private final TeacherRepository teacherRepo;
     private final TimeslotRepository timeslotRepo;
-    private final ClassSessionRepository sessionRepo;
     private final ScheduleRepository scheduleRepo;
-    private final TimetableSolverService solverService;
+    private final SolveJobService solveJobService;
     private final DisruptionService disruptionService;
 
     @Override
@@ -77,7 +78,7 @@ public class EventServiceImpl implements EventService {
 
     @Override
     @Transactional
-    public void applyToSchedule(Long eventId, Long scheduleId) {
+    public SolveJobResponse applyToSchedule(Long eventId, Long scheduleId) {
         Event event = findEntity(eventId);
         scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
@@ -113,9 +114,14 @@ public class EventServiceImpl implements EventService {
                 .impactedSessionIds());
         }
 
-        if (!impacted.isEmpty()) {
-            solverService.partialResolve(scheduleId, impacted.stream().toList());
+        if (impacted.isEmpty()) {
+            log.info("Event {} applied to schedule {} — no sessions impacted", eventId, scheduleId);
+            return solveJobService.completedNoop(scheduleId);
         }
+
+        log.info("Event {} applied to schedule {} — re-solving {} sessions",
+            eventId, scheduleId, impacted.size());
+        return solveJobService.submitPartialResolve(scheduleId, impacted.stream().toList());
     }
 
     private List<LocalDate> eventDates(Event event) {
