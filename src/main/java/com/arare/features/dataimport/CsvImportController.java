@@ -37,6 +37,7 @@ public class CsvImportController {
     private final CsvImportService csvImportService;
     private final RelationalCsvImportService relationalCsvImportService;
     private final RelationalCsvExportService relationalCsvExportService;
+    private final CsvTemplateService csvTemplateService;
 
     @PostMapping("/csv/{entityType}")
     public ResponseEntity<CsvImportResponse> importCsv(
@@ -68,6 +69,15 @@ public class CsvImportController {
         String csv = relationalCsvExportService.exportCsv(type);
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + type.getFileName() + "\"")
+            .body(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @GetMapping(value = "/template/csv/{entityType}", produces = "text/csv;charset=UTF-8")
+    public ResponseEntity<byte[]> exportTemplateCsv(@PathVariable String entityType) {
+        CsvEntityType type = CsvEntityType.fromName(entityType);
+        String csv = csvTemplateService.exportTemplateCsv(type);
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + csvTemplateService.templateFileName(type) + "\"")
             .body(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 

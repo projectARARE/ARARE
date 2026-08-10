@@ -22,6 +22,7 @@ interface SessionCellProps {
   onHover?: (session: ClassSession | null) => void
   onDragStart?: (session: ClassSession) => void
   onDragEnd?: () => void
+  onContextMenu?: (session: ClassSession, x: number, y: number) => void
   highlighted?: boolean
   heatState?: 'none' | 'soft' | 'hard'
   inspectorNotes?: string[]
@@ -33,6 +34,7 @@ export default function SessionCell({
   onHover,
   onDragStart,
   onDragEnd,
+  onContextMenu,
   highlighted = false,
   heatState = 'none',
   inspectorNotes = [],
@@ -44,12 +46,24 @@ export default function SessionCell({
         ? 'ring-1 ring-amber-400'
         : ''
 
+  const lockedBadge = session.isLocked ? (
+    <span className="absolute right-1 top-1 inline-flex items-center gap-1 rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+      <Lock className="h-2.5 w-2.5" />
+      Locked
+    </span>
+  ) : null
+
   return (
     <div
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       draggable={!session.isLocked && Boolean(onDragStart)}
       onClick={() => onClick?.(session)}
+      onContextMenu={(e) => {
+        if (!onContextMenu) return
+        e.preventDefault()
+        onContextMenu(session, e.clientX, e.clientY)
+      }}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.(session)}
       onMouseEnter={() => onHover?.(session)}
       onMouseLeave={() => onHover?.(null)}
@@ -57,16 +71,17 @@ export default function SessionCell({
       onDragEnd={() => onDragEnd?.()}
       title={[session.isLocked ? 'Locked - drag disabled' : '', ...inspectorNotes].filter(Boolean).join(' | ')}
       className={`
-        rounded-md border p-1.5 text-xs leading-tight
+        relative rounded-md border p-1.5 text-xs leading-tight
         transition-shadow hover:shadow-md select-none
         ${colorForSubject(session.subjectId ?? session.id)}
         ${heatClass}
         ${highlighted ? 'outline outline-2 outline-offset-1 outline-cyan-400' : ''}
-        ${session.isLocked ? 'ring-2 ring-offset-1 ring-amber-400 opacity-90' : ''}
+        ${session.isLocked ? 'ring-2 ring-offset-1 ring-amber-500 bg-amber-50/70 opacity-95' : ''}
         ${(onClick || onDragStart) && !session.isLocked ? 'cursor-pointer' : ''}
         ${session.isLocked && onDragStart ? 'cursor-not-allowed' : ''}
       `}
     >
+      {lockedBadge}
       <p className="font-semibold truncate">{session.subjectName}</p>
       {session.teacherName && (
         <p className="truncate opacity-80">{session.teacherName}</p>

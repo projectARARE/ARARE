@@ -8,10 +8,7 @@ import com.arare.features.solver.ScoreExplanationResponse;
 import com.arare.features.solvejob.SolveJobResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,7 +22,6 @@ public class ScheduleController {
     private final ScheduleService          service;
     private final DisruptionService        disruptionService;
     private final TimetableExportService   exportService;
-    private final TimetableCalendarExportService calendarExportService;
     private final FeasibilityCheckService  feasibilityCheckService;
 
     @PostMapping("/generate")
@@ -95,40 +91,13 @@ public class ScheduleController {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
             .body(disruptionService.applyDisruption(id, request));
     }
+
     @GetMapping("/{id}/export/csv")
     public ResponseEntity<byte[]> exportCsv(@PathVariable Long id) {
         byte[] csv = exportService.exportCsv(id);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
-        headers.setContentDisposition(
-            ContentDisposition.attachment().filename("timetable-" + id + ".csv").build());
-        return new ResponseEntity<>(csv, headers, HttpStatus.OK);
-    }
-
-    @GetMapping(value = "/ical/teacher/{teacherId}", produces = "text/calendar; charset=UTF-8")
-    public ResponseEntity<byte[]> exportTeacherIcal(
-            @PathVariable Long teacherId,
-            @RequestParam(required = false) Long scheduleId
-    ) {
-        byte[] ics = calendarExportService.exportTeacherCalendar(teacherId, scheduleId);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType("text/calendar; charset=UTF-8"));
-        headers.setContentDisposition(
-            ContentDisposition.inline().filename("teacher-" + teacherId + ".ics").build());
-        return new ResponseEntity<>(ics, headers, HttpStatus.OK);
-    }
-
-    @GetMapping(value = "/ical/batch/{batchId}", produces = "text/calendar; charset=UTF-8")
-    public ResponseEntity<byte[]> exportBatchIcal(
-            @PathVariable Long batchId,
-            @RequestParam(required = false) Long scheduleId
-    ) {
-        byte[] ics = calendarExportService.exportBatchCalendar(batchId, scheduleId);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType("text/calendar; charset=UTF-8"));
-        headers.setContentDisposition(
-            ContentDisposition.inline().filename("batch-" + batchId + ".ics").build());
-        return new ResponseEntity<>(ics, headers, HttpStatus.OK);
+        return ResponseEntity.ok()
+            .header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".csv\"")
+            .body(csv);
     }
 
     @PostMapping("/feasibility-check")

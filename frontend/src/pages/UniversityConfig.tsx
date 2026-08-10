@@ -24,11 +24,9 @@ export default function UniversityConfigPage() {
   const [timeslots, setTimeslots] = useState<Timeslot[]>([])
   const [missingConfig, setMissingConfig] = useState(false)
   const [paintedAvailableTimeslotIds, setPaintedAvailableTimeslotIds] = useState<number[]>([])
+  const [diagnostics, setDiagnostics] = useState<any>(null)
 
   const painterTimeslots = useMemo<Timeslot[]>(() => {
-    const classTimeslots = timeslots.filter((ts) => ts.type === 'CLASS')
-    if (classTimeslots.length > 0) return timeslots
-
     const days = form.workingDays.length > 0 ? form.workingDays : ALL_DAYS.slice(0, Math.max(5, Math.min(6, form.daysPerWeek)))
     const slotsPerDay = Math.max(1, form.timeslotsPerDay || 1)
     const preview: Timeslot[] = []
@@ -36,28 +34,34 @@ export default function UniversityConfigPage() {
 
     for (const day of days) {
       for (let slot = 0; slot < slotsPerDay; slot++) {
-        const hour = 9 + slot
-        const startHour = String(hour).padStart(2, '0')
-        const endHour = String(hour + 1).padStart(2, '0')
-        preview.push({
-          id: nextId++,
-          day,
-          startTime: `${startHour}:00`,
-          endTime: `${endHour}:00`,
-          slotNumber: slot,
-          type: 'CLASS',
-        })
+        const existing = timeslots.find((t) => t.day === day && t.slotNumber === slot && t.type === 'CLASS')
+        if (existing) {
+          preview.push(existing)
+        } else {
+          const hour = 9 + slot
+          const startHour = String(hour).padStart(2, '0')
+          const endHour = String(hour + 1).padStart(2, '0')
+          preview.push({
+            id: nextId++,
+            day,
+            startTime: `${startHour}:00`,
+            endTime: `${endHour}:00`,
+            slotNumber: slot,
+            type: 'CLASS',
+          })
+        }
       }
     }
-
     return preview
   }, [timeslots, form.workingDays, form.daysPerWeek, form.timeslotsPerDay])
 
-   useEffect(() => {
-    Promise.allSettled([universityConfigApi.get(), timeslotApi.getAll()])
-      .then(([cfgRes, tsRes]) => {
-        // get() 404s on a fresh install (no config persisted yet); fall back to
-        // defaults instead of rejecting the whole Promise.all.
+  const loadData = () => {
+    Promise.allSettled([
+      universityConfigApi.get(),
+      timeslotApi.getAll(),
+      universityConfigApi.diagnostics()
+    ])
+      .then(([cfgRes, tsRes, diagRes]) => {
         if (cfgRes.status === 'fulfilled' && cfgRes.value) {
           setForm(cfgRes.value)
         } else {
@@ -66,9 +70,16 @@ export default function UniversityConfigPage() {
         if (tsRes.status === 'fulfilled') {
           setTimeslots(tsRes.value)
         }
+        if (diagRes.status === 'fulfilled' && diagRes.value) {
+          setDiagnostics(diagRes.value)
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load configuration'))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadData()
   }, [])
 
   const toggleDay = (day: SchoolDay) => {
@@ -88,6 +99,7 @@ export default function UniversityConfigPage() {
       await universityConfigApi.save(form)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
+      loadData()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'An error occurred')
     } finally {
@@ -167,20 +179,29 @@ export default function UniversityConfigPage() {
           <div>
             <p className="block text-sm font-medium text-gray-700 mb-1">Break Slot Indices</p>
             <p className="text-xs text-gray-500 mb-2">
-              Comma-separated 0-based slot indices that are reserved for breaks.
+              Select which slots should be reserved for breaks.
             </p>
-            <input
-              className="input"
-              value={form.breakSlotIndices.join(', ')}
-              onChange={(e) => {
-                const indices = e.target.value
-                  .split(',')
-                  .map((n) => parseInt(n.trim()))
-                  .filter((n) => !isNaN(n))
-                setForm({ ...form, breakSlotIndices: indices })
-              }}
-              placeholder="3, 6"
-            />
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: Math.max(1, form.timeslotsPerDay || 1) }).map((_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    const indices = form.breakSlotIndices.includes(idx)
+                      ? form.breakSlotIndices.filter((i) => i !== idx)
+                      : [...form.breakSlotIndices, idx].sort((a, b) => a - b)
+                    setForm({ ...form, breakSlotIndices: indices })
+                  }}
+                  className={`px-3 py-1 rounded text-sm font-medium border transition-colors ${
+                    form.breakSlotIndices.includes(idx)
+                      ? 'bg-amber-100 text-amber-800 border-amber-300'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-amber-200'
+                  }`}
+                >
+                  Slot {idx + 1}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div>
@@ -205,6 +226,25 @@ export default function UniversityConfigPage() {
           </div>
         </div>
       </Card>
+
+      {diagnostics && (
+        <Card title="Configuration Diagnostics" description="System viability based on the active config">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className={`w-3 h-3 rounded-full ${diagnostics.valid ? 'bg-green-500' : 'bg-red-500'}`}></span>
+              <span className="font-medium text-gray-900">{diagnostics.valid ? 'Valid Configuration' : 'Configuration has issues'}</span>
+            </div>
+            <p className="text-sm text-gray-600">{diagnostics.summary}</p>
+            {diagnostics.issues && diagnostics.issues.length > 0 && (
+              <ul className="list-disc pl-5 text-sm text-red-600 space-y-1">
+                {diagnostics.issues.map((issue: string, i: number) => (
+                  <li key={i}>{issue}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

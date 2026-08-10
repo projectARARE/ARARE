@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Download, FileUp, Upload } from 'lucide-react'
 import { Button, Card, Spinner } from '../components/ui'
 import { importApi } from '../services/api'
@@ -16,6 +16,31 @@ interface EntityImportState {
   expanded: boolean
 }
 
+function summarizeCsv(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    return { rowCount: 0, columnCount: 0, headers: [] as string[] }
+  }
+  const lines = trimmed.split(/\r?\n/).filter((line) => line.trim().length > 0)
+  const headers = (lines[0] ?? '').split(',').map((value) => value.trim()).filter(Boolean)
+  return {
+    rowCount: Math.max(0, lines.length - 1),
+    columnCount: headers.length,
+    headers,
+  }
+}
+
+function downloadBlob(fileName: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 function EntityImportCard({ step }: { step: ImportOrderStep }) {
   const [state, setState] = useState<EntityImportState>({
     loading: false,
@@ -29,6 +54,7 @@ function EntityImportCard({ step }: { step: ImportOrderStep }) {
     expanded: false,
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const csvPreview = useMemo(() => summarizeCsv(state.content), [state.content])
 
   const patch = (p: Partial<EntityImportState>) => setState((prev) => ({ ...prev, ...p }))
 
@@ -60,15 +86,8 @@ function EntityImportCard({ step }: { step: ImportOrderStep }) {
   const runExport = async () => {
     patch({ exporting: true, error: null })
     try {
-      const blob = await importApi.exportCsv(step.name)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = step.fileName
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const blob = await importApi.exportTemplateCsv(step.name)
+      downloadBlob(step.fileName.replace('.csv', '-template.csv'), blob)
     } catch (err) {
       patch({ error: err instanceof Error ? err.message : 'Export failed' })
     } finally {
@@ -138,6 +157,26 @@ function EntityImportCard({ step }: { step: ImportOrderStep }) {
             className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
 
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-gray-800">Preview</span>
+              <span>{csvPreview.rowCount} data row{csvPreview.rowCount === 1 ? '' : 's'}</span>
+              <span>{csvPreview.columnCount} column{csvPreview.columnCount === 1 ? '' : 's'}</span>
+            </div>
+            {csvPreview.headers.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {csvPreview.headers.map((header) => (
+                  <span key={header} className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-700">
+                    {header}
+                  </span>
+                ))}
+              </div>
+            )}
+            {state.content.trim() && csvPreview.rowCount === 0 && (
+              <p className="text-amber-700">Add sample rows below the header so the import guidance stays useful.</p>
+            )}
+          </div>
+
           {state.parseError && <p className="text-xs text-red-600">{state.parseError}</p>}
           {state.error && (
             <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -150,7 +189,7 @@ function EntityImportCard({ step }: { step: ImportOrderStep }) {
               Import
             </Button>
             <Button variant="secondary" size="sm" icon={<Download size={13} />} loading={state.exporting} onClick={runExport}>
-              Export template
+              Download template CSV
             </Button>
           </div>
 
@@ -233,7 +272,10 @@ export default function CsvImport() {
 
   return (
     <div className="space-y-4">
-      <Card title="Import & Export" description="Import one entity at a time (single CSV), or the full relational ZIP package.">
+      <Card title="Import & Export" description="Use fixed sample CSV templates from the backend for single entities, or the full relational ZIP package for round-tripping all relationships.">
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
+          Template CSV downloads are backend-generated examples, not live database exports. They include complete columns and sample rows so you can edit them safely before importing.
+        </div>
         <div className="flex flex-wrap items-center gap-4">
           <input
             ref={zipInputRef}

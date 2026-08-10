@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
-import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark } from 'lucide-react'
+import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus } from 'lucide-react'
 import { Card, Button, Select, Badge, Modal, ContextMenu, Input } from '../components/ui'
 import TimetableGrid from '../components/timetable/TimetableGrid'
 import SessionCell from '../components/timetable/SessionCell'
 import ScoreBreakdownPanel from '../components/timetable/ScoreBreakdownPanel'
 import ConflictSolverSidecar, { buildConflictSuggestions } from '../components/timetable/ConflictSolverSidecar'
-import { scheduleApi, timeslotApi, batchApi, teacherApi, roomApi, sessionApi } from '../services/api'
+import { scheduleApi, timeslotApi, batchApi, teacherApi, roomApi, sessionApi, subjectApi, classSectionApi } from '../services/api'
 import { waitForJob } from '../hooks/useSolveJob'
 import type {
   Schedule,
@@ -15,11 +15,14 @@ import type {
   Batch,
   Teacher,
   Room,
+  Subject,
+  ClassSection,
   DisruptionRequest,
   DisruptionResponse,
   DisruptionType,
   ScoreExplanation,
   ConflictSuggestion,
+  SessionCreateRequest,
 } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
@@ -116,6 +119,12 @@ interface SavedView {
   filterId?: number
 }
 
+type SlotContextMenuState = {
+  x: number
+  y: number
+  slot: Timeslot
+}
+
 const savedViewsKey = (scheduleId: number) => `arare.savedViews.${scheduleId}`
 const MAX_SAVED_VIEWS = 20
 
@@ -184,6 +193,8 @@ export default function TimetableViewer() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
+  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [sections, setSections] = useState<ClassSection[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ViewMode>('batch')
   const [batchFilterId, setBatchFilterId] = useState<number | undefined>()
@@ -209,6 +220,19 @@ export default function TimetableViewer() {
   const [draggedSession, setDraggedSession] = useState<ClassSession | null>(null)
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null)
   const [dropSaving, setDropSaving] = useState(false)
+
+  const [slotContextMenu, setSlotContextMenu] = useState<SlotContextMenuState | null>(null)
+  const [createSessionOpen, setCreateSessionOpen] = useState(false)
+  const [createSlot, setCreateSlot] = useState<Timeslot | null>(null)
+  const [createSubjectId, setCreateSubjectId] = useState('')
+  const [createBatchId, setCreateBatchId] = useState('')
+  const [createSectionId, setCreateSectionId] = useState('')
+  const [createTeacherId, setCreateTeacherId] = useState('')
+  const [createRoomId, setCreateRoomId] = useState('')
+  const [createDuration, setCreateDuration] = useState(1)
+  const [createLocked, setCreateLocked] = useState(false)
+  const [createSaving, setCreateSaving] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const [showDisruptionPanel, setShowDisruptionPanel] = useState(false)
   const [disruptionType, setDisruptionType] = useState<DisruptionType>('TEACHER_UNAVAILABLE')
@@ -299,14 +323,18 @@ export default function TimetableViewer() {
       batchApi.getAll(),
       teacherApi.getAll(),
       roomApi.getAll(),
+      subjectApi.getAll(),
+      classSectionApi.getAll(),
     ])
-      .then(([sched, sess, ts, b, t, r]) => {
+      .then(([sched, sess, ts, b, t, r, subj, sec]) => {
         setSchedule(sched)
         setSessions(sess)
         setTimeslots(ts)
         setBatches(b)
         setTeachers(t)
         setRooms(r)
+        setSubjects(subj)
+        setSections(sec)
         const batchInSessions = new Set(sess.map((s) => s.batchId).filter((x): x is number => x != null))
         const teacherInSessions = new Set(sess.map((s) => s.teacherId).filter((x): x is number => x != null))
         const roomInSessions = new Set(sess.map((s) => s.roomId).filter((x): x is number => x != null))
@@ -449,6 +477,71 @@ export default function TimetableViewer() {
     }
   }
 
+  const handleQuickLockToggle = async () => {
+    if (!selectedSession) return
+    try {
+      await sessionApi.updateAssignment(selectedSession.id, { locked: !selectedSession.isLocked })
+      toast.success(selectedSession.isLocked ? 'Session unlocked' : 'Session locked')
+      setSelectedSession(null)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update lock state')
+    }
+  }
+
+  const openCreateSession = (slot: Timeslot) => {
+    setSlotContextMenu(null)
+    setCreateSlot(slot)
+    setCreateSubjectId(subjects[0]?.id ? String(subjects[0].id) : '')
+    setCreateBatchId(viewMode === 'batch' && currentFilterId != null ? String(currentFilterId) : '')
+    setCreateSectionId('')
+    setCreateTeacherId(viewMode === 'teacher' && currentFilterId != null ? String(currentFilterId) : '')
+    setCreateRoomId(viewMode === 'room' && currentFilterId != null ? String(currentFilterId) : '')
+    setCreateDuration(1)
+    setCreateLocked(false)
+    setCreateError(null)
+    setCreateSessionOpen(true)
+  }
+
+  const handleCreateSession = async () => {
+    if (!createSlot) return
+    if (!createSubjectId) {
+      setCreateError('Select a subject')
+      return
+    }
+    if (!createBatchId && !createSectionId) {
+      setCreateError('Select a batch or a section')
+      return
+    }
+    setCreateSaving(true)
+    setCreateError(null)
+    try {
+      const payload: SessionCreateRequest = {
+        scheduleId,
+        subjectId: +createSubjectId,
+        teacherId: createTeacherId ? +createTeacherId : null,
+        roomId: createRoomId ? +createRoomId : null,
+        timeslotId: createSlot.id,
+        duration: createDuration,
+        locked: createLocked,
+      }
+      if (createSectionId) {
+        payload.sectionId = +createSectionId
+      } else {
+        payload.batchId = +createBatchId
+      }
+      await sessionApi.create(payload)
+      toast.success('Session created')
+      setCreateSessionOpen(false)
+      setCreateSlot(null)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : 'Failed to create session')
+    } finally {
+      setCreateSaving(false)
+    }
+  }
+
   const refreshSessionsAndSchedule = () => {
     Promise.all([scheduleApi.getById(scheduleId), scheduleApi.getSessions(scheduleId)])
       .then(([sched, sess]) => {
@@ -574,6 +667,7 @@ export default function TimetableViewer() {
     { value: '', label: '- Unassigned -' },
     ...teachers.map((t) => ({ value: t.id, label: t.name })),
   ]
+  const subjectOptions = subjects.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))
   const roomOptions = [
     { value: '', label: '- Unassigned -' },
     ...rooms.map((r) => ({ value: r.id, label: `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''}` })),
@@ -604,6 +698,17 @@ export default function TimetableViewer() {
         return []
     }
   }, [disruptionType, teachers, rooms, timeslots, sessions])
+
+  const createBatchOptions = batches.map((batch) => ({
+    value: batch.id,
+    label: batch.departmentName ? `${batch.departmentName} · Yr ${batch.year}-${batch.section}` : `Yr ${batch.year}-${batch.section}`,
+  }))
+  const createSectionOptions = sections
+    .filter((section) => !createBatchId || section.batchId === +createBatchId)
+    .map((section) => ({
+      value: section.id,
+      label: `${section.batchName ?? `Batch #${section.batchId}`} · ${section.label}`,
+    }))
 
   if (loading) return <div className="animate-pulse h-96 bg-gray-100 rounded-lg" />
 
@@ -760,6 +865,7 @@ export default function TimetableViewer() {
               }}
               onSlotDragHover={(slot) => setDragPreview(buildDragPreview(draggedSession, slot, sessions))}
               onSlotDrop={handleDropToSlot}
+              onCellContextMenu={(slot, x, y) => setSlotContextMenu({ slot, x, y })}
               dragPreview={dragPreview}
               onOrphanSessionsCount={setOrphanCount}
             />
@@ -825,6 +931,11 @@ export default function TimetableViewer() {
             {!editMode && (
               <Button onClick={() => setEditMode(true)}>
                 Edit Assignment
+              </Button>
+            )}
+            {!editMode && selectedSession && (
+              <Button variant="secondary" icon={selectedSession.isLocked ? <Unlock size={14} /> : <Lock size={14} />} onClick={handleQuickLockToggle}>
+                {selectedSession.isLocked ? 'Unlock' : 'Lock'}
               </Button>
             )}
             {editMode && (
@@ -911,6 +1022,58 @@ export default function TimetableViewer() {
           </div>
         )}
       </Modal>
+
+      <Modal
+        open={createSessionOpen}
+        onClose={() => { setCreateSessionOpen(false); setCreateSlot(null) }}
+        title={createSlot ? `Add Session Here - ${createSlot.day} ${createSlot.startTime}-${createSlot.endTime}` : 'Add Session'}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { setCreateSessionOpen(false); setCreateSlot(null) }}>Cancel</Button>
+            <Button loading={createSaving} onClick={handleCreateSession}>Create</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {createError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              {createError}
+            </div>
+          )}
+          <div className="grid md:grid-cols-2 gap-4">
+            <Select label="Subject" value={createSubjectId} onChange={(e) => setCreateSubjectId(e.target.value)} options={subjectOptions} placeholder="Select subject" />
+            <Select label="Teacher" value={createTeacherId} onChange={(e) => setCreateTeacherId(e.target.value)} options={teacherOptions} />
+            <Select label="Room" value={createRoomId} onChange={(e) => setCreateRoomId(e.target.value)} options={roomOptions} />
+            <Input label="Duration (hours)" type="number" min={1} max={4} value={createDuration} onChange={(e) => setCreateDuration(Math.max(1, +e.target.value || 1))} />
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <Select label="Batch" value={createBatchId} onChange={(e) => { setCreateBatchId(e.target.value); setCreateSectionId('') }} options={createBatchOptions} placeholder="Select batch" helpText="Pick a batch or override it with a section." />
+            <Select label="Section" value={createSectionId} onChange={(e) => setCreateSectionId(e.target.value)} options={createSectionOptions} placeholder={createBatchId ? 'Optional section' : 'Select a batch first'} disabled={!createBatchId} helpText="Optional. If selected, it takes precedence over batch." />
+          </div>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={createLocked} onChange={(e) => setCreateLocked(e.target.checked)} />
+            <span className="flex items-center gap-1">
+              {createLocked ? <Lock size={13} /> : <Unlock size={13} />}
+              Lock this new session
+            </span>
+          </label>
+          {createSlot && (
+            <p className="text-xs text-gray-500">This session will be created in {createSlot.day} from {createSlot.startTime} to {createSlot.endTime}.</p>
+          )}
+        </div>
+      </Modal>
+
+      {slotContextMenu && (
+        <ContextMenu
+          x={slotContextMenu.x}
+          y={slotContextMenu.y}
+          onClose={() => setSlotContextMenu(null)}
+          items={[
+            { label: 'Add session here', icon: <Plus size={13} />, onClick: () => openCreateSession(slotContextMenu.slot) },
+          ]}
+        />
+      )}
 
       <Modal
         open={showDisruptionPanel}

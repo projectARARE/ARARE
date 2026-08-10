@@ -213,6 +213,17 @@ export interface UniversityConfigRequest {
   workingDays?: SchoolDay[]
 }
 
+export interface UniversityConfigDiagnostics {
+  valid: boolean
+  summary: string
+  daysPerWeek: number | null
+  timeslotsPerDay: number | null
+  maxClassesPerDay: number | null
+  workingDays: SchoolDay[]
+  classSlotsPerDay: Record<string, number>
+  issues: string[]
+}
+
 // ─── Event ───────────────────────────────────────────────────────────────────
 
 export interface Event {

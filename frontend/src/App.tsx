@@ -24,7 +24,6 @@ const AcademicTerms = lazy(() => import('./pages/AcademicTerms'))
 const DisruptionHandling = lazy(() => import('./pages/DisruptionHandling'))
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'))
 const WhatIfComparison = lazy(() => import('./pages/WhatIfComparison'))
-const CalendarPortal = lazy(() => import('./pages/CalendarPortal'))
 const CsvImport = lazy(() => import('./pages/CsvImport'))
 
 function page(element: ReactNode) {
@@ -61,7 +60,6 @@ export default function App() {
           <Route path="academic-terms" element={page(<AcademicTerms />)} />
           <Route path="analytics" element={page(<AnalyticsDashboard />)} />
           <Route path="what-if" element={page(<WhatIfComparison />)} />
-          <Route path="portal" element={page(<CalendarPortal />)} />
           <Route path="import/csv" element={page(<CsvImport />)} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

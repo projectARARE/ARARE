@@ -151,6 +151,16 @@ export const universityConfigApi = {
   get: () => api.get<UniversityConfig>('/university-config').then((r) => r.data),
   save: (data: UniversityConfigRequest) =>
     api.post<UniversityConfig>('/university-config', data).then((r) => r.data),
+  diagnostics: () => api.get('/university-config/diagnostics').then((r) => r.data as {
+    valid: boolean
+    summary: string
+    daysPerWeek: number | null
+    timeslotsPerDay: number | null
+    maxClassesPerDay: number | null
+    workingDays: string[]
+    classSlotsPerDay: Record<string, number>
+    issues: string[]
+  }),
 }
 
 // Schedules
@@ -174,20 +184,6 @@ export const scheduleApi = {
     api.post<SolveJobResponse>(`/schedules/${id}/disruption/apply`, data).then((r) => r.data),
   exportCsv: (id: number) =>
     api.get(`/schedules/${id}/export/csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
-  getTeacherIcalUrl: (teacherId: number, scheduleId?: number) =>
-    `/api/v1/schedules/ical/teacher/${teacherId}${scheduleId ? `?scheduleId=${scheduleId}` : ''}`,
-  getBatchIcalUrl: (batchId: number, scheduleId?: number) =>
-    `/api/v1/schedules/ical/batch/${batchId}${scheduleId ? `?scheduleId=${scheduleId}` : ''}`,
-  downloadTeacherIcal: (teacherId: number, scheduleId?: number) =>
-    api.get(`/schedules/ical/teacher/${teacherId}`, {
-      params: scheduleId ? { scheduleId } : undefined,
-      responseType: 'blob',
-    }).then((r) => r.data as Blob),
-  downloadBatchIcal: (batchId: number, scheduleId?: number) =>
-    api.get(`/schedules/ical/batch/${batchId}`, {
-      params: scheduleId ? { scheduleId } : undefined,
-      responseType: 'blob',
-    }).then((r) => r.data as Blob),
   checkFeasibility: (req: Partial<ScheduleRequest>) =>
     api.post<FeasibilityCheckResult>('/schedules/feasibility-check', req).then((r) => r.data),
   getConflictSuggestions: (scheduleId: number, sessionId: number, limit = 4) =>
@@ -255,5 +251,7 @@ export const importApi = {
     api.post<CsvImportResponse>(`/import/csv/${entityType}`, { csvContent, dryRun }).then((r) => r.data),
   exportCsv: (entityType: string) =>
     api.get(`/import/export/csv/${entityType}`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  exportTemplateCsv: (entityType: string) =>
+    api.get(`/import/template/csv/${entityType}`, { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 

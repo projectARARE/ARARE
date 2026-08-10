@@ -23,6 +23,7 @@ interface TimetableGridProps {
   onSessionHover?: (session: ClassSession | null) => void
   onSessionDragStart?: (session: ClassSession) => void
   onSessionDragEnd?: () => void
+  onSessionContextMenu?: (session: ClassSession, x: number, y: number) => void
   onSlotDragHover?: (slot: Timeslot | null) => void
   onSlotDrop?: (slot: Timeslot) => void
   onCellContextMenu?: (slot: Timeslot, x: number, y: number) => void
@@ -48,6 +49,7 @@ export default function TimetableGrid({
   onSessionHover,
   onSessionDragStart,
   onSessionDragEnd,
+  onSessionContextMenu,
   onSlotDragHover,
   onSlotDrop,
   onCellContextMenu,
@@ -118,7 +120,7 @@ export default function TimetableGrid({
       onOrphanSessionsCount?.(orphans.length)
     }
     return index
-  }, [filteredSessions, timeslots])
+  }, [filteredSessions, timeslots, onOrphanSessionsCount])
 
   // All unique timeslot times across all days for the time column
   const allSlotTimes = useMemo(() => {
@@ -270,31 +272,30 @@ export default function TimetableGrid({
                       </div>
                     )}
                     <div className="space-y-1">
-                      {cellSessions.map((s) => (
-                        (() => {
-                          const heat = heatBySessionId[s.id] ?? { hard: 0, soft: 0, notes: [] }
-                          const heatState = !heatmapEnabled
-                            ? 'none'
-                            : heat.hard > 0
-                              ? 'hard'
-                              : heat.soft > 0
-                                ? 'soft'
-                                : 'none'
-                          return (
-                        <SessionCell
-                          key={s.id}
-                          session={s}
-                          onClick={onSessionClick}
-                          onHover={onSessionHover}
-                          onDragStart={onSessionDragStart}
-                          onDragEnd={onSessionDragEnd}
-                          heatState={heatState}
-                          inspectorNotes={heat.notes}
-                          highlighted={highlightedSessionIds?.has(s.id) ?? false}
-                        />
-                          )
-                        })()
-                      ))}
+                      {cellSessions.map((s) => {
+                        const heat = heatBySessionId[s.id] ?? { hard: 0, soft: 0, notes: [] }
+                        const heatState = !heatmapEnabled
+                          ? 'none'
+                          : heat.hard > 0
+                            ? 'hard'
+                            : heat.soft > 0
+                              ? 'soft'
+                              : 'none'
+                        return (
+                          <SessionCell
+                            key={s.id}
+                            session={s}
+                            onClick={onSessionClick}
+                            onHover={onSessionHover}
+                            onDragStart={onSessionDragStart}
+                            onDragEnd={onSessionDragEnd}
+                            onContextMenu={onSessionContextMenu}
+                            heatState={heatState}
+                            inspectorNotes={heat.notes}
+                            highlighted={highlightedSessionIds?.has(s.id) ?? false}
+                          />
+                        )
+                      })}
                     </div>
                   </td>
                 )

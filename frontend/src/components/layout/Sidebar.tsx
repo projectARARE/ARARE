@@ -18,7 +18,6 @@ import {
   AlertTriangle,
   BarChart3,
   GitCompare,
-  Link2,
   FileSpreadsheet,
 } from 'lucide-react'
 
@@ -74,7 +73,6 @@ const nav: NavGroup[] = [
     group: 'Configuration',
     items: [
       { to: '/config', icon: Settings, label: 'University Config' },
-      { to: '/portal', icon: Link2, label: 'Calendar Portal' },
       { to: '/import/csv', icon: FileSpreadsheet, label: 'Import / Export' },
     ],
   },

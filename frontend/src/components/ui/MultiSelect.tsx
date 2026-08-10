@@ -106,6 +106,7 @@ export default function MultiSelect({
                 return (
                   <label
                     key={opt.value}
+                    onClick={() => toggle(opt.value)}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50"
                   >
                     <span

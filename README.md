@@ -320,9 +320,8 @@ Important non-trivial endpoints:
 - POST /api/v1/schedules/{id}/disruption/apply
 - GET /api/v1/schedules/{id}/score-explanation
 - GET /api/v1/schedules/{id}/export/csv
-- GET /api/v1/schedules/ical/teacher/{teacherId}
-- GET /api/v1/schedules/ical/batch/{batchId}
 - POST /api/v1/import/csv/{entityType}
+- GET /api/v1/import/template/csv/{entityType}
 
 CRUD endpoints exist for master-data modules and support the scheduling workflows above.
 
