@@ -113,6 +113,17 @@ public class ClassSession {
         return 0;
     }
 
+    // Returns the batch this session belongs to, resolving the lab-split
+    // case where the session points at a ClassSection rather than a Batch
+    // directly. Centralising this here keeps the solver/impact/pre-allocation
+    // code (and their tests) on one definition instead of re-deriving it.
+    @Transient
+    public Batch getEffectiveBatch() {
+        if (batch != null) return batch;
+        if (section != null) return section.getBatch();
+        return null;
+    }
+
     @PrePersist
     @PreUpdate
     private void validateInvariant() {

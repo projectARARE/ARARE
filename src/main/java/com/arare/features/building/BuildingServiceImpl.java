@@ -1,7 +1,9 @@
 package com.arare.features.building;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.room.Room;
 import com.arare.features.room.RoomRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,7 @@ public class BuildingServiceImpl implements BuildingService {
     private final BuildingRepository repo;
     private final RoomRepository roomRepo;
     private final ClassSessionRepository sessionRepo;
+    private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
@@ -53,7 +56,12 @@ public class BuildingServiceImpl implements BuildingService {
         findEntity(id);
         // 1. Unassign any rooms in this building from scheduled sessions
         sessionRepo.clearRoomsByBuildingId(id);
-        // 2. Delete rooms (Hibernate cleans up room_availability join table per room)
+        // 2. Purge pre-allocations and event rows referencing rooms in this building,
+        //    then delete the rooms (Hibernate cleans up room_availability per room)
+        for (Room room : roomRepo.findByBuildingId(id)) {
+            cascadeDeletionService.purgePreAllocationsForRoom(room.getId());
+            cascadeDeletionService.detachRoomFromEvents(room.getId());
+        }
         roomRepo.deleteAll(roomRepo.findByBuildingId(id));
         // 3. Remove building from join tables (department_buildings, teacher_preferred_buildings)
         repo.removeDepartmentAssociations(id);

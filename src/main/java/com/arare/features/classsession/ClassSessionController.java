@@ -40,4 +40,11 @@ public class ClassSessionController {
     ) {
         return ResponseEntity.ok(service.updateAssignment(id, req));
     }
+
+    @PostMapping
+    public ResponseEntity<ClassSessionResponse> create(
+        @Valid @RequestBody SessionCreateRequest req
+    ) {
+        return ResponseEntity.ok(service.create(req));
+    }
 }

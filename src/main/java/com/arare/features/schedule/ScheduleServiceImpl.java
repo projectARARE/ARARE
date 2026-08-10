@@ -4,13 +4,16 @@ import com.arare.common.enums.ScheduleScope;
 import com.arare.common.enums.ScheduleStatus;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSession;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.classsession.ClassSessionResponse;
 import com.arare.features.solver.ScoreExplanationResponse;
+import com.arare.features.solver.TimetableSolverService;
+import com.arare.features.solvejob.SolveJobResponse;
+import com.arare.features.solvejob.SolveJobService;
 import com.arare.features.timeslot.Timeslot;
 import com.arare.features.timeslot.TimeslotRepository;
-import com.arare.features.solver.TimetableSolverService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,14 +26,16 @@ import java.util.List;
 public class ScheduleServiceImpl implements ScheduleService {
 
     private final ScheduleRepository repo;
-    private final TimetableSolverService solverService;
+    private final SolveJobService solveJobService;
     private final ClassSessionRepository sessionRepo;
     private final FeasibilityCheckService feasibilityCheckService;
     private final TimeslotRepository timeslotRepo;
+    private final CascadeDeletionService cascadeDeletionService;
+    private final TimetableSolverService solverService;
 
     @Override
     @Transactional
-    public ScheduleResponse generate(ScheduleRequest req) {
+    public SolveJobResponse generate(ScheduleRequest req) {
         FeasibilityCheckResult feasibility = feasibilityCheckService.check(req);
         if (!feasibility.feasible()) {
             String detail = feasibility.issues().stream()
@@ -55,10 +60,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             .build();
         schedule = repo.save(schedule);
 
-        solverService.solveSchedule(schedule.getId(), req.departmentId(),
-            req.batchIds(), req.teacherIds(), req.roomIds(), req.solvingTimeSeconds());
-
-        return toResponse(repo.findById(schedule.getId()).orElseThrow());
+        return solveJobService.submitGenerate(schedule.getId(), req);
     }
 
     @Override
@@ -75,10 +77,9 @@ public class ScheduleServiceImpl implements ScheduleService {
 
     @Override
     @Transactional
-    public ScheduleResponse partialResolve(Long scheduleId, List<Long> impactedSessionIds) {
+    public SolveJobResponse partialResolve(Long scheduleId, List<Long> impactedSessionIds) {
         findEntity(scheduleId); // validate exists
-        solverService.partialResolve(scheduleId, impactedSessionIds);
-        return toResponse(repo.findById(scheduleId).orElseThrow());
+        return solveJobService.submitPartialResolve(scheduleId, impactedSessionIds);
     }
 
     @Override
@@ -99,8 +100,8 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
-        sessionRepo.deleteByScheduleId(id);
-        repo.deleteById(id);
+        solveJobService.ensureNoActiveJobForSchedule(id);
+        cascadeDeletionService.purgeScheduleTree(id);
     }
 
     @Override

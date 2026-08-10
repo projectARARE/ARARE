@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.*;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -39,6 +41,12 @@ import java.util.List;
 @Builder
 public class Teacher extends BaseEntity {
 
+    // Unique staff/employee identifier (e.g. EMP001). Used as the natural key
+    // in CSV imports for all relationship tables. Optional for legacy rows.
+    @Size(max = 40)
+    @Column(name = "employee_id", unique = true)
+    private String employeeId;
+
     @NotBlank
     @Size(max = 120)
     @Column(nullable = false)
@@ -53,6 +61,7 @@ public class Teacher extends BaseEntity {
         joinColumns = @JoinColumn(name = "teacher_id"),
         inverseJoinColumns = @JoinColumn(name = "subject_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Subject> subjects = new ArrayList<>();
 
@@ -64,6 +73,7 @@ public class Teacher extends BaseEntity {
         joinColumns = @JoinColumn(name = "teacher_id"),
         inverseJoinColumns = @JoinColumn(name = "timeslot_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Timeslot> availableTimeslots = new ArrayList<>();
 
@@ -75,6 +85,7 @@ public class Teacher extends BaseEntity {
         joinColumns = @JoinColumn(name = "teacher_id"),
         inverseJoinColumns = @JoinColumn(name = "building_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Building> preferredBuildings = new ArrayList<>();
 
@@ -116,14 +127,24 @@ public class Teacher extends BaseEntity {
         if (name != null) {
             name = name.trim();
         }
+        // Dedupe IN PLACE: a @ManyToMany collection backed by a persistent bag
+        // must keep its collection identity. Replacing the field here (as a
+        // plain ArrayList) makes Hibernate drop the join-table rows on update
+        // and never write the new ones — subject mappings silently vanish.
         if (subjects != null && !subjects.isEmpty()) {
-            subjects = new ArrayList<>(new LinkedHashSet<>(subjects));
+            List<Subject> unique = new ArrayList<>(new LinkedHashSet<>(subjects));
+            subjects.clear();
+            subjects.addAll(unique);
         }
         if (availableTimeslots != null && !availableTimeslots.isEmpty()) {
-            availableTimeslots = new ArrayList<>(new LinkedHashSet<>(availableTimeslots));
+            List<Timeslot> unique = new ArrayList<>(new LinkedHashSet<>(availableTimeslots));
+            availableTimeslots.clear();
+            availableTimeslots.addAll(unique);
         }
         if (preferredBuildings != null && !preferredBuildings.isEmpty()) {
-            preferredBuildings = new ArrayList<>(new LinkedHashSet<>(preferredBuildings));
+            List<Building> unique = new ArrayList<>(new LinkedHashSet<>(preferredBuildings));
+            preferredBuildings.clear();
+            preferredBuildings.addAll(unique);
         }
     }
 }

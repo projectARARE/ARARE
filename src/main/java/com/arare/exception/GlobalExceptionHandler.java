@@ -4,6 +4,8 @@ import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -26,6 +28,13 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleDuplicate(DuplicateResourceException ex) {
         ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         detail.setType(URI.create("/errors/conflict"));
+        return detail;
+    }
+
+    @ExceptionHandler(ResourceBusyException.class)
+    public ProblemDetail handleBusy(ResourceBusyException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        detail.setType(URI.create("/errors/busy"));
         return detail;
     }
 
@@ -79,6 +88,27 @@ public class GlobalExceptionHandler {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
         pd.setType(URI.create("/errors/conflict"));
         return pd;
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            "The record you are editing was modified by another user. Please refresh and try again: "
+            + ex.getMessage()
+        );
+        detail.setType(URI.create("/errors/optimistic-lock"));
+        return detail;
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ProblemDetail handleUnreadableBody(HttpMessageNotReadableException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(
+            HttpStatus.BAD_REQUEST,
+            "The request body could not be read: " + ex.getMessage()
+        );
+        detail.setType(URI.create("/errors/malformed-body"));
+        return detail;
     }
 
     @ExceptionHandler(Exception.class)

@@ -5,6 +5,7 @@ import com.arare.features.batch.BatchRepository;
 import com.arare.features.building.Building;
 import com.arare.features.building.BuildingRepository;
 import com.arare.features.building.BuildingResponse;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsection.ClassSectionRepository;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.subject.SubjectRepository;
@@ -25,6 +26,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     private final ClassSectionRepository sectionRepo;
     private final BatchRepository batchRepo;
     private final SubjectRepository subjectRepo;
+    private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
@@ -43,7 +45,9 @@ public class DepartmentServiceImpl implements DepartmentService {
         Department d = findEntity(id);
         d.setName(req.name());
         d.setCode(req.code());
-        d.setBuildingsAllowed(resolveBuildings(req.buildingIds()));
+        if (req.buildingIds() != null) {   // null = keep current buildings unchanged
+            d.setBuildingsAllowed(resolveBuildings(req.buildingIds()));
+        }
         return toResponse(repo.save(d));
     }
 
@@ -54,7 +58,7 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     public List<DepartmentResponse> findAll() {
-        return repo.findAll().stream().map(this::toResponse).toList();
+        return repo.findAllWithBuildings().stream().map(this::toResponse).toList();
     }
 
     @Override
@@ -69,6 +73,8 @@ public class DepartmentServiceImpl implements DepartmentService {
         sectionRepo.deleteByDepartmentId(id);
         // 4. Delete batches
         batchRepo.deleteByDepartmentId(id);
+        // 4b. Purge pre-allocations referencing this department's subjects/batches
+        cascadeDeletionService.purgePreAllocationsForDepartment(id);
         // 5. Clean up teacher_subjects join table entries for subjects of this dept
         subjectRepo.removeTeacherAssociationsByDepartment(id);
         // 6. Delete subjects
@@ -83,9 +89,15 @@ public class DepartmentServiceImpl implements DepartmentService {
             .orElseThrow(() -> new ResourceNotFoundException("Department", id));
     }
 
+    // Resolves building IDs to entities, failing with a 400-level error when any
+    // requested ID does not exist — consistent with TeacherServiceImpl.resolveAll().
     private List<Building> resolveBuildings(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
-        return buildingRepo.findAllById(ids);
+        List<Building> found = buildingRepo.findAllById(ids);
+        if (found.size() != new java.util.HashSet<>(ids).size()) {
+            throw new IllegalArgumentException("One or more Building ids do not exist: " + ids);
+        }
+        return found;
     }
 
     private DepartmentResponse toResponse(Department d) {

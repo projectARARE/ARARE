@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, ConfirmDialog } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, MultiSelect } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { teacherApi, subjectApi, timeslotApi, buildingApi } from '../services/api'
@@ -10,6 +10,7 @@ import { useToast } from '../contexts/ToastContext'
 const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
 
 const EMPTY: TeacherRequest = {
+  employeeId: '',
   name: '',
   subjectIds: [],
   availableTimeslotIds: [],
@@ -64,6 +65,7 @@ export default function Teachers() {
   const openEdit = (t: Teacher) => {
     setEditing(t)
     setForm({
+      employeeId: t.employeeId ?? '',
       name: t.name,
       subjectIds: t.subjectIds ?? [],
       availableTimeslotIds: t.availableTimeslotIds ?? [],
@@ -144,6 +146,11 @@ export default function Teachers() {
 
   const columns: Column<Teacher>[] = [
     {
+      key: 'employeeId', header: 'ID',
+      sortValue: (t) => t.employeeId ?? '',
+      render: (t) => <span className="text-sm text-gray-500">{t.employeeId ?? '—'}</span>,
+    },
+    {
       key: 'name', header: 'Name',
       sortValue: (t) => t.name,
       render: (t) => <span className="font-medium">{t.name}</span>,
@@ -196,7 +203,10 @@ export default function Teachers() {
         }
       >
         <div className="space-y-5">
-          <Input label="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Dr. Jane Smith" />
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Employee ID" value={form.employeeId ?? ''} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} placeholder="EMP001" helpText="Unique natural key" />
+            <Input label="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Dr. Jane Smith" />
+          </div>
 
           <div className="grid grid-cols-3 gap-4">
             <Input label="Max Daily Hours" type="number" min={1} value={form.maxDailyHours} onChange={(e) => setForm({ ...form, maxDailyHours: +e.target.value })} />
@@ -210,16 +220,31 @@ export default function Teachers() {
           </div>
 
           {/* Qualified Subjects */}
-          <div>
-            <p className="block text-sm font-medium text-gray-700 mb-2">Qualified Subjects</p>
-            <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto border border-gray-200 rounded-md p-3">
-              {subjects.map((s) => (
-                <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={(form.subjectIds ?? []).includes(s.id)} onChange={() => toggleId('subjectIds', s.id)} />
-                  {s.name} ({s.code})
-                </label>
-              ))}
-              {subjects.length === 0 && <p className="text-sm text-gray-400">No subjects configured yet.</p>}
+          <div className="grid grid-cols-2 gap-4">
+            <MultiSelect
+              label="Qualified Subjects"
+              placeholder="Select subjects…"
+              options={subjects.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` }))}
+              selected={form.subjectIds ?? []}
+              onChange={(next) => setForm({ ...form, subjectIds: next })}
+            />
+            <div>
+              <p className="text-sm text-gray-500 mb-2">
+                {(form.subjectIds?.length ?? 0)} subject{form.subjectIds?.length === 1 ? '' : 's'} selected
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {(form.subjectIds ?? []).slice(0, 12).map((id) => (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-xs text-indigo-700"
+                  >
+                    {subjectNameById.get(id) ?? `Subject #${id}`}
+                  </span>
+                ))}
+                {(form.subjectIds?.length ?? 0) > 12 && (
+                  <span className="text-xs text-gray-400 leading-6">+{form.subjectIds!.length - 12} more</span>
+                )}
+              </div>
             </div>
           </div>
 

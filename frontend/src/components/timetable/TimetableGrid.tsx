@@ -25,6 +25,7 @@ interface TimetableGridProps {
   onSessionDragEnd?: () => void
   onSlotDragHover?: (slot: Timeslot | null) => void
   onSlotDrop?: (slot: Timeslot) => void
+  onCellContextMenu?: (slot: Timeslot, x: number, y: number) => void
   filterBatchId?: number
   filterTeacherId?: number
   filterRoomId?: number
@@ -36,6 +37,7 @@ interface TimetableGridProps {
     severity: 'hard' | 'soft' | 'clean'
     label: string
   } | null
+  onOrphanSessionsCount?: (count: number) => void
 }
 
 export default function TimetableGrid({
@@ -48,6 +50,7 @@ export default function TimetableGrid({
   onSessionDragEnd,
   onSlotDragHover,
   onSlotDrop,
+  onCellContextMenu,
   filterBatchId,
   filterTeacherId,
   filterRoomId,
@@ -55,6 +58,7 @@ export default function TimetableGrid({
   heatBySessionId = {},
   highlightedSessionIds,
   dragPreview,
+  onOrphanSessionsCount,
 }: TimetableGridProps) {
   // Determine which days to show
   const days = activeDays?.length
@@ -86,17 +90,35 @@ export default function TimetableGrid({
     })
   }, [sessions, filterBatchId, filterTeacherId, filterRoomId])
 
-  // Index sessions by day + timeslotId for fast lookup
+  // Index sessions by day + timeslotId for fast lookup. Sessions whose
+  // day/timeslotId is missing OR whose timeslot is not present in the loaded
+  // timeslot set are "orphans" — they cannot be rendered into a cell, so they
+  // are reported to the caller via onOrphanSessionsCount instead of being
+  // silently dropped (the previous behavior hid real data from the operator).
   const sessionIndex = useMemo(() => {
     const index: Record<string, ClassSession[]> = {}
+    const timeslotIds = new Set(timeslots.map((t) => t.id))
+    const orphans: ClassSession[] = []
     for (const s of filteredSessions) {
-      if (!s.day || !s.timeslotId) continue
+      if (!s.day || !s.timeslotId) {
+        orphans.push(s)
+        continue
+      }
+      if (!timeslotIds.has(s.timeslotId)) {
+        orphans.push(s)
+        continue
+      }
       const key = `${s.day}:${s.timeslotId}`
       if (!index[key]) index[key] = []
       index[key].push(s)
     }
+    // Only report an orphan count once the timeslot set is loaded; otherwise
+    // every session would look orphaned purely because timeslots are empty.
+    if (timeslots.length > 0) {
+      onOrphanSessionsCount?.(orphans.length)
+    }
     return index
-  }, [filteredSessions])
+  }, [filteredSessions, timeslots])
 
   // All unique timeslot times across all days for the time column
   const allSlotTimes = useMemo(() => {
@@ -229,6 +251,11 @@ export default function TimetableGrid({
                       if (!slot) return
                       e.preventDefault()
                       onSlotDrop?.(slot)
+                    }}
+                    onContextMenu={(e) => {
+                      if (!slot) return
+                      e.preventDefault()
+                      onCellContextMenu?.(slot, e.clientX, e.clientY)
                     }}
                   >
                     {activePreview && (

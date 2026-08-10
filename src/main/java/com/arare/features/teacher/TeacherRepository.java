@@ -2,7 +2,6 @@ package com.arare.features.teacher;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -19,14 +18,11 @@ public interface TeacherRepository extends JpaRepository<Teacher, Long> {
     @Query("SELECT t FROM Teacher t JOIN t.preferredBuildings b WHERE b.id = :buildingId")
     List<Teacher> findByPreferredBuildingId(@Param("buildingId") Long buildingId);
 
-    @Modifying
-    @Query(value = "DELETE FROM teacher_subjects WHERE teacher_id = :teacherId", nativeQuery = true)
-    void deleteSubjectMappings(@Param("teacherId") Long teacherId);
+    // List endpoint: the three collections carry @Fetch(SUBSELECT), so the
+    // fetch cost is flat (1 + 3 queries) instead of 1 + 3N.
+    @Query("SELECT t FROM Teacher t")
+    List<Teacher> findAllWithDetails();
 
-    @Modifying
-    @Query(
-        value = "INSERT INTO teacher_subjects (teacher_id, subject_id) VALUES (:teacherId, :subjectId)",
-        nativeQuery = true
-    )
-    void insertSubjectMapping(@Param("teacherId") Long teacherId, @Param("subjectId") Long subjectId);
+    // Natural-key lookup used by the CSV import service.
+    java.util.Optional<Teacher> findByEmployeeId(String employeeId);
 }

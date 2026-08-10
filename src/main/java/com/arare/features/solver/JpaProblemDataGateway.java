@@ -40,11 +40,11 @@ public class JpaProblemDataGateway implements ProblemDataGateway {
     @Override
     public ProblemFacts loadFacts(ProblemBuildRequest request) {
         List<Room> rooms = (request.roomIds() != null && !request.roomIds().isEmpty())
-            ? roomRepo.findAllById(request.roomIds())
+            ? resolveAll(roomRepo, request.roomIds(), "Room")
             : roomRepo.findAll();
 
         List<Teacher> teachers = (request.teacherIds() != null && !request.teacherIds().isEmpty())
-            ? teacherRepo.findAllById(request.teacherIds())
+            ? resolveAll(teacherRepo, request.teacherIds(), "Teacher")
             : teacherRepo.findAll();
 
         List<Subject> subjects = request.departmentId() != null
@@ -56,6 +56,7 @@ public class JpaProblemDataGateway implements ProblemDataGateway {
             : batchRepo.findAll();
 
         if (request.batchIds() != null && !request.batchIds().isEmpty()) {
+            resolveAll(batchRepo, request.batchIds(), "Batch");
             batches = batches.stream()
                 .filter(b -> request.batchIds().contains(b.getId()))
                 .toList();
@@ -69,13 +70,24 @@ public class JpaProblemDataGateway implements ProblemDataGateway {
         return new ProblemFacts(
             timeslotRepo.findByType(TimeslotType.CLASS),
             buildingRepo.findAll(),
-            configRepo.findByActiveTrue().map(List::of).orElse(List.of()),
+            configRepo.findFirstByActiveTrue().map(List::of).orElse(List.of()),
             rooms,
             teachers,
             subjects,
             batches,
             sections
         );
+    }
+
+    // Resolves every requested ID, rejecting unknown ones instead of silently
+    // building a problem from a partial set.
+    private <T> List<T> resolveAll(org.springframework.data.jpa.repository.JpaRepository<T, Long> repo,
+                                   List<Long> ids, String type) {
+        List<T> found = repo.findAllById(ids);
+        if (found.size() != new java.util.HashSet<>(ids).size()) {
+            throw new IllegalArgumentException("One or more " + type + " ids do not exist: " + ids);
+        }
+        return found;
     }
 
     @Override

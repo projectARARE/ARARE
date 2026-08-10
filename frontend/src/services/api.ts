@@ -31,20 +31,32 @@ import type {
   DisruptionResponse,
   FeasibilityCheckResult,
   ConflictSuggestion,
+  CsvZipImportResponse,
   CsvImportResponse,
+  ImportOrderStep,
+  SessionCreateRequest,
+  SolveJobResponse,
 } from '../types'
 
-const api = axios.create({ baseURL: '/api/v1' })
+const api = axios.create({ baseURL: '/api/v1', timeout: 20000 })
+
+async function extractErrorMessage(err: unknown): Promise<string> {
+  const data: unknown = (err as { response?: { data?: unknown } } | undefined)?.response?.data
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text()) as { detail?: string; message?: string }
+      return parsed.detail ?? parsed.message ?? (err as Error).message
+    } catch {
+      // Non-JSON error body (e.g. a proxy error page) — fall back to axios message.
+    }
+  }
+  const obj = data as { detail?: string; message?: string } | undefined
+  return obj?.detail ?? obj?.message ?? (err as Error).message ?? 'Request failed'
+}
 
 api.interceptors.response.use(
   (r) => r,
-  (err) => {
-    const msg =
-      (err.response?.data as { detail?: string; message?: string } | undefined)?.detail ||
-      (err.response?.data as { detail?: string; message?: string } | undefined)?.message ||
-      (err.message as string)
-    return Promise.reject(new Error(msg))
-  },
+  async (err) => Promise.reject(new Error(await extractErrorMessage(err))),
 )
 
 // Default export for backward-compat with existing service files
@@ -146,9 +158,9 @@ export const scheduleApi = {
   getAll: () => api.get<Schedule[]>('/schedules').then((r) => r.data),
   getById: (id: number) => api.get<Schedule>(`/schedules/${id}`).then((r) => r.data),
   generate: (data: ScheduleRequest) =>
-    api.post<Schedule>('/schedules/generate', data).then((r) => r.data),
-  partialResolve: (id: number, sessionIds: number[]) =>
-    api.post<Schedule>(`/schedules/${id}/partial-resolve`, sessionIds).then((r) => r.data),
+    api.post<SolveJobResponse>('/schedules/generate', data).then((r) => r.data),
+  partialResolve: (id: number, impactedSessionIds: number[]) =>
+    api.post<SolveJobResponse>(`/schedules/${id}/partial-resolve`, { impactedSessionIds }).then((r) => r.data),
   getScoreExplanation: (id: number) =>
     api.get<ScoreExplanation>(`/schedules/${id}/score-explanation`).then((r) => r.data),
   getExplanation: (id: number) =>
@@ -159,7 +171,7 @@ export const scheduleApi = {
   previewDisruption: (id: number, data: DisruptionRequest) =>
     api.post<DisruptionResponse>(`/schedules/${id}/disruption/preview`, data).then((r) => r.data),
   applyDisruption: (id: number, data: DisruptionRequest) =>
-    api.post<Schedule>(`/schedules/${id}/disruption/apply`, data).then((r) => r.data),
+    api.post<SolveJobResponse>(`/schedules/${id}/disruption/apply`, data).then((r) => r.data),
   exportCsv: (id: number) =>
     api.get(`/schedules/${id}/export/csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
   getTeacherIcalUrl: (teacherId: number, scheduleId?: number) =>
@@ -186,10 +198,22 @@ export const scheduleApi = {
       .then((r) => r.data),
 }
 
+// Solve Jobs (async schedule generation progress)
+export const solveJobApi = {
+  getAll: (status?: string) =>
+    api.get<SolveJobResponse[]>('/solve-jobs', { params: status ? { status } : undefined }).then((r) => r.data),
+  getById: (id: number) => api.get<SolveJobResponse>(`/solve-jobs/${id}`).then((r) => r.data),
+  listForSchedule: (scheduleId: number) =>
+    api.get<SolveJobResponse[]>(`/solve-jobs/schedule/${scheduleId}`).then((r) => r.data),
+  cancel: (id: number) => api.post(`/solve-jobs/${id}/cancel`),
+}
+
 // Sessions (manual editing of timetable)
 export const sessionApi = {
   updateAssignment: (id: number, data: SessionAssignmentRequest) =>
     api.patch<ClassSession>(`/sessions/${id}`, data).then((r) => r.data),
+  create: (data: SessionCreateRequest) =>
+    api.post<ClassSession>('/sessions', data).then((r) => r.data),
 }
 
 // Events
@@ -200,7 +224,7 @@ export const eventApi = {
   update: (id: number, data: EventRequest) =>
     api.put<Event>(`/events/${id}`, data).then((r) => r.data),
   applyToSchedule: (id: number, scheduleId: number) =>
-    api.post(`/events/${id}/apply/${scheduleId}`),
+    api.post<SolveJobResponse>(`/events/${id}/apply/${scheduleId}`).then((r) => r.data),
   delete: (id: number) => api.delete(`/events/${id}`),
 }
 
@@ -216,9 +240,20 @@ export const academicTermApi = {
 }
 
 export const importApi = {
-  importCsv: (entityType: string, csvContent: string) =>
-    api
-      .post<CsvImportResponse>(`/import/csv/${entityType}`, { csvContent })
-      .then((r) => r.data),
+  importZip: (file: File, dryRun = false) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<CsvZipImportResponse>('/import/zip', formData, {
+      params: dryRun ? { dryRun: true } : undefined,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data)
+  },
+  exportZip: () =>
+    api.get('/import/export/zip', { responseType: 'blob' }).then((r) => r.data as Blob),
+  importOrder: () => api.get<ImportOrderStep[]>('/import/order').then((r) => r.data),
+  importCsv: (entityType: string, csvContent: string, dryRun = false) =>
+    api.post<CsvImportResponse>(`/import/csv/${entityType}`, { csvContent, dryRun }).then((r) => r.data),
+  exportCsv: (entityType: string) =>
+    api.get(`/import/export/csv/${entityType}`, { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle, Clock, GitBranch, Settings, ShieldCheck, Sparkles, Wand2, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle, Clock, GitBranch, Settings, ShieldCheck, Wand2, X, Zap } from 'lucide-react'
 import { Card, Button, Input, Select } from '../components/ui'
-import SolverProgressDashboard from '../components/solver/SolverProgressDashboard'
 import { scheduleApi, departmentApi, batchApi, teacherApi, roomApi } from '../services/api'
-import type { ScheduleRequest, ScheduleScope, Department, Batch, Teacher, Room, Schedule, FeasibilityCheckResult } from '../types'
+import { useSolveJobPoll } from '../hooks/useSolveJob'
+import type { ScheduleRequest, ScheduleScope, Department, Batch, Teacher, Room, Schedule, FeasibilityCheckResult, SolveJobResponse } from '../types'
 
 const SCOPE_OPTIONS: { value: ScheduleScope; label: string }[] = [
   { value: 'DEPARTMENT', label: 'Department' },
@@ -16,17 +16,8 @@ const TIME_MARKS = [10, 30, 60, 120, 300]
 const WIZARD_STEPS = [
   { id: 1, label: 'Scope Selection' },
   { id: 2, label: 'Resource Selection' },
-  { id: 3, label: 'Constraint Priorities' },
-  { id: 4, label: 'Solver Tuning' },
-]
-
-const INSIGHT_LIBRARY = [
-  'Checking 14,000 combinations of teacher-room-day chains...',
-  'Rebalancing room capacity pressure across constrained labs...',
-  'Minimizing midday break violations for high-load batches...',
-  'Pruning low-feasibility branches with hard-constraint checks...',
-  'Optimizing subject spread to reduce same-day cognitive load...',
-  'Testing building-switch tradeoffs for consecutive sessions...',
+  { id: 3, label: 'Review' },
+  { id: 4, label: 'Run & Validate' },
 ]
 
 export default function ScheduleGenerator() {
@@ -49,21 +40,24 @@ export default function ScheduleGenerator() {
   const [builderMode, setBuilderMode] = useState(false)
   const [selectedBatchIds, setSelectedBatchIds] = useState<number[]>([])
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<number[]>([])
-  const [selectedRoomIds, setSelectedRoomIds] = useState<number[]>([])
-
-  const [priorityProfile, setPriorityProfile] = useState<'balanced' | 'teacher-first' | 'student-first'>('balanced')
-  const [spreadWeight, setSpreadWeight] = useState(6)
-  const [travelWeight, setTravelWeight] = useState(5)
+   const [selectedRoomIds, setSelectedRoomIds] = useState<number[]>([])
 
   const [running, setRunning] = useState(false)
+  const [activeJob, setActiveJob] = useState<SolveJobResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [feasibility, setFeasibility] = useState<FeasibilityCheckResult | null>(null)
   const [checkingFeasibility, setCheckingFeasibility] = useState(false)
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
-  const [bestScore, setBestScore] = useState(-1200)
-  const [scorePoints, setScorePoints] = useState<{ t: number; score: number }[]>([{ t: 0, score: -1200 }])
-  const [insights, setInsights] = useState<string[]>(INSIGHT_LIBRARY.slice(0, 4))
+  const [jobStartedAt, setJobStartedAt] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (jobStartedAt === null) return
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.max(0, Math.round((Date.now() - jobStartedAt) / 1000)))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [jobStartedAt])
 
   useEffect(() => {
     Promise.allSettled([
@@ -99,37 +93,9 @@ export default function ScheduleGenerator() {
     })
   }, [])
 
-  useEffect(() => {
-    if (!running) return
-    const startedAt = Date.now()
-    const timer = window.setInterval(() => {
-      const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000))
-      setElapsedSeconds(elapsed)
-
-      setBestScore((prev) => {
-        const gain = Math.floor(Math.random() * 25) + 4
-        const next = prev + gain
-        setScorePoints((pts) => {
-          const nextPoints = [...pts, { t: elapsed, score: next }]
-          return nextPoints.slice(-24)
-        })
-        return next
-      })
-
-      setInsights((prev) => {
-        const nextInsight = INSIGHT_LIBRARY[elapsed % INSIGHT_LIBRARY.length]
-        const next = [nextInsight, ...prev.filter((x) => x !== nextInsight)]
-        return next.slice(0, 4)
-      })
-    }, 900)
-
-    return () => window.clearInterval(timer)
-  }, [running])
-
   const visibleBatches = form.scope === 'DEPARTMENT' && form.departmentId
     ? allBatches.filter((b) => b.departmentId === form.departmentId)
     : allBatches
-
   const toggleId = (
     id: number,
     current: number[],
@@ -150,9 +116,7 @@ export default function ScheduleGenerator() {
     setRunning(true)
     setError(null)
     setElapsedSeconds(0)
-    setBestScore(-1200)
-    setScorePoints([{ t: 0, score: -1200 }])
-    setInsights(INSIGHT_LIBRARY.slice(0, 4))
+    setActiveJob(null)
 
     try {
       const request: ScheduleRequest = {
@@ -161,11 +125,19 @@ export default function ScheduleGenerator() {
         teacherIds: builderMode && selectedTeacherIds.length > 0 ? selectedTeacherIds : undefined,
         roomIds: builderMode && selectedRoomIds.length > 0 ? selectedRoomIds : undefined,
       }
-      const schedule = await scheduleApi.generate(request)
-      navigate(`/schedule/view/${schedule.id}`)
+      const job = await scheduleApi.generate(request)
+      if (job.id == null) {
+        // No-op response (nothing to solve): the schedule already exists.
+        setRunning(false)
+        if (job.scheduleId) navigate(`/schedule/view/${job.scheduleId}`)
+        return
+      }
+      setJobStartedAt(Date.now())
+      setActiveJob(job)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Generation failed'
       setError(msg)
+      setRunning(false)
 
       // If generation is infeasible, immediately fetch structured diagnostics for the UI.
       if (/infeasible|unprocessable|hard score/i.test(msg)) {
@@ -183,8 +155,18 @@ export default function ScheduleGenerator() {
           // Keep original generation error visible if feasibility endpoint also fails.
         }
       }
-    } finally {
-      setRunning(false)
+    }
+  }
+
+  const handleJobFinished = (job: SolveJobResponse) => {
+    setRunning(false)
+    setJobStartedAt(null)
+    if (job.status === 'SUCCEEDED') {
+      if (job.scheduleId) navigate(`/schedule/view/${job.scheduleId}`)
+    } else if (job.status === 'FAILED') {
+      setError(job.errorMessage || 'Solver failed — check the schedule data and try again.')
+    } else {
+      setError('Generation cancelled.')
     }
   }
 
@@ -235,13 +217,11 @@ export default function ScheduleGenerator() {
 
   return (
     <div className="space-y-4">
-      {running && (
-        <SolverProgressDashboard
+      {activeJob && (
+        <SolveProgress
+          job={activeJob}
           elapsedSeconds={elapsedSeconds}
-          targetSeconds={form.solvingTimeSeconds ?? 30}
-          bestScore={bestScore}
-          insights={insights}
-          scorePoints={scorePoints}
+          onDone={handleJobFinished}
         />
       )}
 
@@ -428,65 +408,26 @@ export default function ScheduleGenerator() {
             </div>
           )}
 
-          {wizardStep === 3 && (
-            <div className="space-y-4">
-              <Select
-                label="Priority Profile"
-                value={priorityProfile}
-                onChange={(e) => setPriorityProfile(e.target.value as 'balanced' | 'teacher-first' | 'student-first')}
-                options={[
-                  { value: 'balanced', label: 'Balanced (recommended)' },
-                  { value: 'teacher-first', label: 'Teacher comfort first' },
-                  { value: 'student-first', label: 'Student flow first' },
-                ]}
-                helpText="Profiles are advisory presets for operator intent and review visibility."
-              />
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium text-gray-700">Subject Spread Weight</label>
-                  <span className="text-xs text-cyan-700">{spreadWeight}/10</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={spreadWeight}
-                  onChange={(e) => setSpreadWeight(+e.target.value)}
-                  className="w-full accent-cyan-500"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium text-gray-700">Travel Penalty Weight</label>
-                  <span className="text-xs text-cyan-700">{travelWeight}/10</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={travelWeight}
-                  onChange={(e) => setTravelWeight(+e.target.value)}
-                  className="w-full accent-cyan-500"
-                />
-              </div>
-
-              <div className="rounded-md bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-700">
-                <div className="flex items-center gap-2 mb-1">
-                  <Sparkles size={14} className="text-emerald-600" />
-                  Profile summary
-                </div>
-                <p>
-                  {priorityProfile === 'balanced' && 'Balanced blend of teacher workload and student timetable smoothness.'}
-                  {priorityProfile === 'teacher-first' && 'Stronger preference for fewer teacher building switches and better free-day alignment.'}
-                  {priorityProfile === 'student-first' && 'Stronger preference for cleaner student flow and wider subject distribution.'}
-                </p>
-              </div>
-            </div>
-          )}
+           {wizardStep === 3 && (
+             <div className="space-y-4">
+               <div className="rounded-md bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-700">
+                 <p className="mb-1">
+                   <span className="font-semibold text-gray-900">{form.name}</span>
+                   {' '}· {form.scope.charAt(0) + form.scope.slice(1).toLowerCase()} scope
+                   {form.scope === 'DEPARTMENT' && form.departmentId
+                     ? ` (${departments.find((d) => d.id === form.departmentId)?.name ?? 'department'})`
+                     : ''}
+                   {form.parentScheduleId ? ' · derived from a prior schedule' : ''}
+                 </p>
+                 <p className="text-xs text-gray-500 mt-1">
+                   {builderMode
+                     ? `${selectedBatchIds.length} batches, ${selectedTeacherIds.length} teachers, ${selectedRoomIds.length} rooms selected · `
+                     : 'All configured resources for the selected scope · '}
+                   solving time {timeLabel(form.solvingTimeSeconds ?? 30)}
+                 </p>
+               </div>
+             </div>
+           )}
 
           {wizardStep === 4 && (
             <div className="space-y-4">
@@ -526,10 +467,11 @@ export default function ScheduleGenerator() {
                 <Button
                   size="lg"
                   loading={running}
+                  disabled={running}
                   icon={<Zap size={18} />}
                   onClick={handleGenerate}
                 >
-                  {running ? `Solving (${timeLabel(form.solvingTimeSeconds ?? 30)})...` : 'Launch Solver'}
+                  Launch Solver
                 </Button>
               </div>
             </div>
@@ -585,5 +527,81 @@ export default function ScheduleGenerator() {
         </Card>
       )}
     </div>
+  )
+}
+
+function SolveProgress({
+  job,
+  elapsedSeconds,
+  onDone,
+}: {
+  job: SolveJobResponse
+  elapsedSeconds: number
+  onDone: (job: SolveJobResponse) => void
+}) {
+  const { job: freshJob, done, cancel } = useSolveJobPoll(job, onDone)
+
+  const cancelled = freshJob.status === 'CANCELLED'
+  const failed = freshJob.status === 'FAILED'
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-2 text-slate-900">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 text-cyan-700">
+          <Clock size={16} />
+          <span className="text-sm font-medium">
+            {done
+              ? cancelled
+                ? 'Solve cancelled'
+                : failed
+                  ? 'Solve failed'
+                  : 'Solve complete'
+              : `Solving… ${Math.floor(elapsedSeconds)}s elapsed`}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {freshJob.bestScore && (
+            <span className="text-xs text-slate-500 font-mono" title="Live best score">
+              best score {freshJob.bestScore}
+            </span>
+          )}
+          {!done && job.id != null && (
+            <button
+              type="button"
+              onClick={cancel}
+              className="flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+            >
+              <X size={12} />
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+        <div
+          className={`h-full transition-all duration-700 ${
+            done
+              ? cancelled
+                ? 'bg-slate-400'
+                : failed
+                  ? 'bg-rose-400'
+                  : 'bg-emerald-400'
+              : 'bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-400 animate-pulse'
+          }`}
+          style={{ width: done ? '100%' : '70%' }}
+        />
+      </div>
+      {done && (
+        <p className="text-xs text-slate-500">
+          {cancelled
+            ? 'The solve was stopped before it completed.'
+            : failed
+              ? freshJob.errorMessage || 'No feasible solution could be produced.'
+              : freshJob.elapsedMillis != null
+                ? `Finished in ${Math.round(freshJob.elapsedMillis / 1000)}s${freshJob.score ? ` with score ${freshJob.score}` : ''} — opening schedule…`
+                : 'Opening schedule…'}
+        </p>
+      )}
+    </section>
   )
 }

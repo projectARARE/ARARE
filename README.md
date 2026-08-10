@@ -364,11 +364,27 @@ To add a new disruption type:
 
 ## 20. Code Quality Notes
 
-Evidence-backed risks from source:
+Verified fixes applied during remediation (all items below were confirmed in source):
 
-- SolutionPersister null-score error path can dereference score while null.
-- Constraint complexity may degrade for very large schedules.
-- Constraint tuning is code-fixed rather than runtime-configurable.
+- SolutionPersister null-score path is null-safe: `scoreText` is computed before the guard,
+  so the exception message never dereferences a null score.
+- GlobalExceptionHandler covers ObjectOptimisticLockingFailureException (409) and
+  HttpMessageNotReadableException (400) in addition to the standard 404/400/409/422/500 cases.
+- AcademicTerm @PrePersist guards for null startDate/endDate before calling isBefore().
+- Subject @PrePersist guards for chunkHours <= 0 before the modulo check.
+- DependencyGraphBuilder edges are day-scoped (not resource-id-only), so a Monday
+  disruption does not flood the full week during BFS.
+- ScheduleGenerator UI uses a real elapsed-time counter with no fabricated score or
+  insight strings.
+- Constraint tuning sliders have been removed; the UI only exposes behavior the solver
+  actually honors (scope, resources, solving time).
+
+Remaining realistic risks:
+
+- Pairwise constraint joins are O(n²) in the worst case per resource group; for very
+  large schedules (hundreds of sessions per day) this may become a solve-time bottleneck.
+- Weight tuning is static in code; runtime constraint weight configuration would require
+  a ConstraintWeights problem fact and a differential test before it can be trusted.
 
 ## 21. Glossary
 

@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import { ToastProvider } from './contexts/ToastContext'
 import ToastContainer from './components/ui/Toast'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Buildings = lazy(() => import('./pages/Buildings'))
@@ -24,7 +25,6 @@ const DisruptionHandling = lazy(() => import('./pages/DisruptionHandling'))
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'))
 const WhatIfComparison = lazy(() => import('./pages/WhatIfComparison'))
 const CalendarPortal = lazy(() => import('./pages/CalendarPortal'))
-const ConstraintConfig = lazy(() => import('./pages/ConstraintConfig'))
 const CsvImport = lazy(() => import('./pages/CsvImport'))
 
 function page(element: ReactNode) {
@@ -39,7 +39,8 @@ export default function App() {
   return (
     <ToastProvider>
       <ToastContainer />
-      <Routes>
+      <ErrorBoundary>
+        <Routes>
         <Route element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={page(<Dashboard />)} />
@@ -61,11 +62,11 @@ export default function App() {
           <Route path="analytics" element={page(<AnalyticsDashboard />)} />
           <Route path="what-if" element={page(<WhatIfComparison />)} />
           <Route path="portal" element={page(<CalendarPortal />)} />
-          <Route path="constraints" element={page(<ConstraintConfig />)} />
           <Route path="import/csv" element={page(<CsvImport />)} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
+      </ErrorBoundary>
     </ToastProvider>
   )
 }

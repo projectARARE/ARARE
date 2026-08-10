@@ -48,22 +48,23 @@ export default function SessionCell({
     <div
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      draggable
+      draggable={!session.isLocked && Boolean(onDragStart)}
       onClick={() => onClick?.(session)}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.(session)}
       onMouseEnter={() => onHover?.(session)}
       onMouseLeave={() => onHover?.(null)}
-      onDragStart={() => onDragStart?.(session)}
+      onDragStart={() => !session.isLocked && onDragStart?.(session)}
       onDragEnd={() => onDragEnd?.()}
-      title={inspectorNotes.join(' | ')}
+      title={[session.isLocked ? 'Locked - drag disabled' : '', ...inspectorNotes].filter(Boolean).join(' | ')}
       className={`
         rounded-md border p-1.5 text-xs leading-tight
         transition-shadow hover:shadow-md select-none
         ${colorForSubject(session.subjectId ?? session.id)}
         ${heatClass}
         ${highlighted ? 'outline outline-2 outline-offset-1 outline-cyan-400' : ''}
-        ${session.isLocked ? 'ring-2 ring-offset-1 ring-amber-400' : ''}
-        ${(onClick || onDragStart) ? 'cursor-pointer' : ''}
+        ${session.isLocked ? 'ring-2 ring-offset-1 ring-amber-400 opacity-90' : ''}
+        ${(onClick || onDragStart) && !session.isLocked ? 'cursor-pointer' : ''}
+        ${session.isLocked && onDragStart ? 'cursor-not-allowed' : ''}
       `}
     >
       <p className="font-semibold truncate">{session.subjectName}</p>

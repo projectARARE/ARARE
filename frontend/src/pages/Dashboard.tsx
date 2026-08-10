@@ -62,6 +62,7 @@ export default function Dashboard() {
         ])
         setRecentSchedules(schedules.slice(0, 5))
       })
+      .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 

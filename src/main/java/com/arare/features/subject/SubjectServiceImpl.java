@@ -1,6 +1,7 @@
 package com.arare.features.subject;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.department.Department;
 import com.arare.features.department.DepartmentRepository;
@@ -15,9 +16,10 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class SubjectServiceImpl implements SubjectService {
 
-    private final SubjectRepository repo;
-    private final DepartmentRepository departmentRepo;
-    private final ClassSessionRepository sessionRepo;
+private final SubjectRepository repo;
+private final DepartmentRepository departmentRepo;
+private final ClassSessionRepository sessionRepo;
+private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
@@ -84,6 +86,7 @@ public class SubjectServiceImpl implements SubjectService {
     public void delete(Long id) {
         findEntity(id);
         sessionRepo.deleteBySubjectId(id);
+        cascadeDeletionService.purgePreAllocationsForSubject(id);
         repo.removeTeacherAssociations(id);  // Clean up teacher_subjects join table
         repo.deleteById(id);
     }

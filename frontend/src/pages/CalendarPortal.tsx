@@ -2,20 +2,20 @@ import { useEffect, useMemo, useState } from 'react'
 import { Card, Select, Button } from '../components/ui'
 import { batchApi, teacherApi, scheduleApi } from '../services/api'
 import type { Batch, Teacher } from '../types'
+import { useToast } from '../contexts/ToastContext'
 
 export default function CalendarPortal() {
+  const { toast } = useToast()
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [batches, setBatches] = useState<Batch[]>([])
   const [selectedTeacherId, setSelectedTeacherId] = useState<number | undefined>()
   const [selectedBatchId, setSelectedBatchId] = useState<number | undefined>()
 
   useEffect(() => {
-    Promise.all([teacherApi.getAll(), batchApi.getAll()])
+    Promise.allSettled([teacherApi.getAll(), batchApi.getAll()])
       .then(([t, b]) => {
-        setTeachers(t)
-        setBatches(b)
-      })
-      .catch(() => {
+        if (t.status === 'fulfilled') setTeachers(t.value)
+        if (b.status === 'fulfilled') setBatches(b.value)
       })
   }, [])
 
@@ -47,14 +47,22 @@ export default function CalendarPortal() {
 
   const downloadTeacher = async () => {
     if (!selectedTeacherId) return
-    const blob = await scheduleApi.downloadTeacherIcal(selectedTeacherId)
-    saveBlob(blob, `teacher-${selectedTeacherId}.ics`)
+    try {
+      const blob = await scheduleApi.downloadTeacherIcal(selectedTeacherId)
+      saveBlob(blob, `teacher-${selectedTeacherId}.ics`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Download failed')
+    }
   }
 
   const downloadBatch = async () => {
     if (!selectedBatchId) return
-    const blob = await scheduleApi.downloadBatchIcal(selectedBatchId)
-    saveBlob(blob, `batch-${selectedBatchId}.ics`)
+    try {
+      const blob = await scheduleApi.downloadBatchIcal(selectedBatchId)
+      saveBlob(blob, `batch-${selectedBatchId}.ics`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Download failed')
+    }
   }
 
   return (

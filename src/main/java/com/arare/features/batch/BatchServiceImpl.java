@@ -1,6 +1,7 @@
 package com.arare.features.batch;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsection.ClassSectionRepository;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.department.Department;
@@ -20,6 +21,7 @@ public class BatchServiceImpl implements BatchService {
     private final DepartmentRepository departmentRepo;
     private final ClassSessionRepository sessionRepo;
     private final ClassSectionRepository sectionRepo;
+    private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
@@ -79,6 +81,7 @@ public class BatchServiceImpl implements BatchService {
             sessionRepo.deleteBySectionId(sectionId);
         }
         sessionRepo.deleteByBatchId(id);
+        cascadeDeletionService.purgePreAllocationsForBatch(id);
         sectionRepo.deleteByBatchId(id);
         repo.deleteById(id);
     }

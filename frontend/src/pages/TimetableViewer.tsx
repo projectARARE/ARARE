@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
-import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target } from 'lucide-react'
-import { Card, Button, Select, Badge, Modal } from '../components/ui'
+import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark } from 'lucide-react'
+import { Card, Button, Select, Badge, Modal, ContextMenu, Input } from '../components/ui'
 import TimetableGrid from '../components/timetable/TimetableGrid'
+import SessionCell from '../components/timetable/SessionCell'
 import ScoreBreakdownPanel from '../components/timetable/ScoreBreakdownPanel'
 import ConflictSolverSidecar, { buildConflictSuggestions } from '../components/timetable/ConflictSolverSidecar'
 import { scheduleApi, timeslotApi, batchApi, teacherApi, roomApi, sessionApi } from '../services/api'
+import { waitForJob } from '../hooks/useSolveJob'
 import type {
   Schedule,
   ClassSession,
@@ -108,8 +110,26 @@ function computeHeatMap(sessions: ClassSession[]): Record<number, HeatEntry> {
   return heat
 }
 
-function buildDragPreview(dragged: ClassSession | null, slot: Timeslot | null, sessions: ClassSession[]): DragPreview | null {
-  if (!dragged || !slot || !dragged.id) return null
+interface SavedView {
+  name: string
+  mode: ViewMode
+  filterId?: number
+}
+
+const savedViewsKey = (scheduleId: number) => `arare.savedViews.${scheduleId}`
+const MAX_SAVED_VIEWS = 20
+
+function loadSavedViews(scheduleId: number): SavedView[] {
+  try {
+    const raw = window.localStorage.getItem(savedViewsKey(scheduleId))
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? (parsed as SavedView[]) : []
+  } catch {
+    return []
+  }
+}
+
+function buildDragPreview(dragged: ClassSession | null, slot: Timeslot | null, sessions: ClassSession[]): DragPreview | null {  if (!dragged || !slot || !dragged.id) return null
 
   let hardConflicts = 0
   let softPenalty = 0
@@ -154,7 +174,8 @@ function buildDragPreview(dragged: ClassSession | null, slot: Timeslot | null, s
 
 export default function TimetableViewer() {
   const { id } = useParams<{ id: string }>()
-  const scheduleId = Number(id)
+  const parsedId = Number(id)
+  const scheduleId = Number.isFinite(parsedId) && parsedId > 0 ? parsedId : NaN
   const { toast } = useToast()
 
   const [schedule, setSchedule] = useState<Schedule | null>(null)
@@ -187,6 +208,7 @@ export default function TimetableViewer() {
 
   const [draggedSession, setDraggedSession] = useState<ClassSession | null>(null)
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null)
+  const [dropSaving, setDropSaving] = useState(false)
 
   const [showDisruptionPanel, setShowDisruptionPanel] = useState(false)
   const [disruptionType, setDisruptionType] = useState<DisruptionType>('TEACHER_UNAVAILABLE')
@@ -197,12 +219,33 @@ export default function TimetableViewer() {
   const [disruptionPreviewing, setDisruptionPreviewing] = useState(false)
   const [disruptionApplying, setDisruptionApplying] = useState(false)
 
+  const [savedViews, setSavedViews] = useState<SavedView[]>([])
+
+  useEffect(() => {
+    setSavedViews(loadSavedViews(scheduleId))
+  }, [scheduleId])
+
   const heatBySessionId = useMemo(() => computeHeatMap(sessions), [sessions])
 
   const unassignedCount = useMemo(
     () => sessions.filter((s) => !s.timeslotId).length,
     [sessions],
   )
+  // Sessions TimetableGrid could not place into a cell (e.g. assigned a
+  // timeslotId that is no longer present in the loaded timeslot set). Surfaced
+  // alongside the unassigned count so the operator never loses visibility of
+  // data the grid can't render.
+  const [orphanCount, setOrphanCount] = useState(0)
+  const totalUnassigned = unassignedCount + orphanCount
+  // Sessions with no timeslot assignment at all: draggable from the tray into
+  // a free slot. Orphaned sessions (timeslot id no longer present in the
+  // timeslot set) are listed too but are not draggable — the grid cannot
+  // place them, they must be re-assigned through the editor.
+  const unassignedSessions = useMemo(() => sessions.filter((s) => !s.timeslotId), [sessions])
+  const orphanedSessions = useMemo(() => {
+    const known = new Set(timeslots.map((t) => t.id))
+    return sessions.filter((s) => s.timeslotId != null && !known.has(s.timeslotId))
+  }, [sessions, timeslots])
   const lockedCount = useMemo(
     () => sessions.filter((s) => s.isLocked).length,
     [sessions],
@@ -247,6 +290,7 @@ export default function TimetableViewer() {
   }
 
   const load = () => {
+    if (!Number.isFinite(scheduleId)) return
     setLoading(true)
     Promise.all([
       scheduleApi.getById(scheduleId),
@@ -324,8 +368,13 @@ export default function TimetableViewer() {
   const handleApplyDisruption = async () => {
     setDisruptionApplying(true)
     try {
-      await scheduleApi.applyDisruption(scheduleId, buildDisruptionRequest())
-      toast.success(`Disruption applied - re-solving ${disruptionPreview?.impactedSessionCount ?? '?'} sessions`)
+      const job = await scheduleApi.applyDisruption(scheduleId, buildDisruptionRequest())
+      const finished = await waitForJob(job)
+      if (finished.status === 'FAILED') {
+        toast.error(finished.errorMessage || 'Re-solving after disruption failed')
+        return
+      }
+      toast.success(`Disruption applied - re-solved ${disruptionPreview?.impactedSessionCount ?? '?'} sessions`)
       setShowDisruptionPanel(false)
       setDisruptionPreview(null)
       load()
@@ -353,6 +402,22 @@ export default function TimetableViewer() {
 
   const handleSaveAssignment = async () => {
     if (!selectedSession) return
+    if (editLocked && !selectedSession.isLocked) {
+      // Session is being created locked: nothing to do besides locking.
+      setEditError(null)
+    } else if (editLocked) {
+      const changed =
+        (editTeacherId && +editTeacherId !== selectedSession.teacherId) ||
+        (!editTeacherId && selectedSession.teacherId != null) ||
+        (editRoomId && +editRoomId !== selectedSession.roomId) ||
+        (!editRoomId && selectedSession.roomId != null) ||
+        (editTimeslotId && +editTimeslotId !== selectedSession.timeslotId) ||
+        (!editTimeslotId && selectedSession.timeslotId != null)
+      if (changed) {
+        setEditError('Session is locked — uncheck "Locked" to edit its assignment')
+        return
+      }
+    }
     setEditSaving(true)
     setEditError(null)
     try {
@@ -368,14 +433,70 @@ export default function TimetableViewer() {
       setSelectedSession(null)
       setEditMode(false)
       toast.success('Session assignment updated')
-      scheduleApi.getSessions(scheduleId)
-        .then(setSessions)
-        .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to reload sessions'))
+      // Re-fetch the schedule (so the persisted score header is not stale
+      // after the manual assignment), the sessions, and the score explanation.
+      Promise.all([scheduleApi.getById(scheduleId), scheduleApi.getSessions(scheduleId)])
+        .then(([sched, sess]) => {
+          setSchedule(sched)
+          setSessions(sess)
+        })
+        .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to reload schedule'))
       loadExplanations()
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Failed to save assignment')
     } finally {
       setEditSaving(false)
+    }
+  }
+
+  const refreshSessionsAndSchedule = () => {
+    Promise.all([scheduleApi.getById(scheduleId), scheduleApi.getSessions(scheduleId)])
+      .then(([sched, sess]) => {
+        setSchedule(sched)
+        setSessions(sess)
+      })
+      .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to reload schedule'))
+    loadExplanations()
+  }
+
+  /**
+   * Drop-to-commit: a session dragged onto a slot with no hard conflicts is
+   * moved immediately (the backend re-validates hard constraints and rejects
+   * the PATCH otherwise). Only hard-conflict drops open the editor so the
+   * operator decides consciously.
+   */
+  const handleDropToSlot = async (slot: Timeslot) => {
+    if (!draggedSession) return
+    const session = draggedSession
+    setDraggedSession(null)
+    setDragPreview(null)
+    if (session.isLocked) {
+      toast.error(`"${session.subjectName}" is locked — unlock it in the editor to move it`)
+      return
+    }
+    if (dropSaving) return
+    const preview = buildDragPreview(session, slot, sessions)
+    if (preview?.severity === 'hard') {
+      setSelectedSession(session)
+      setEditMode(true)
+      setEditTeacherId(session.teacherId?.toString() ?? '')
+      setEditRoomId(session.roomId?.toString() ?? '')
+      setEditTimeslotId(String(slot.id))
+      setEditLocked(session.isLocked)
+      return
+    }
+    setDropSaving(true)
+    try {
+      await sessionApi.updateAssignment(session.id, {
+        timeslotId: slot.id,
+        locked: session.isLocked,
+      })
+      toast.success(`Moved "${session.subjectName}" to ${slot.day} ${slot.startTime}-${slot.endTime}`)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `Move failed — ${slot.day} ${slot.startTime}`)
+    } finally {
+      setDropSaving(false)
     }
   }
 
@@ -424,6 +545,29 @@ export default function TimetableViewer() {
     if (viewMode === 'batch') setBatchFilterId(nextId)
     else if (viewMode === 'teacher') setTeacherFilterId(nextId)
     else setRoomFilterId(nextId)
+  }
+
+  const handleSaveView = () => {
+    const name = window.prompt('Name this view:')
+    if (!name?.trim()) return
+    const next = [
+      ...savedViews.filter((v) => v.name !== name.trim()),
+      { name: name.trim(), mode: viewMode, filterId: currentFilterId },
+    ].slice(-MAX_SAVED_VIEWS)
+    setSavedViews(next)
+    window.localStorage.setItem(savedViewsKey(scheduleId), JSON.stringify(next))
+    toast.success(`View "${name.trim()}" saved`)
+  }
+
+  const handleApplyView = (name: string) => {
+    const view = savedViews.find((v) => v.name === name)
+    if (!view) return
+    setViewMode(view.mode)
+    if (view.filterId != null) {
+      setBatchFilterId(view.mode === 'batch' ? view.filterId : undefined)
+      setTeacherFilterId(view.mode === 'teacher' ? view.filterId : undefined)
+      setRoomFilterId(view.mode === 'room' ? view.filterId : undefined)
+    }
   }
 
   const teacherOptions = [
@@ -480,10 +624,13 @@ export default function TimetableViewer() {
               {schedule?.score && (
                 <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">{schedule.score}</code>
               )}
-              {unassignedCount > 0 && (
+              {totalUnassigned > 0 && (
                 <span className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                   <AlertCircle size={11} />
-                  {unassignedCount} unassigned
+                  {totalUnassigned} unassigned
+                  {orphanCount > 0 && (
+                    <span className="opacity-70">({orphanCount} unplaceable)</span>
+                  )}
                 </span>
               )}
               {lockedCount > 0 && (
@@ -501,6 +648,17 @@ export default function TimetableViewer() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {savedViews.length > 0 && (
+              <Select
+                value=""
+                onChange={(e) => e.target.value && handleApplyView(e.target.value)}
+                options={[{ value: '', label: `Saved views (${savedViews.length})` }, ...savedViews.map((v) => ({ value: v.name, label: v.name }))]}
+                className="w-44"
+              />
+            )}
+            <Button variant="secondary" size="sm" icon={<Bookmark size={14} />} onClick={handleSaveView} title="Save current view filters">
+              Save view
+            </Button>
             <Button variant={heatmapEnabled ? 'primary' : 'secondary'} size="sm" icon={<Target size={14} />} onClick={() => setHeatmapEnabled((v) => !v)}>
               Heatmap
             </Button>
@@ -535,9 +693,48 @@ export default function TimetableViewer() {
               )}
               <div className="ml-auto text-xs text-slate-500 flex items-center gap-1.5">
                 <Move size={13} />
-                Drag any session to preview impact and drop to edit
+                {dropSaving ? 'Saving move…' : 'Drag any session to a slot — safe drops apply instantly, conflicts open the editor'}
               </div>
             </div>
+            {unassignedSessions.length + orphanedSessions.length > 0 && (
+              <div className="mb-4 rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-3">
+                <p className="text-xs font-medium text-amber-800 mb-2 flex items-center gap-1.5">
+                  <AlertCircle size={12} />
+                  {unassignedSessions.length > 0
+                    ? `Unassigned (${unassignedSessions.length}) — drag a card into a slot to place it`
+                    : 'Placement'}
+                  {orphanedSessions.length > 0 && (
+                    <span className="font-normal opacity-80">
+                      — {orphanedSessions.length} session{orphanedSessions.length !== 1 ? 's' : ''} have a timeslot that no longer exists; click to re-assign
+                    </span>
+                  )}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {unassignedSessions.map((s) => (
+                    <SessionCell
+                      key={s.id}
+                      session={s}
+                      onClick={openSessionDetail}
+                      onDragStart={
+                        dropSaving
+                          ? undefined
+                          : (session) => {
+                              setDraggedSession(session)
+                              setDragPreview(null)
+                            }
+                      }
+                      onDragEnd={() => {
+                        setDraggedSession(null)
+                        setDragPreview(null)
+                      }}
+                    />
+                  ))}
+                  {orphanedSessions.map((s) => (
+                    <SessionCell key={s.id} session={s} onClick={openSessionDetail} />
+                  ))}
+                </div>
+              </div>
+            )}
             <TimetableGrid
               sessions={sessions}
               timeslots={timeslots}
@@ -549,27 +746,22 @@ export default function TimetableViewer() {
               heatmapEnabled={heatmapEnabled}
               heatBySessionId={heatBySessionId}
               highlightedSessionIds={highlightedSessionIds}
-              onSessionDragStart={(session) => {
-                setDraggedSession(session)
-                setDragPreview(null)
-              }}
+              onSessionDragStart={
+                dropSaving
+                  ? undefined
+                  : (session) => {
+                      setDraggedSession(session)
+                      setDragPreview(null)
+                    }
+              }
               onSessionDragEnd={() => {
                 setDraggedSession(null)
                 setDragPreview(null)
               }}
               onSlotDragHover={(slot) => setDragPreview(buildDragPreview(draggedSession, slot, sessions))}
-              onSlotDrop={(slot) => {
-                if (!draggedSession) return
-                setSelectedSession(draggedSession)
-                setEditMode(true)
-                setEditTeacherId(draggedSession.teacherId?.toString() ?? '')
-                setEditRoomId(draggedSession.roomId?.toString() ?? '')
-                setEditTimeslotId(String(slot.id))
-                setEditLocked(draggedSession.isLocked)
-                setDraggedSession(null)
-                setDragPreview(null)
-              }}
+              onSlotDrop={handleDropToSlot}
               dragPreview={dragPreview}
+              onOrphanSessionsCount={setOrphanCount}
             />
           </Card>
 

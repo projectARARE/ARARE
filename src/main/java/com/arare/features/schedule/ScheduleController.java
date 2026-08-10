@@ -5,6 +5,7 @@ import com.arare.features.impact.DisruptionRequest;
 import com.arare.features.impact.DisruptionResponse;
 import com.arare.features.impact.DisruptionService;
 import com.arare.features.solver.ScoreExplanationResponse;
+import com.arare.features.solvejob.SolveJobResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ContentDisposition;
@@ -28,8 +29,8 @@ public class ScheduleController {
     private final FeasibilityCheckService  feasibilityCheckService;
 
     @PostMapping("/generate")
-    public ResponseEntity<ScheduleResponse> generate(@Valid @RequestBody ScheduleRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.generate(req));
+    public ResponseEntity<SolveJobResponse> generate(@Valid @RequestBody ScheduleRequest req) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.generate(req));
     }
 
     @GetMapping("/{id}")
@@ -43,11 +44,12 @@ public class ScheduleController {
     }
 
     @PostMapping("/{id}/partial-resolve")
-    public ResponseEntity<ScheduleResponse> partialResolve(
+    public ResponseEntity<SolveJobResponse> partialResolve(
         @PathVariable Long id,
-        @RequestBody List<Long> impactedSessionIds
+        @Valid @RequestBody PartialResolveRequest request
     ) {
-        return ResponseEntity.ok(service.partialResolve(id, impactedSessionIds));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+            .body(service.partialResolve(id, request.impactedSessionIds()));
     }
 
     @GetMapping("/{id}/score-explanation")
@@ -87,10 +89,11 @@ public class ScheduleController {
     }
 
     @PostMapping("/{id}/disruption/apply")
-    public ResponseEntity<ScheduleResponse> applyDisruption(
+    public ResponseEntity<SolveJobResponse> applyDisruption(
             @PathVariable Long id,
             @Valid @RequestBody DisruptionRequest request) {
-        return ResponseEntity.ok(disruptionService.applyDisruption(id, request));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+            .body(disruptionService.applyDisruption(id, request));
     }
     @GetMapping("/{id}/export/csv")
     public ResponseEntity<byte[]> exportCsv(@PathVariable Long id) {
@@ -130,7 +133,7 @@ public class ScheduleController {
 
     @PostMapping("/feasibility-check")
     public ResponseEntity<FeasibilityCheckResult> checkFeasibility(
-            @RequestBody ScheduleRequest req) {
+            @Valid @RequestBody ScheduleRequest req) {
         return ResponseEntity.ok(feasibilityCheckService.check(req));
     }
 }

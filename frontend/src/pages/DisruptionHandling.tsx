@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Card, Button, Select, Table, Badge } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import { scheduleApi, eventApi } from '../services/api'
+import { waitForJob } from '../hooks/useSolveJob'
 import type { Schedule, Event } from '../types'
 
 export default function DisruptionHandling() {
@@ -39,7 +40,8 @@ export default function DisruptionHandling() {
     setApplying(eventId)
     setError(null)
     try {
-      await eventApi.applyToSchedule(eventId, +selectedSchedule)
+      const job = await eventApi.applyToSchedule(eventId, +selectedSchedule)
+      await waitForJob(job)
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to apply event')

@@ -12,14 +12,14 @@ export default function AnalyticsDashboard() {
   const [rooms, setRooms] = useState<Room[]>([])
 
   useEffect(() => {
-    Promise.all([scheduleApi.getAll(), teacherApi.getAll(), roomApi.getAll()])
+    Promise.allSettled([scheduleApi.getAll(), teacherApi.getAll(), roomApi.getAll()])
       .then(([sch, t, r]) => {
-        setSchedules(sch)
-        setTeachers(t)
-        setRooms(r)
-        if (sch.length > 0) setSelectedScheduleId(sch[0].id)
-      })
-      .catch(() => {
+        if (sch.status === 'fulfilled') {
+          setSchedules(sch.value)
+          if (sch.value.length > 0) setSelectedScheduleId(sch.value[0].id)
+        }
+        if (t.status === 'fulfilled') setTeachers(t.value)
+        if (r.status === 'fulfilled') setRooms(r.value)
       })
   }, [])
 

@@ -78,6 +78,7 @@ export interface RoomRequest {
 
 export interface Teacher {
   id: number
+  employeeId?: string
   name: string
   subjectIds: number[]
   subjectNames?: string[]
@@ -90,6 +91,7 @@ export interface Teacher {
   preferredFreeDay?: SchoolDay
 }
 export interface TeacherRequest {
+  employeeId?: string
   name: string
   subjectIds?: number[]
   availableTimeslotIds?: number[]
@@ -259,6 +261,29 @@ export interface ScheduleRequest {
   solvingTimeSeconds?: number
 }
 
+// ─── Solve Job (async schedule generation) ────────────────────────────────────
+
+export type SolveJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED'
+export type SolveJobType = 'GENERATE' | 'PARTIAL_RESOLVE'
+
+export interface SolveJobResponse {
+  id?: number
+  scheduleId?: number
+  status: SolveJobStatus
+  jobType: SolveJobType
+  errorMessage?: string
+  score?: string
+  bestScore?: string
+  elapsedMillis?: number
+  createdAt?: string
+  startedAt?: string
+  finishedAt?: string
+}
+
+export function isSolveJobTerminal(job: SolveJobResponse): boolean {
+  return job.status === 'SUCCEEDED' || job.status === 'FAILED' || job.status === 'CANCELLED'
+}
+
 // ─── ClassSession ─────────────────────────────────────────────────────────────
 
 export interface ClassSession {
@@ -310,12 +335,35 @@ export interface ConflictSuggestion {
   softPenalties: number
 }
 
-export interface CsvImportResponse {
-  entityType: string
+export interface FileImportStats {
+  fileName: string
   created: number
   updated: number
   skipped: number
   errors: string[]
+}
+
+export interface CsvZipImportResponse {
+  fileStats: Record<string, FileImportStats>
+  globalErrors: string[]
+  dryRun?: boolean
+}
+
+export interface CsvImportResponse {
+  entityType: string
+  displayName: string
+  created: number
+  updated: number
+  skipped: number
+  errors: string[]
+  dryRun: boolean
+}
+
+export interface ImportOrderStep {
+  name: string
+  displayName: string
+  fileName: string
+  dependencies: string[]
 }
 
 // ─── University Config Entry (key-value) ─────────────────────────────────────
@@ -342,6 +390,20 @@ export interface SessionAssignmentRequest {
   clearTeacher?: boolean
   clearRoom?: boolean
   clearTimeslot?: boolean
+}
+
+// ─── Session Creation (right-click "add session here") ───────────────────────
+
+export interface SessionCreateRequest {
+  scheduleId: number
+  subjectId: number
+  batchId?: number
+  sectionId?: number
+  teacherId?: number | null
+  roomId?: number | null
+  timeslotId?: number | null
+  duration?: number
+  locked?: boolean
 }
 
 // ─── AcademicTerm ─────────────────────────────────────────────────────────────

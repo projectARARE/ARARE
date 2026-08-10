@@ -29,9 +29,9 @@ public class SolutionPersister {
         HardMediumSoftScore score = solution.getScore();
 
         if (score == null || score.hardScore() < 0) {
-            String scoreText = score != null ? score.toString() : "N/A";
+            String scoreText = score != null ? score.toString() : "unsolved";
             throw new IllegalStateException(
-                "Generated schedule is infeasible (Hard Score: " + score.hardScore() 
+                "Generated schedule is infeasible (Score: " + scoreText
                 + "). Please check for conflicting pre-allocations or extreme resource shortages.");
         }
 

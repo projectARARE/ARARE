@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, Zap } from 'lucide-react'
 import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog } from '../components/ui'
 import type { Column, ContextMenuItem } from '../components/ui'
 import { eventApi, scheduleApi, teacherApi, roomApi } from '../services/api'
+import { waitForJob } from '../hooks/useSolveJob'
 import type { Event, EventRequest, EventType, Schedule, Teacher, Room } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
@@ -114,7 +115,8 @@ export default function Events() {
     setApplying(true)
     setApplyError(null)
     try {
-      await eventApi.applyToSchedule(applyTarget.eventId, +applyTarget.scheduleId)
+      const job = await eventApi.applyToSchedule(applyTarget.eventId, +applyTarget.scheduleId)
+      await waitForJob(job)
       setApplyTarget({ eventId: 0, scheduleId: '' })
       toast.success('Event applied to schedule')
       load()
@@ -156,10 +158,10 @@ export default function Events() {
       key: 'affected', header: 'Affected',
       render: (e) => (
         <span className="text-xs text-gray-500">
-          {[
-            e.affectedTeacherIds.length ? `${e.affectedTeacherIds.length} teacher(s)` : '',
-            e.affectedRoomIds.length ? `${e.affectedRoomIds.length} room(s)` : '',
-          ].filter(Boolean).join(', ') || '—'}
+           {[
+             (e.affectedTeacherIds ?? []).length ? `${(e.affectedTeacherIds ?? []).length} teacher(s)` : '',
+             (e.affectedRoomIds ?? []).length ? `${(e.affectedRoomIds ?? []).length} room(s)` : '',
+           ].filter(Boolean).join(', ') || '—'}
         </span>
       ),
     },

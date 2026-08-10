@@ -116,6 +116,9 @@ public class Subject extends BaseEntity {
             }
         }
 
+        if (chunkHours <= 0) {
+            throw new IllegalStateException("chunkHours must be > 0 for subject " + name);
+        }
         if (weeklyHours < chunkHours) {
             throw new IllegalStateException("weeklyHours must be >= chunkHours for subject " + name);
         }

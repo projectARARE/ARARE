@@ -91,7 +91,11 @@ export default function ScheduleHistory() {
     {
       key: 'created', header: 'Created',
       sortValue: (s) => s.createdAt ?? '',
-      render: (s) => s.createdAt ? new Date(s.createdAt).toLocaleString() : '—',
+      render: (s) => {
+        if (!s.createdAt) return '—'
+        const d = new Date(s.createdAt)
+        return isNaN(d.getTime()) ? '—' : d.toLocaleString()
+      },
     },
     {
       key: 'actions', header: '', width: '130px',

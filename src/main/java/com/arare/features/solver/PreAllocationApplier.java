@@ -13,8 +13,8 @@ public class PreAllocationApplier {
             sessions.stream()
                 .filter(s -> !s.isLocked()
                     && s.getSubject().getId().equals(pa.getSubject().getId())
-                    && s.getBatch() != null
-                    && s.getBatch().getId().equals(pa.getBatch().getId()))
+                    && s.getEffectiveBatch() != null
+                    && s.getEffectiveBatch().getId().equals(pa.getBatch().getId()))
                 .findFirst()
                 .ifPresent(s -> {
                     s.setTeacher(pa.getTeacher());

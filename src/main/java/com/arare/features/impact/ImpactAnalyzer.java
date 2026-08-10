@@ -97,17 +97,18 @@ public class ImpactAnalyzer {
                     s.getId().equals(event.affectedEntityId());
 
             case SPECIAL_EVENT ->
-                    s.getTimeslot() != null && matchesDay(s, event);
+                    s.getTimeslot() != null && event.date() != null && matchesDay(s, event);
         };
     }
 
-// For weekly timetables: the disruption date's day-of-week must match
-// the session's timeslot day (e.g. date is a Monday → only Monday sessions).
-// If no date is provided, all sessions are candidates.
-    private boolean matchesDay(ClassSession s, DisruptionRequest event) {
-        if (event.date() == null || s.getTimeslot() == null) return true;
+private boolean matchesDay(ClassSession s, DisruptionRequest event) {
+        if (event.date() == null) {
+            // No date provided: only match sessions with no timeslot assigned.
+            // This prevents an empty event from flooding the entire schedule.
+            return s.getTimeslot() == null;
+        }
         String disruptionDay = event.date().getDayOfWeek().name(); // e.g. "MONDAY"
-        return s.getTimeslot().getDay().name().equals(disruptionDay);
+        return s.getTimeslot() != null && s.getTimeslot().getDay().name().equals(disruptionDay);
     }
 
     // ------------------------------------------------------------------

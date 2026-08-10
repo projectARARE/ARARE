@@ -1,5 +1,6 @@
 package com.arare.features.classsession;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,12 +13,31 @@ import java.util.List;
 @Repository
 public interface ClassSessionRepository extends JpaRepository<ClassSession, Long> {
 
+    // List endpoints: fetch the association chain (batch.department,
+    // section.batch.department, room.building) in one round trip to avoid
+    // per-row lazy loads.
+    @EntityGraph(attributePaths = {
+        "subject", "batch.department", "section.batch.department",
+        "teacher", "room.building", "timeslot"
+    })
     List<ClassSession> findByScheduleId(Long scheduleId);
 
+    @EntityGraph(attributePaths = {
+        "subject", "batch.department", "section.batch.department",
+        "teacher", "room.building", "timeslot"
+    })
     List<ClassSession> findByScheduleIdAndBatchId(Long scheduleId, Long batchId);
 
+    @EntityGraph(attributePaths = {
+        "subject", "batch.department", "section.batch.department",
+        "teacher", "room.building", "timeslot"
+    })
     List<ClassSession> findByScheduleIdAndTeacherId(Long scheduleId, Long teacherId);
 
+    @EntityGraph(attributePaths = {
+        "subject", "batch.department", "section.batch.department",
+        "teacher", "room.building", "timeslot"
+    })
     List<ClassSession> findByScheduleIdAndRoomId(Long scheduleId, Long roomId);
 
     @Query("SELECT cs FROM ClassSession cs WHERE cs.schedule.id = :scheduleId AND cs.timeslot IS NULL")

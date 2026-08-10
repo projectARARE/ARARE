@@ -7,6 +7,7 @@ import java.util.List;
 
 // Request DTO: create or update a Teacher. 
 public record TeacherRequest(
+    String employeeId,
     @NotBlank String name,
     List<Long> subjectIds,
     List<Long> availableTimeslotIds,

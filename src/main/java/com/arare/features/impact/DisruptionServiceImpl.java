@@ -3,10 +3,9 @@ package com.arare.features.impact;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.classsession.ClassSession;
 import com.arare.features.classsession.ClassSessionRepository;
-import com.arare.features.schedule.Schedule;
 import com.arare.features.schedule.ScheduleRepository;
-import com.arare.features.schedule.ScheduleResponse;
-import com.arare.features.schedule.ScheduleService;
+import com.arare.features.solvejob.SolveJobResponse;
+import com.arare.features.solvejob.SolveJobService;
 import com.arare.features.teacher.TeacherRepository;
 import com.arare.features.room.RoomRepository;
 import com.arare.features.timeslot.TimeslotRepository;
@@ -28,7 +27,7 @@ public class DisruptionServiceImpl implements DisruptionService {
     private final ClassSessionRepository   sessionRepo;
     private final DependencyGraphBuilder   graphBuilder;
     private final ImpactAnalyzer           impactAnalyzer;
-    private final ScheduleService          scheduleService;
+    private final SolveJobService          solveJobService;
 
     private final TeacherRepository        teacherRepo;
     private final RoomRepository           roomRepo;
@@ -67,7 +66,7 @@ public class DisruptionServiceImpl implements DisruptionService {
 
     @Override
     @Transactional
-    public ScheduleResponse applyDisruption(Long scheduleId, DisruptionRequest request) {
+    public SolveJobResponse applyDisruption(Long scheduleId, DisruptionRequest request) {
         validateSchedule(scheduleId);
         validateRequest(request);
         List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId);
@@ -81,10 +80,10 @@ public class DisruptionServiceImpl implements DisruptionService {
 
         if (impactedIds.isEmpty()) {
             log.info("No sessions impacted by disruption — no re-solve needed");
-            return scheduleService.findById(scheduleId);
+            return solveJobService.completedNoop(scheduleId);
         }
 
-        return scheduleService.partialResolve(scheduleId, new ArrayList<>(impactedIds));
+        return solveJobService.submitPartialResolve(scheduleId, new ArrayList<>(impactedIds));
     }
 
     // ------------------------------------------------------------------

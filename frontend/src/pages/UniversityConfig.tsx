@@ -22,6 +22,7 @@ export default function UniversityConfigPage() {
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [timeslots, setTimeslots] = useState<Timeslot[]>([])
+  const [missingConfig, setMissingConfig] = useState(false)
   const [paintedAvailableTimeslotIds, setPaintedAvailableTimeslotIds] = useState<number[]>([])
 
   const painterTimeslots = useMemo<Timeslot[]>(() => {
@@ -52,11 +53,19 @@ export default function UniversityConfigPage() {
     return preview
   }, [timeslots, form.workingDays, form.daysPerWeek, form.timeslotsPerDay])
 
-  useEffect(() => {
-    Promise.all([universityConfigApi.get(), timeslotApi.getAll()])
-      .then(([cfg, allTimeslots]) => {
-        if (cfg) setForm(cfg)
-        setTimeslots(allTimeslots)
+   useEffect(() => {
+    Promise.allSettled([universityConfigApi.get(), timeslotApi.getAll()])
+      .then(([cfgRes, tsRes]) => {
+        // get() 404s on a fresh install (no config persisted yet); fall back to
+        // defaults instead of rejecting the whole Promise.all.
+        if (cfgRes.status === 'fulfilled' && cfgRes.value) {
+          setForm(cfgRes.value)
+        } else {
+          setMissingConfig(true)
+        }
+        if (tsRes.status === 'fulfilled') {
+          setTimeslots(tsRes.value)
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load configuration'))
       .finally(() => setLoading(false))
@@ -102,6 +111,13 @@ export default function UniversityConfigPage() {
       )}
       <Card title="University Configuration" description="Global scheduling parameters">
         <div className="space-y-6">
+          {missingConfig && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+              No configuration has been saved yet — showing defaults. Saving will create the first
+              university configuration record.
+            </div>
+          )}
+
           <div>
             <p className="block text-sm font-medium text-gray-700 mb-2">Working Days</p>
             <div className="flex flex-wrap gap-2">
@@ -168,7 +184,7 @@ export default function UniversityConfigPage() {
           </div>
 
           <div>
-            <p className="block text-sm font-medium text-gray-700 mb-1">Visual Availability Painter (Preview)</p>
+            <p className="block text-sm font-medium text-gray-700 mb-1">Visual Availability Painter (Preview only)</p>
             <p className="text-xs text-gray-500 mb-2">
               Paint the campus-wide preferred available windows. Use this to prototype operating hours quickly.
             </p>
