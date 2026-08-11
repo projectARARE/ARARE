@@ -1,6 +1,7 @@
 package com.arare.config;
 
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,17 +32,24 @@ public class JpaConfig {
     @Value("${spring.flyway.baseline-on-migrate:true}")
     private boolean baselineOnMigrate;
 
+    @Value("${spring.flyway.target:}")
+    private String flywayTarget;
+
     // Custom Flyway bean that ensures the target database exists before migrating.
     // Connects to the default 'postgres' database first to CREATE DATABASE IF NOT EXISTS.
     @Bean
     public Flyway flyway(DataSource dataSource) {
         ensureDatabaseExists();
 
-        Flyway flyway = Flyway.configure()
+        FluentConfiguration configurer = Flyway.configure()
                 .dataSource(dataSource)
                 .locations(flywayLocations.split(","))
-                .baselineOnMigrate(baselineOnMigrate)
-                .load();
+                .baselineOnMigrate(baselineOnMigrate);
+        if (flywayTarget != null && !flywayTarget.isBlank()) {
+            configurer.target(flywayTarget);
+        }
+
+        Flyway flyway = configurer.load();
 
         flyway.migrate();
         return flyway;
