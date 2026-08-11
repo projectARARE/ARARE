@@ -108,7 +108,11 @@ Frontend:
 - npm install
 - npm run dev
 
-Default backend DB config is in src/main/resources/application.properties and can be overridden with ARARE_DB_URL, ARARE_DB_USERNAME, and ARARE_DB_PASSWORD.
+Default backend DB config is in src/main/resources/application.properties and can be overridden with ARARE_DB_URL, ARARE_DB_USERNAME, and ARARE_DB_PASSWORD. A ready-to-copy template is provided in .env.example at the repository root, and the frontend proxy target is configured via frontend/.env.example (VITE_BACKEND_URL).
+
+### Authentication scope
+
+Authentication and authorization are currently out of scope for ARARE. The REST API is unauthenticated and relies on the network layer (or an external gateway) to control who can reach it. Do not expose the backend directly to the public internet in this state. A future release may add an identity provider and role-based access control on top of the existing domain model.
 
 ## 7. Configuration and Persistence
 
