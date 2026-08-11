@@ -1,6 +1,6 @@
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export type SchoolDay = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY'
+export type SchoolDay = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY'
 export type RoomType = 'LECTURE' | 'LAB'
 export type LabSubtype =
   | 'COMPUTER_LAB'
@@ -260,6 +260,7 @@ export interface Schedule {
   score?: string
   scoreExplanation?: string
   createdAt?: string
+  blockedDays?: SchoolDay[]
 }
 export interface ScheduleRequest {
   name: string
@@ -270,6 +271,7 @@ export interface ScheduleRequest {
   teacherIds?: number[]
   roomIds?: number[]
   solvingTimeSeconds?: number
+  blockedDays?: SchoolDay[]
 }
 
 // ─── Solve Job (async schedule generation) ────────────────────────────────────

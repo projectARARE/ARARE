@@ -24,6 +24,9 @@ public class LazyAssociationInitializer {
             Subject sub = s.getSubject();
             sub.getDepartment().getId();
             sub.getDepartment().getBuildingsAllowed().size();
+            if (s.getSchedule() != null) {
+                s.getSchedule().getBlockedDays().size();
+            }
 
             if (s.getBatch() != null) {
                 Batch b = s.getBatch();

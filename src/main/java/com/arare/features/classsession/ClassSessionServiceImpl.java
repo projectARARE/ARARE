@@ -1,5 +1,6 @@
 package com.arare.features.classsession;
 
+import com.arare.common.enums.SchoolDay;
 import com.arare.common.enums.TimeslotType;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
@@ -241,6 +242,12 @@ public class ClassSessionServiceImpl implements ClassSessionService {
     private void requireNoHardConflicts(ClassSession s, Teacher teacher, Room room, Timeslot timeslot) {
         if (timeslot == null) {
             return;
+        }
+        List<SchoolDay> blockedDays = s.getSchedule().getBlockedDays();
+        if (blockedDays != null && blockedDays.contains(timeslot.getDay())) {
+            throw new IllegalArgumentException(
+                "Session cannot be assigned on " + timeslot.getDay()
+                    + " — the schedule has this day blocked");
         }
         List<ClassSession> others = repo.findByScheduleId(s.getSchedule().getId()).stream()
             .filter(o -> !o.getId().equals(s.getId()))

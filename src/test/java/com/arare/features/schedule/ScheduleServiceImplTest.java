@@ -83,7 +83,7 @@ class ScheduleServiceImplTest {
     @Test
     void generate_feasible_persistsDraftAndSubmitsSolveJob() {
         ScheduleRequest req = new ScheduleRequest("Term 1", ScheduleScope.DEPARTMENT,
-            null, null, null, null, null, 30);
+            null, null, null, null, null, 30, null);
         when(feasibilityCheckService.check(req))
             .thenReturn(new FeasibilityCheckResult(true, 0, 0, 12, 40, List.of()));
         when(repo.save(any())).thenAnswer(inv -> {
@@ -105,7 +105,7 @@ class ScheduleServiceImplTest {
     @Test
     void generate_infeasible_throwsBeforeSavingAnySchedule() {
         ScheduleRequest req = new ScheduleRequest("Term 1", ScheduleScope.DEPARTMENT,
-            null, null, null, null, null, 30);
+            null, null, null, null, null, 30, null);
         when(feasibilityCheckService.check(req)).thenReturn(new FeasibilityCheckResult(false, 2, 0, 12, 8,
             List.of(new FeasibilityIssue(FeasibilityIssue.Severity.ERROR, "BATCH",
                 "No batches found for the selected scope.", null, null))));
@@ -120,7 +120,7 @@ class ScheduleServiceImplTest {
     @Test
     void generate_throwsWhenParentScheduleDoesNotExist() {
         ScheduleRequest req = new ScheduleRequest("Term 1", ScheduleScope.DEPARTMENT,
-            99L, null, null, null, null, 30);
+            99L, null, null, null, null, 30, null);
         when(feasibilityCheckService.check(req))
             .thenReturn(new FeasibilityCheckResult(true, 0, 0, 12, 40, List.of()));
         when(repo.findById(99L)).thenReturn(Optional.empty());

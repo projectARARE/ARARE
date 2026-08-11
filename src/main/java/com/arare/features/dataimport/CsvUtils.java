@@ -284,6 +284,7 @@ public final class CsvUtils {
     /** Normalizes a CSV header: lowercase, no spaces or underscores, no BOM. */
     public static String normalizeHeader(String raw) {
         if (raw == null) return "";
-        return raw.replace("\uFEFF", "").trim().toLowerCase(Locale.ROOT).replace(" ", "").replace("_", "");
+        String value = raw.replace("\uFEFF", "").replace("\u00EF\u00BB\u00BF", "");
+        return value.trim().toLowerCase(Locale.ROOT).replace(" ", "").replace("_", "");
     }
 }

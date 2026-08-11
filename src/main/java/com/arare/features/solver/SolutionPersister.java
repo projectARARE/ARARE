@@ -35,10 +35,13 @@ public class SolutionPersister {
                 + "). Please check for conflicting pre-allocations or extreme resource shortages.");
         }
 
-        schedule.setScore(score.toString());
-        schedule.setScoreExplanation(solutionManager.explain(solution).toString());
-        schedule.setStatus(determineStatus(score));
-        scheduleRepo.save(schedule);
+        Schedule managedSchedule = scheduleRepo.findById(schedule.getId())
+            .orElseThrow(() -> new IllegalStateException(
+                "Schedule not found: " + schedule.getId()));
+        managedSchedule.setScore(score.toString());
+        managedSchedule.setScoreExplanation(solutionManager.explain(solution).toString());
+        managedSchedule.setStatus(determineStatus(score));
+        scheduleRepo.save(managedSchedule);
 
         Map<Long, ClassSession> solvedById = solution.getSessions().stream()
             .filter(s -> s.getId() != null)

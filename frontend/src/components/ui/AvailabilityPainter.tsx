@@ -8,7 +8,7 @@ interface AvailabilityPainterProps {
   mode?: 'available' | 'blocked'
 }
 
-const DAY_ORDER: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAY_ORDER: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
 export default function AvailabilityPainter({ timeslots, selectedIds, onChange, mode = 'available' }: AvailabilityPainterProps) {
   const [painting, setPainting] = useState(false)
@@ -28,7 +28,7 @@ export default function AvailabilityPainter({ timeslots, selectedIds, onChange, 
 
   const slotsByDay = useMemo(() => {
     const map: Record<SchoolDay, Timeslot[]> = {
-      MONDAY: [], TUESDAY: [], WEDNESDAY: [], THURSDAY: [], FRIDAY: [], SATURDAY: [],
+      MONDAY: [], TUESDAY: [], WEDNESDAY: [], THURSDAY: [], FRIDAY: [], SATURDAY: [], SUNDAY: [],
     }
     for (const slot of classSlots) map[slot.day].push(slot)
     return map

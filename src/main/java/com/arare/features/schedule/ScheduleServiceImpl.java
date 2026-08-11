@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -57,6 +58,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             .scope(req.scope() != null ? req.scope() : ScheduleScope.DEPARTMENT)
             .status(ScheduleStatus.DRAFT)
             .parentSchedule(parent)
+            .blockedDays(req.blockedDays() != null ? req.blockedDays() : List.of())
             .build();
         schedule = repo.save(schedule);
 
@@ -150,7 +152,8 @@ public class ScheduleServiceImpl implements ScheduleService {
             s.getId(), s.getName(), s.getScope(), s.getStatus(),
             s.getParentSchedule() != null ? s.getParentSchedule().getId() : null,
             s.getScore(), s.getScoreExplanation(),
-            s.getCreatedAt() != null ? s.getCreatedAt().toString() : null
+            s.getCreatedAt() != null ? s.getCreatedAt().toString() : null,
+            s.getBlockedDays() != null ? new ArrayList<>(s.getBlockedDays()) : List.of()
         );
     }
 

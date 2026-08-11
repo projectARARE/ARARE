@@ -744,6 +744,12 @@ export default function TimetableViewer() {
                   {lockedCount} locked
                 </span>
               )}
+              {(schedule?.blockedDays?.length ?? 0) > 0 && (
+                <span className="flex items-center gap-1 text-xs text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
+                  <Flame size={11} />
+                  {schedule!.blockedDays!.map((d) => d.slice(0, 3)).join(', ')} blocked
+                </span>
+              )}
               {heatmapEnabled && (
                 <span className="flex items-center gap-1 text-xs text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
                   <Flame size={11} />
@@ -867,6 +873,7 @@ export default function TimetableViewer() {
               onSlotDrop={handleDropToSlot}
               onCellContextMenu={(slot, x, y) => setSlotContextMenu({ slot, x, y })}
               dragPreview={dragPreview}
+              blockedDays={schedule?.blockedDays ?? []}
               onOrphanSessionsCount={setOrphanCount}
             />
           </Card>

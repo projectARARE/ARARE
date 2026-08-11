@@ -38,6 +38,7 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             multiSlotRequiresSlotNumber(factory),
             avoidSameSubjectMultipleTimesPerDay(factory),
             batchWorkingDayViolation(factory),
+            scheduleBlockedDayViolation(factory),
             batchDailyClassesCapFromUniversityConfig(factory),
 
             teacherDailyHoursCap(factory),
@@ -456,6 +457,17 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 && !effectiveBatch(s).getWorkingDays().contains(s.getTimeslot().getDay()))
             .penalize(HardMediumSoftScore.ONE_HARD)
             .asConstraint("Batch scheduled outside working days");
+    }
+
+    Constraint scheduleBlockedDayViolation(ConstraintFactory factory) {
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> s.getTimeslot() != null
+                && s.getSchedule() != null
+                && s.getSchedule().getBlockedDays() != null
+                && !s.getSchedule().getBlockedDays().isEmpty()
+                && s.getSchedule().getBlockedDays().contains(s.getTimeslot().getDay()))
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Scheduled on a blocked day");
     }
 
     Constraint batchDailyClassesCapFromUniversityConfig(ConstraintFactory factory) {

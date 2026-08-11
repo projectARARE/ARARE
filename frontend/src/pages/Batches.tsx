@@ -7,7 +7,7 @@ import { batchApi, departmentApi } from '../services/api'
 import type { Batch, BatchRequest, Department, SchoolDay } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
-const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
 const EMPTY: BatchRequest = {
   departmentId: 0,

@@ -7,7 +7,7 @@ import { timeslotApi } from '../services/api'
 import type { Timeslot, TimeslotRequest, SchoolDay, TimeslotType } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
-const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 const TYPES: TimeslotType[] = ['CLASS', 'BREAK', 'BLOCKED']
 
 const EMPTY: TimeslotRequest = { day: 'MONDAY', startTime: '08:00', endTime: '09:00', slotNumber: 1, type: 'CLASS' }

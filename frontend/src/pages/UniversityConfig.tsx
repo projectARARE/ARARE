@@ -4,7 +4,7 @@ import { universityConfigApi, timeslotApi } from '../services/api'
 import type { UniversityConfig, SchoolDay } from '../types'
 import type { Timeslot } from '../types'
 
-const ALL_DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const ALL_DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
 const DEFAULT_CONFIG: UniversityConfig = {
   active: true,
@@ -27,7 +27,7 @@ export default function UniversityConfigPage() {
   const [diagnostics, setDiagnostics] = useState<any>(null)
 
   const painterTimeslots = useMemo<Timeslot[]>(() => {
-    const days = form.workingDays.length > 0 ? form.workingDays : ALL_DAYS.slice(0, Math.max(5, Math.min(6, form.daysPerWeek)))
+    const days = form.workingDays.length > 0 ? form.workingDays : ALL_DAYS.slice(0, Math.max(1, Math.min(7, form.daysPerWeek)))
     const slotsPerDay = Math.max(1, form.timeslotsPerDay || 1)
     const preview: Timeslot[] = []
     let nextId = 100000
@@ -154,11 +154,11 @@ export default function UniversityConfigPage() {
             <Input
               label="Days per Week"
               type="number"
-              min={5}
-              max={6}
+              min={1}
+              max={7}
               value={form.daysPerWeek}
               onChange={(e) => setForm({ ...form, daysPerWeek: +e.target.value })}
-              helpText="5 or 6 days"
+              helpText="1 to 7 days — the working days selected above must match this count"
             />
             <Input
               label="Timeslots per Day"

@@ -7,7 +7,7 @@ import { teacherApi, subjectApi, timeslotApi, buildingApi } from '../services/ap
 import type { Teacher, TeacherRequest, Subject, Timeslot, Building, SchoolDay } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
-const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
 const EMPTY: TeacherRequest = {
   employeeId: '',

@@ -405,6 +405,42 @@ export default function ScheduleGenerator() {
                   </Card>
                 </>
               )}
+
+              <Card title="Blocked Days" className="bg-white border-gray-200 text-gray-900">
+                <p className="text-xs text-gray-500 mb-2">
+                  Whole days this timetable must not use (e.g. a Saturday that is closed). Nothing is blocked
+                  by default — the solver treats every other day as schedulable. Per-batch rest days can be set
+                  in the Batches page instead.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const).map((day) => {
+                    const blocked = (form.blockedDays ?? []).includes(day)
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => {
+                          const current = form.blockedDays ?? []
+                          setForm({
+                            ...form,
+                            blockedDays: blocked
+                              ? current.filter((d) => d !== day)
+                              : [...current, day],
+                          })
+                        }}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                          blocked
+                            ? 'bg-rose-100 text-rose-700 border-rose-300'
+                            : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                        }`}
+                      >
+                        <span className={`inline-block w-2 h-2 rounded-full ${blocked ? 'bg-rose-500' : 'bg-transparent'}`} />
+                        {day.slice(0, 3)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </Card>
             </div>
           )}
 
@@ -419,12 +455,15 @@ export default function ScheduleGenerator() {
                      : ''}
                    {form.parentScheduleId ? ' · derived from a prior schedule' : ''}
                  </p>
-                 <p className="text-xs text-gray-500 mt-1">
-                   {builderMode
-                     ? `${selectedBatchIds.length} batches, ${selectedTeacherIds.length} teachers, ${selectedRoomIds.length} rooms selected · `
-                     : 'All configured resources for the selected scope · '}
-                   solving time {timeLabel(form.solvingTimeSeconds ?? 30)}
-                 </p>
+<p className="text-xs text-gray-500 mt-1">
+                    {builderMode
+                      ? `${selectedBatchIds.length} batches, ${selectedTeacherIds.length} teachers, ${selectedRoomIds.length} rooms selected · `
+                      : 'All configured resources for the selected scope · '}
+                    solving time {timeLabel(form.solvingTimeSeconds ?? 30)}
+                    {(form.blockedDays?.length ?? 0) > 0 && (
+                      <span> · blocked: {form.blockedDays!.map((d) => d.slice(0, 3)).join(', ')}</span>
+                    )}
+                  </p>
                </div>
              </div>
            )}

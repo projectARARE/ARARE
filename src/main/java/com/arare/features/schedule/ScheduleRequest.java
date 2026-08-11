@@ -1,6 +1,7 @@
 package com.arare.features.schedule;
 
 import com.arare.common.enums.ScheduleScope;
+import com.arare.common.enums.SchoolDay;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
@@ -13,5 +14,6 @@ public record ScheduleRequest(
     List<Long> batchIds,
     List<Long> teacherIds,
     List<Long> roomIds,
-    Integer solvingTimeSeconds
+    Integer solvingTimeSeconds,
+    List<SchoolDay> blockedDays
 ) {}

@@ -47,7 +47,7 @@ class SolveJobServiceTest {
                 .thenReturn(false);
 
             ScheduleRequest req = new ScheduleRequest(
-                "Test", null, null, 1L, List.of(2L, 3L), null, null, 30);
+                "Test", null, null, 1L, List.of(2L, 3L), null, null, 30, null);
 
             SolveJobResponse response = service.submitGenerate(1L, req);
 

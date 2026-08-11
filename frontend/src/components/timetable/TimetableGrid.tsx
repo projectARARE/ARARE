@@ -3,7 +3,7 @@ import type { ClassSession, Timeslot, SchoolDay } from '../../types'
 import SessionCell from './SessionCell'
 
 const DAYS: SchoolDay[] = [
-  'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
+  'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY',
 ]
 
 const DAY_LABELS: Record<SchoolDay, string> = {
@@ -13,6 +13,7 @@ const DAY_LABELS: Record<SchoolDay, string> = {
   THURSDAY: 'Thu',
   FRIDAY: 'Fri',
   SATURDAY: 'Sat',
+  SUNDAY: 'Sun',
 }
 
 interface TimetableGridProps {
@@ -39,6 +40,7 @@ interface TimetableGridProps {
     label: string
   } | null
   onOrphanSessionsCount?: (count: number) => void
+  blockedDays?: SchoolDay[]
 }
 
 export default function TimetableGrid({
@@ -61,11 +63,18 @@ export default function TimetableGrid({
   highlightedSessionIds,
   dragPreview,
   onOrphanSessionsCount,
+  blockedDays = [],
 }: TimetableGridProps) {
-  // Determine which days to show
-  const days = activeDays?.length
-    ? DAYS.filter((d) => activeDays.includes(d))
-    : DAYS
+  // Determine which days to show. The canonical order is Mon→Sun, but a day
+  // is only rendered if the calendar actually has timeslots on it — so a
+  // Sunday-lead or Saturday-off calendar renders exactly its own days.
+  const days = useMemo(() => {
+    const daysWithSlots = new Set<SchoolDay>(timeslots.map((t) => t.day))
+    if (activeDays?.length) {
+      return DAYS.filter((d) => activeDays.includes(d) && daysWithSlots.has(d))
+    }
+    return DAYS.filter((d) => daysWithSlots.has(d))
+  }, [timeslots, activeDays])
 
   // Unique timeslots per day ordered by startTime
   const slotsByDay = useMemo(() => {
@@ -212,6 +221,11 @@ export default function TimetableGrid({
                 className="border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-gray-700 min-w-[140px]"
               >
                 {DAY_LABELS[day]}
+                {blockedDays.includes(day) && (
+                  <span className="ml-1.5 align-middle rounded bg-rose-100 text-rose-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                    Blocked
+                  </span>
+                )}
               </th>
             ))}
           </tr>
@@ -237,25 +251,29 @@ export default function TimetableGrid({
                   : []
                 const rowSpan = spanMeta.rowSpanByCell.get(cellKey) ?? 1
                 const activePreview = dragPreview?.slotId === slot?.id ? dragPreview : null
+                const isBlockedDay = blockedDays.includes(day)
 
                 return (
                   <td
                     key={day}
                     rowSpan={rowSpan}
-                    className="border border-gray-200 px-2 py-2 align-top min-h-[60px]"
+                    className={`border border-gray-200 px-2 py-2 align-top min-h-[60px] ${
+                      isBlockedDay ? 'bg-slate-200/50' : ''
+                    }`}
+                    title={isBlockedDay ? `${DAY_LABELS[day]} is blocked for this schedule` : undefined}
                     onDragOver={(e) => {
-                      if (!slot) return
+                      if (!slot || isBlockedDay) return
                       e.preventDefault()
                       onSlotDragHover?.(slot)
                     }}
                     onDragLeave={() => onSlotDragHover?.(null)}
                     onDrop={(e) => {
-                      if (!slot) return
+                      if (!slot || isBlockedDay) return
                       e.preventDefault()
                       onSlotDrop?.(slot)
                     }}
                     onContextMenu={(e) => {
-                      if (!slot) return
+                      if (!slot || isBlockedDay) return
                       e.preventDefault()
                       onCellContextMenu?.(slot, e.clientX, e.clientY)
                     }}

@@ -16,7 +16,8 @@ import java.util.List;
 // Changing this record and re-running the solver generates a new schedule version.</p>
 // <p>Key knobs:
 // <ul>
-// <li>{@code daysPerWeek} – 5 (Mon–Fri) or 6 (Mon–Sat)</li>
+// <li>{@code daysPerWeek} – number of working days per week (1–7, e.g.
+// 5 for Mon–Fri, 6 for Mon–Sat, 7 for Mon–Sun)</li>
 // <li>{@code timeslotsPerDay} – total period slots per day</li>
 // <li>{@code maxClassesPerDay} – student cognitive load cap per day</li>
 // <li>{@code breakSlotIndices} – ordered indices of break periods</li>
@@ -35,9 +36,10 @@ public class UniversityConfig extends BaseEntity {
     @Builder.Default
     private boolean active = true;
 
-    // 5 for Mon–Fri, 6 for Mon–Sat. 
-    @Min(5)
-    @Max(6)
+    // Number of working days per week (1–7). Nothing is blocked by default —
+    // the selected days are the ONLY days sessions may be scheduled on.
+    @Min(1)
+    @Max(7)
     @Column(nullable = false)
     @Builder.Default
     private int daysPerWeek = 5;
@@ -82,7 +84,9 @@ public class UniversityConfig extends BaseEntity {
         }
 
         if (breakSlotIndices != null && !breakSlotIndices.isEmpty()) {
-            breakSlotIndices = new ArrayList<>(new LinkedHashSet<>(breakSlotIndices));
+            List<Integer> deduped = new ArrayList<>(new LinkedHashSet<>(breakSlotIndices));
+            breakSlotIndices.clear();
+            breakSlotIndices.addAll(deduped);
             for (Integer idx : breakSlotIndices) {
                 if (idx == null || idx < 0 || idx >= timeslotsPerDay) {
                     throw new IllegalStateException("breakSlotIndices must be in [0, timeslotsPerDay-1].");
@@ -91,7 +95,9 @@ public class UniversityConfig extends BaseEntity {
         }
 
         if (workingDays != null && !workingDays.isEmpty()) {
-            workingDays = new ArrayList<>(new LinkedHashSet<>(workingDays));
+            List<SchoolDay> deduped = new ArrayList<>(new LinkedHashSet<>(workingDays));
+            workingDays.clear();
+            workingDays.addAll(deduped);
             if (workingDays.size() != daysPerWeek) {
                 throw new IllegalStateException("workingDays size must equal daysPerWeek.");
             }

@@ -380,9 +380,10 @@ public class RelationalCsvImportService {
 
     private void processConfigWorkingDays(String csv, Map<String, CsvZipImportResponse.FileImportStats> stats) {
         if (csv == null || csv.isBlank()) return;
-        UniversityConfig config = activeConfig();
-        if (config == null || config.getWorkingDays() == null) return;
         List<Map<String, String>> rows = CsvUtils.parse(csv);
+        if (rows.isEmpty()) return;
+        UniversityConfig config = activeConfig();
+        if (config == null) return;
         List<SchoolDay> days = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         int skipped = 0;
@@ -394,6 +395,7 @@ public class RelationalCsvImportService {
                 errors.add("Row " + (i + 2) + ": " + ex.getMessage());
             }
         }
+        if (days.isEmpty()) return;
         config.setWorkingDays(new ArrayList<>(new LinkedHashSet<>(days)));
         config.setDaysPerWeek(config.getWorkingDays().size());
         configRepository.save(config);
@@ -403,9 +405,10 @@ public class RelationalCsvImportService {
 
     private void processConfigBreakIndices(String csv, Map<String, CsvZipImportResponse.FileImportStats> stats) {
         if (csv == null || csv.isBlank()) return;
-        UniversityConfig config = activeConfig();
-        if (config == null || config.getBreakSlotIndices() == null) return;
         List<Map<String, String>> rows = CsvUtils.parse(csv);
+        if (rows.isEmpty()) return;
+        UniversityConfig config = activeConfig();
+        if (config == null) return;
         List<Integer> indices = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         int skipped = 0;
@@ -417,6 +420,7 @@ public class RelationalCsvImportService {
                 errors.add("Row " + (i + 2) + ": " + ex.getMessage());
             }
         }
+        if (indices.isEmpty()) return;
         config.setBreakSlotIndices(new ArrayList<>(new LinkedHashSet<>(indices)));
         configRepository.save(config);
         stats.put("config_break_indices.csv",

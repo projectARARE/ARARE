@@ -12,7 +12,7 @@ const LAB_SUBTYPES: LabSubtype[] = [
   'MECHANICAL_LAB', 'CIVIL_LAB', 'NETWORK_LAB', 'GENERAL_LAB',
 ]
 
-const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
 const EMPTY: RoomRequest = { buildingId: 0, roomNumber: '', type: 'LECTURE', capacity: 30, availableTimeslotIds: [] }
 
