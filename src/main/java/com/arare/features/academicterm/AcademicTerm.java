@@ -73,6 +73,9 @@ public class AcademicTerm extends BaseEntity {
             }
         }
 
+        if (endDate == null || startDate == null) {
+            throw new IllegalStateException("Academic term startDate and endDate are required.");
+        }
         if (endDate.isBefore(startDate)) {
             throw new IllegalStateException("Academic term endDate cannot be before startDate.");
         }

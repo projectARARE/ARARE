@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import { ToastProvider } from './contexts/ToastContext'
+import { UiPreferencesProvider } from './contexts/UiPreferencesContext'
 import ToastContainer from './components/ui/Toast'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Buildings = lazy(() => import('./pages/Buildings'))
@@ -11,20 +13,22 @@ const Rooms = lazy(() => import('./pages/Rooms'))
 const Teachers = lazy(() => import('./pages/Teachers'))
 const Subjects = lazy(() => import('./pages/Subjects'))
 const Departments = lazy(() => import('./pages/Departments'))
+const Institutes = lazy(() => import('./pages/Institutes'))
 const Batches = lazy(() => import('./pages/Batches'))
 const ClassSections = lazy(() => import('./pages/ClassSections'))
+const TeacherAssignments = lazy(() => import('./pages/TeacherAssignments'))
+const SubjectOfferings = lazy(() => import('./pages/SubjectOfferings'))
 const Timeslots = lazy(() => import('./pages/Timeslots'))
 const UniversityConfigPage = lazy(() => import('./pages/UniversityConfig'))
 const ScheduleGenerator = lazy(() => import('./pages/ScheduleGenerator'))
 const TimetableViewer = lazy(() => import('./pages/TimetableViewer'))
 const ScheduleHistory = lazy(() => import('./pages/ScheduleHistory'))
+const ManualSessions = lazy(() => import('./pages/ManualSessions'))
 const Events = lazy(() => import('./pages/Events'))
 const AcademicTerms = lazy(() => import('./pages/AcademicTerms'))
 const DisruptionHandling = lazy(() => import('./pages/DisruptionHandling'))
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'))
 const WhatIfComparison = lazy(() => import('./pages/WhatIfComparison'))
-const CalendarPortal = lazy(() => import('./pages/CalendarPortal'))
-const ConstraintConfig = lazy(() => import('./pages/ConstraintConfig'))
 const CsvImport = lazy(() => import('./pages/CsvImport'))
 
 function page(element: ReactNode) {
@@ -38,8 +42,10 @@ function page(element: ReactNode) {
 export default function App() {
   return (
     <ToastProvider>
-      <ToastContainer />
-      <Routes>
+      <UiPreferencesProvider>
+        <ToastContainer />
+        <ErrorBoundary>
+          <Routes>
         <Route element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={page(<Dashboard />)} />
@@ -48,24 +54,28 @@ export default function App() {
           <Route path="teachers" element={page(<Teachers />)} />
           <Route path="subjects" element={page(<Subjects />)} />
           <Route path="departments" element={page(<Departments />)} />
+          <Route path="institutes" element={page(<Institutes />)} />
           <Route path="batches" element={page(<Batches />)} />
           <Route path="sections" element={page(<ClassSections />)} />
+          <Route path="assignments" element={page(<TeacherAssignments />)} />
+          <Route path="offerings" element={page(<SubjectOfferings />)} />
           <Route path="timeslots" element={page(<Timeslots />)} />
           <Route path="config" element={page(<UniversityConfigPage />)} />
           <Route path="schedule/generate" element={page(<ScheduleGenerator />)} />
           <Route path="schedule/view/:id" element={page(<TimetableViewer />)} />
           <Route path="schedule/history" element={page(<ScheduleHistory />)} />
+          <Route path="sessions/manual" element={page(<ManualSessions />)} />
           <Route path="events" element={page(<Events />)} />
           <Route path="disruptions" element={page(<DisruptionHandling />)} />
           <Route path="academic-terms" element={page(<AcademicTerms />)} />
           <Route path="analytics" element={page(<AnalyticsDashboard />)} />
           <Route path="what-if" element={page(<WhatIfComparison />)} />
-          <Route path="portal" element={page(<CalendarPortal />)} />
-          <Route path="constraints" element={page(<ConstraintConfig />)} />
           <Route path="import/csv" element={page(<CsvImport />)} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Routes>
+        </ErrorBoundary>
+      </UiPreferencesProvider>
     </ToastProvider>
   )
 }

@@ -15,42 +15,64 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Writes a solver result back to the database.
+ *
+ * <p>An infeasible result (negative hard score) is <em>still persisted</em>:
+ * the best-effort placement is kept so operators can inspect which sessions
+ * conflict and why, and the schedule is marked {@link ScheduleStatus#INFEASIBLE}
+ * (read-only, not activatable). Only a truly unsolved solution (null score)
+ * aborts with an exception.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SolutionPersister {
+
+    public enum PersistResult {
+        FEASIBLE,
+        INFEASIBLE
+    }
 
     private final ScheduleRepository scheduleRepo;
     private final ClassSessionRepository sessionRepo;
     private final SolutionManager<TimetableSolution, HardMediumSoftScore> solutionManager;
 
     @Transactional
-    public void persist(Schedule schedule, TimetableSolution solution) {
+    public PersistResult persist(Schedule schedule, TimetableSolution solution) {
         HardMediumSoftScore score = solution.getScore();
 
-        if (score == null || score.hardScore() < 0) {
-            String scoreText = score != null ? score.toString() : "N/A";
+        if (score == null) {
             throw new IllegalStateException(
-                "Generated schedule is infeasible (Hard Score: " + score.hardScore() 
-                + "). Please check for conflicting pre-allocations or extreme resource shortages.");
+                "Generated schedule is unsolved. Please try again.");
         }
+        boolean feasible = score.hardScore() >= 0;
 
-        schedule.setScore(score.toString());
-        schedule.setScoreExplanation(solutionManager.explain(solution).toString());
-        schedule.setStatus(determineStatus(score));
-        scheduleRepo.save(schedule);
+        Schedule managedSchedule = scheduleRepo.findById(schedule.getId())
+            .orElseThrow(() -> new IllegalStateException(
+                "Schedule not found: " + schedule.getId()));
+        managedSchedule.setScore(score.toString());
+        managedSchedule.setScoreExplanation(solutionManager.explain(solution).toString());
+        managedSchedule.setStatus(feasible ? ScheduleStatus.DRAFT : ScheduleStatus.INFEASIBLE);
+        scheduleRepo.save(managedSchedule);
 
         Map<Long, ClassSession> solvedById = solution.getSessions().stream()
             .filter(s -> s.getId() != null)
             .collect(Collectors.toMap(ClassSession::getId, s -> s));
 
-        solution.getSessions().forEach(s -> log.info(
-            "SOLVED session id={} teacher={} room={} timeslot={}",
-            s.getId(),
-            s.getTeacher() != null ? s.getTeacher().getId() : "NULL",
-            s.getRoom() != null ? s.getRoom().getId() : "NULL",
-            s.getTimeslot() != null ? s.getTimeslot().getId() : "NULL"
-        ));
+        if (log.isDebugEnabled()) {
+            solution.getSessions().forEach(s -> log.debug(
+                "SOLVED session id={} teacher={} room={} timeslot={}",
+                s.getId(),
+                s.getTeacher() != null ? s.getTeacher().getId() : "NULL",
+                s.getRoom() != null ? s.getRoom().getId() : "NULL",
+                s.getTimeslot() != null ? s.getTimeslot().getId() : "NULL"
+            ));
+        }
+        long unassigned = solution.getSessions().stream().filter(s -> s.getTimeslot() == null).count();
+        log.info("Schedule [{}] solved. Score: {} ({} sessions, {} unassigned){}",
+            schedule.getId(), score, solution.getSessions().size(), unassigned,
+            feasible ? "" : " — INFEASIBLE (partial result persisted)");
 
         List<ClassSession> managed = sessionRepo.findByScheduleId(schedule.getId());
         for (ClassSession managedSession : managed) {
@@ -64,16 +86,6 @@ public class SolutionPersister {
         }
         sessionRepo.saveAll(managed);
 
-        log.info("Schedule [{}] solved. Score: {}", schedule.getId(), score);
-    }
-
-    private ScheduleStatus determineStatus(HardMediumSoftScore score) {
-        if (score == null) {
-            return ScheduleStatus.INFEASIBLE;
-        }
-        if (score.hardScore() < 0) {
-            return ScheduleStatus.INFEASIBLE;
-        }
-        return ScheduleStatus.ACTIVE;
+        return feasible ? PersistResult.FEASIBLE : PersistResult.INFEASIBLE;
     }
 }

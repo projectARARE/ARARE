@@ -3,6 +3,7 @@ package com.arare.features.room;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.building.Building;
 import com.arare.features.building.BuildingRepository;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.timeslot.Timeslot;
 import com.arare.features.timeslot.TimeslotRepository;
@@ -21,6 +22,7 @@ public class RoomServiceImpl implements RoomService {
     private final BuildingRepository buildingRepo;
     private final TimeslotRepository timeslotRepo;
     private final ClassSessionRepository sessionRepo;
+    private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
@@ -30,7 +32,7 @@ public class RoomServiceImpl implements RoomService {
 
         List<Timeslot> slots = req.availableTimeslotIds() == null
             ? List.of()
-            : timeslotRepo.findAllById(req.availableTimeslotIds());
+            : resolveAll(timeslotRepo, req.availableTimeslotIds(), "Timeslot");
 
         Room room = Room.builder()
             .building(building)
@@ -57,7 +59,7 @@ public class RoomServiceImpl implements RoomService {
         room.setCapacity(req.capacity());
 
         if (req.availableTimeslotIds() != null) {
-            room.setAvailableTimeslots(timeslotRepo.findAllById(req.availableTimeslotIds()));
+            room.setAvailableTimeslots(resolveAll(timeslotRepo, req.availableTimeslotIds(), "Timeslot"));
         }
         return toResponse(repo.save(room));
     }
@@ -69,12 +71,12 @@ public class RoomServiceImpl implements RoomService {
 
     @Override
     public List<RoomResponse> findAll() {
-        return repo.findAll().stream().map(this::toResponse).toList();
+        return repo.findAllWithDetails().stream().map(this::toResponse).toList();
     }
 
     @Override
     public List<RoomResponse> findByBuilding(Long buildingId) {
-        return repo.findByBuildingId(buildingId).stream().map(this::toResponse).toList();
+        return repo.findByBuildingIdWithDetails(buildingId).stream().map(this::toResponse).toList();
     }
 
     @Override
@@ -82,11 +84,24 @@ public class RoomServiceImpl implements RoomService {
     public void delete(Long id) {
         findEntity(id);
         sessionRepo.clearRoomById(id);   // Unassign room from sessions, keep sessions
+        cascadeDeletionService.purgePreAllocationsForRoom(id);
+        cascadeDeletionService.detachRoomFromEvents(id);
         repo.deleteById(id);
     }
 
     private Room findEntity(Long id) {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Room", id));
+    }
+
+    // Resolves every requested ID to its entity, failing with a 400-level
+    // validation error instead of silently dropping unknown IDs.
+    private <T> List<T> resolveAll(org.springframework.data.jpa.repository.JpaRepository<T, Long> repo, List<Long> ids, String type) {
+        if (ids == null) return List.of();
+        List<T> found = repo.findAllById(ids);
+        if (found.size() != new java.util.HashSet<>(ids).size()) {
+            throw new IllegalArgumentException("One or more " + type + " ids do not exist: " + ids);
+        }
+        return found;
     }
 
     private RoomResponse toResponse(Room r) {

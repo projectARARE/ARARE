@@ -1,8 +1,20 @@
 package com.arare.features.classsession;
 
+import com.arare.common.enums.SchoolDay;
+import com.arare.common.enums.RoomType;
+import com.arare.common.enums.TimeslotType;
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.exception.ResourceConflictException;
+import com.arare.features.batch.Batch;
+import com.arare.features.batch.BatchRepository;
+import com.arare.features.classsection.ClassSection;
+import com.arare.features.classsection.ClassSectionRepository;
 import com.arare.features.room.Room;
 import com.arare.features.room.RoomRepository;
+import com.arare.features.schedule.Schedule;
+import com.arare.features.schedule.ScheduleRepository;
+import com.arare.features.subject.Subject;
+import com.arare.features.subject.SubjectRepository;
 import com.arare.features.teacher.Teacher;
 import com.arare.features.teacher.TeacherRepository;
 import com.arare.features.timeslot.Timeslot;
@@ -11,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
@@ -22,6 +35,10 @@ public class ClassSessionServiceImpl implements ClassSessionService {
     private final TeacherRepository teacherRepo;
     private final RoomRepository roomRepo;
     private final TimeslotRepository timeslotRepo;
+    private final ScheduleRepository scheduleRepo;
+    private final SubjectRepository subjectRepo;
+    private final BatchRepository batchRepo;
+    private final ClassSectionRepository sectionRepo;
 
     @Override
     public List<ClassSessionResponse> findBySchedule(Long scheduleId) {
@@ -44,35 +61,325 @@ public class ClassSessionServiceImpl implements ClassSessionService {
         ClassSession s = repo.findById(sessionId)
             .orElseThrow(() -> new ResourceNotFoundException("ClassSession", sessionId));
 
+        boolean assignmentChange =
+            req.teacherId() != null || Boolean.TRUE.equals(req.clearTeacher())
+                || req.roomId() != null || Boolean.TRUE.equals(req.clearRoom())
+                || req.timeslotId() != null || Boolean.TRUE.equals(req.clearTimeslot());
+        boolean unlocking = Boolean.FALSE.equals(req.locked());
+        if (s.isLocked() && assignmentChange && !unlocking) {
+            throw new IllegalArgumentException(
+                "Session " + sessionId + " is locked — unlock it before editing its assignment");
+        }
+
+        // Resolve the post-edit assignment first (without saving), then reject
+        // any change that violates a solver HARD constraint. Manual edits must
+        // never introduce states the solver would reject.
+        Teacher   newTeacher   = s.getTeacher();
+        Room      newRoom      = s.getRoom();
+        Timeslot  newTimeslot  = s.getTimeslot();
+
         if (req.teacherId() != null) {
             Teacher t = teacherRepo.findById(req.teacherId())
                 .orElseThrow(() -> new ResourceNotFoundException("Teacher", req.teacherId()));
-            s.setTeacher(t);
+            requireTeacherValid(s, t);
+            newTeacher = t;
         } else if (Boolean.TRUE.equals(req.clearTeacher())) {
-            s.setTeacher(null);
+            if (s.getSubject().isRequiresTeacher()) {
+                throw new IllegalArgumentException(
+                    "Subject '" + s.getSubject().getName() + "' requires a teacher; unassigning is not allowed");
+            }
+            newTeacher = null;
         }
 
         if (req.roomId() != null) {
             Room r = roomRepo.findById(req.roomId())
                 .orElseThrow(() -> new ResourceNotFoundException("Room", req.roomId()));
-            s.setRoom(r);
+            requireRoomValid(s, r);
+            newRoom = r;
         } else if (Boolean.TRUE.equals(req.clearRoom())) {
-            s.setRoom(null);
+            if (s.getSubject().isRequiresRoom()) {
+                throw new IllegalArgumentException(
+                    "Subject '" + s.getSubject().getName() + "' requires a room; unassigning is not allowed");
+            }
+            newRoom = null;
         }
 
         if (req.timeslotId() != null) {
             Timeslot ts = timeslotRepo.findById(req.timeslotId())
                 .orElseThrow(() -> new ResourceNotFoundException("Timeslot", req.timeslotId()));
-            s.setTimeslot(ts);
+            if (ts.getType() != TimeslotType.CLASS) {
+                throw new IllegalArgumentException(
+                    "Session cannot be assigned to a " + ts.getType() + " timeslot");
+            }
+            newTimeslot = ts;
         } else if (Boolean.TRUE.equals(req.clearTimeslot())) {
-            s.setTimeslot(null);
+            newTimeslot = null;
         }
+
+        requireAvailability(newTeacher, newRoom, newTimeslot);
+        requireNoHardConflicts(s, newTeacher, newRoom, newTimeslot);
+        requireNoCrossScheduleTeacherConflict(newTeacher, newTimeslot, scheduleIdOf(s), s.getDuration());
+        requireHomeRoomCompliance(s, newRoom);
+        if (newTeacher != null) {
+            requireSingleTeacherPerSubjectSection(s, newTeacher, newTimeslot);
+        }
+
+        s.setTeacher(newTeacher);
+        s.setRoom(newRoom);
+        s.setTimeslot(newTimeslot);
 
         if (req.locked() != null) {
             s.setLocked(req.locked());
         }
 
         return toResponse(repo.save(s));
+    }
+
+    @Override
+    @Transactional
+    public ClassSessionResponse create(SessionCreateRequest req) {
+        Schedule schedule = scheduleRepo.findById(req.scheduleId())
+            .orElseThrow(() -> new ResourceNotFoundException("Schedule", req.scheduleId()));
+        Subject subject = subjectRepo.findById(req.subjectId())
+            .orElseThrow(() -> new ResourceNotFoundException("Subject", req.subjectId()));
+
+        if (req.batchId() == null && req.sectionId() == null) {
+            throw new IllegalArgumentException("A session must reference either a batch or a section");
+        }
+        if (req.batchId() != null && req.sectionId() != null) {
+            throw new IllegalArgumentException("A session cannot reference both a batch and a section");
+        }
+
+        ClassSession.ClassSessionBuilder builder = ClassSession.builder()
+            .schedule(schedule)
+            .subject(subject)
+            .duration(req.duration() != null ? req.duration() : subject.getChunkHours())
+            .isLocked(Boolean.TRUE.equals(req.locked()));
+        if (req.batchId() != null) {
+            builder.batch(batchRepo.findById(req.batchId())
+                .orElseThrow(() -> new ResourceNotFoundException("Batch", req.batchId())));
+        }
+        if (req.sectionId() != null) {
+            builder.section(sectionRepo.findById(req.sectionId())
+                .orElseThrow(() -> new ResourceNotFoundException("ClassSection", req.sectionId())));
+        }
+        ClassSession s = builder.build();
+
+        if (req.teacherId() != null) {
+            Teacher t = teacherRepo.findById(req.teacherId())
+                .orElseThrow(() -> new ResourceNotFoundException("Teacher", req.teacherId()));
+            requireTeacherValid(s, t);
+            s.setTeacher(t);
+        }
+        if (req.roomId() != null) {
+            Room r = roomRepo.findById(req.roomId())
+                .orElseThrow(() -> new ResourceNotFoundException("Room", req.roomId()));
+            requireRoomValid(s, r);
+            s.setRoom(r);
+        }
+        if (req.timeslotId() != null) {
+            Timeslot ts = timeslotRepo.findById(req.timeslotId())
+                .orElseThrow(() -> new ResourceNotFoundException("Timeslot", req.timeslotId()));
+            if (ts.getType() != TimeslotType.CLASS) {
+                throw new IllegalArgumentException(
+                    "Session cannot be assigned to a " + ts.getType() + " timeslot");
+            }
+            s.setTimeslot(ts);
+        }
+
+        requireAvailability(s.getTeacher(), s.getRoom(), s.getTimeslot());
+        requireNoHardConflicts(s, s.getTeacher(), s.getRoom(), s.getTimeslot());
+        requireNoCrossScheduleTeacherConflict(s.getTeacher(), s.getTimeslot(), scheduleIdOf(s), s.getDuration());
+        requireHomeRoomCompliance(s, s.getRoom());
+        if (s.getTeacher() != null) {
+            requireSingleTeacherPerSubjectSection(s, s.getTeacher(), s.getTimeslot());
+        }
+
+        return toResponse(repo.save(s));
+    }
+
+    @Override
+    @Transactional
+    public void delete(Long sessionId) {
+        if (!repo.existsById(sessionId)) {
+            throw new ResourceNotFoundException("ClassSession", sessionId);
+        }
+        repo.deleteById(sessionId);
+    }
+
+    private void requireTeacherValid(ClassSession s, Teacher t) {
+        Subject subject = s.getSubject();
+        if (!subject.isRequiresTeacher()) {
+            throw new IllegalArgumentException(
+                "Subject '" + subject.getName() + "' does not require a teacher; a teacher cannot be assigned");
+        }
+        if (t.getSubjects().stream().noneMatch(ts -> ts.getId().equals(subject.getId()))) {
+            throw new IllegalArgumentException(
+                "Teacher '" + t.getName() + "' is not qualified to teach subject '" + subject.getName() + "'");
+        }
+    }
+
+    private void requireRoomValid(ClassSession s, Room r) {
+        Subject subject = s.getSubject();
+        if (subject.getRoomTypeRequired() != null && subject.getRoomTypeRequired() != r.getType()) {
+            throw new IllegalArgumentException(
+                "Room '" + r.getRoomNumber() + "' (type " + r.getType()
+                    + ") does not match subject '" + subject.getName()
+                    + "' which requires type " + subject.getRoomTypeRequired());
+        }
+        if (subject.getLabSubtypeRequired() != null
+            && subject.getLabSubtypeRequired() != r.getLabSubtype()) {
+            throw new IllegalArgumentException(
+                "Room '" + r.getRoomNumber() + "' is not a " + subject.getLabSubtypeRequired()
+                    + " as required by subject '" + subject.getName() + "'");
+        }
+        if (r.getCapacity() < s.getEffectiveStudentCount()) {
+            throw new IllegalArgumentException(
+                "Room '" + r.getRoomNumber() + "' capacity is " + r.getCapacity()
+                    + " but the session needs " + s.getEffectiveStudentCount() + " seats");
+        }
+    }
+
+    private void requireAvailability(Teacher teacher, Room room, Timeslot timeslot) {
+        if (timeslot == null) {
+            return;
+        }
+        if (teacher != null
+            && !teacher.getAvailableTimeslots().isEmpty()
+            && !teacher.getAvailableTimeslots().contains(timeslot)) {
+            throw new IllegalArgumentException(
+                "Teacher '" + teacher.getName() + "' is not available at "
+                    + timeslot.getDay() + " " + timeslot.getStartTime() + "-" + timeslot.getEndTime());
+        }
+        if (room != null
+            && !room.getAvailableTimeslots().isEmpty()
+            && !room.getAvailableTimeslots().contains(timeslot)) {
+            throw new IllegalArgumentException(
+                "Room '" + room.getRoomNumber() + "' is not available at "
+                    + timeslot.getDay() + " " + timeslot.getStartTime() + "-" + timeslot.getEndTime());
+        }
+    }
+
+    private void requireNoHardConflicts(ClassSession s, Teacher teacher, Room room, Timeslot timeslot) {
+        if (timeslot == null) {
+            return;
+        }
+        List<SchoolDay> blockedDays = s.getSchedule().getBlockedDays();
+        if (blockedDays != null && blockedDays.contains(timeslot.getDay())) {
+            throw new IllegalArgumentException(
+                "Session cannot be assigned on " + timeslot.getDay()
+                    + " — the schedule has this day blocked");
+        }
+        List<ClassSession> others = repo.findByScheduleId(s.getSchedule().getId()).stream()
+            .filter(o -> !o.getId().equals(s.getId()))
+            .filter(o -> o.getTimeslot() != null)
+            .filter(o -> o.getTimeslot().getDay() == timeslot.getDay())
+            .filter(o -> overlaps(timeslot, s.getDuration(), o.getTimeslot(), o.getDuration()))
+            .toList();
+
+        for (ClassSession other : others) {
+            if (teacher != null && teacher.getId().equals(other.getTeacher() != null ? other.getTeacher().getId() : null)) {
+                throw new IllegalArgumentException(
+                    "Teacher '" + teacher.getName() + "' is already teaching another session at that time");
+            }
+            if (room != null && room.getId().equals(other.getRoom() != null ? other.getRoom().getId() : null)) {
+                throw new IllegalArgumentException(
+                    "Room '" + room.getRoomNumber() + "' is already occupied by another session at that time");
+            }
+            if (s.getSection() != null && other.getSection() != null
+                && s.getSection().getId().equals(other.getSection().getId())) {
+                throw new IllegalArgumentException(
+                    "Section already has a session at this timeslot");
+            }
+            if (s.getEffectiveBatch() != null && other.getEffectiveBatch() != null
+                && s.getEffectiveBatch().getId().equals(other.getEffectiveBatch().getId())) {
+                throw new IllegalArgumentException(
+                    "Batch already has a session at this timeslot");
+            }
+        }
+    }
+
+    private void requireHomeRoomCompliance(ClassSession s, Room room) {
+        if (room == null
+            || s.getSubject().isLab()
+            || s.getSubject().getRoomTypeRequired() == RoomType.LAB
+            || s.getEffectiveBatch() == null
+            || s.getEffectiveBatch().getHomeRoom() == null) {
+            return;
+        }
+        Room home = s.getEffectiveBatch().getHomeRoom();
+        if (!home.getId().equals(room.getId())) {
+            throw new IllegalArgumentException(
+                "Batch has a home classroom '" + home.getRoomNumber()
+                    + "'. Non-lab sessions for '" + s.getSubject().getName()
+                    + "' must be scheduled there.");
+        }
+    }    private static Long scheduleIdOf(ClassSession s) {
+        return s.getSchedule() != null ? s.getSchedule().getId() : null;
+    }
+
+    private Long instituteIdOf(Long scheduleId) {
+        if (scheduleId == null) return null;
+        return scheduleRepo.findById(scheduleId)
+            .map(Schedule::getInstituteId)
+            .orElse(null);
+    }
+
+    private void requireNoCrossScheduleTeacherConflict(Teacher teacher, Timeslot timeslot, Long scheduleId, int duration) {
+        if (teacher == null || timeslot == null) {
+            return;
+        }
+        Long instituteId = instituteIdOf(scheduleId);
+        for (ClassSession other : repo.findActiveCrossScheduleSessions(teacher.getId(), scheduleId, instituteId)) {
+            if (other.getTimeslot() != null
+                && other.getTimeslot().getDay() == timeslot.getDay()
+                && overlaps(timeslot, duration, other.getTimeslot(), other.getDuration())) {
+                throw new ResourceConflictException(
+                    "Teacher '" + teacher.getName() + "' is already scheduled in another active timetable at "
+                        + timeslot.getDay() + " " + timeslot.getStartTime() + "-" + timeslot.getEndTime()
+                        + ". Move that session or pick a different slot.");
+            }
+        }
+    }
+    /**
+     * Mirrors the HARD solver constraint {@code singleTeacherPerSubjectSection}:
+     * a subject must be taught by exactly one teacher for a given batch/section.
+     * Rejects a manual edit that would introduce a second teacher for the same
+     * (subject, effectiveBatch) pair anywhere in the schedule.
+     */
+    private void requireSingleTeacherPerSubjectSection(ClassSession s, Teacher teacher, Timeslot timeslot) {
+        if (s.getSubject() == null || s.getEffectiveBatch() == null) {
+            return;
+        }
+        Long subjectId = s.getSubject().getId();
+        Long batchId = s.getEffectiveBatch().getId();
+        Long currentId = s.getId() != null ? s.getId() : -1L;
+
+                for (ClassSession other : repo.findSessionsForSubjectAndEffectiveBatch(
+                s.getSchedule().getId(), subjectId, batchId, currentId)) {
+            if (other.getTeacher() != null && !other.getTeacher().getId().equals(teacher.getId())) {
+                throw new IllegalArgumentException(
+                    "Subject '" + s.getSubject().getName() + "' for this batch/section is already "
+                        + "assigned to '" + other.getTeacher().getName() + "'. A subject must be taught "
+                        + "by exactly one teacher - reassign that session first.");
+            }
+        }
+    }
+
+    /**
+     * Same overlap semantics as the solver's {@code overlapsByPlannedDuration}:
+     * slot-number based when available, wall-clock fallback otherwise. The
+     * session duration is taken from each side's timeslot-sized unit count.
+     */
+    private static boolean overlaps(Timeslot a, int aDuration, Timeslot b, int bDuration) {
+        Integer aStartSlot = a.getSlotNumber();
+        Integer bStartSlot = b.getSlotNumber();
+        if (aStartSlot != null && bStartSlot != null) {
+            int aEndExclusive = aStartSlot + aDuration;
+            int bEndExclusive = bStartSlot + bDuration;
+            return aStartSlot < bEndExclusive && bStartSlot < aEndExclusive;
+        }
+        return a.getStartTime().isBefore(b.getEndTime()) && b.getStartTime().isBefore(a.getEndTime());
     }
 
     private ClassSessionResponse toResponse(ClassSession s) {
@@ -101,11 +408,11 @@ public class ClassSessionServiceImpl implements ClassSessionService {
             s.getTeacher() != null ? s.getTeacher().getName() : null,
             s.getRoom() != null ? s.getRoom().getId() : null,
             s.getRoom() != null ? s.getRoom().getRoomNumber() : null,
-            s.getRoom() != null ? s.getRoom().getBuilding().getName() : null,
+            s.getRoom() != null && s.getRoom().getBuilding() != null ? s.getRoom().getBuilding().getName() : null,
             s.getTimeslot() != null ? s.getTimeslot().getId() : null,
             s.getTimeslot() != null ? s.getTimeslot().getDay().toString() : null,
-            s.getTimeslot() != null ? s.getTimeslot().getStartTime().toString() : null,
-            s.getTimeslot() != null ? s.getTimeslot().getEndTime().toString() : null,
+            s.getTimeslot() != null ? s.getTimeslot().getStartTime().format(DateTimeFormatter.ofPattern("HH:mm")) : null,
+            s.getTimeslot() != null ? s.getTimeslot().getEndTime().format(DateTimeFormatter.ofPattern("HH:mm")) : null,
             s.getDuration(),
             s.isLocked()
         );

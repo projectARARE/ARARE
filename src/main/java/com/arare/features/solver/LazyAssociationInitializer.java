@@ -22,13 +22,19 @@ public class LazyAssociationInitializer {
     ) {
         for (ClassSession s : sessions) {
             Subject sub = s.getSubject();
-            sub.getDepartment().getId();
-            sub.getDepartment().getBuildingsAllowed().size();
+            if (sub.getDepartment() != null) {
+                sub.getDepartment().getId();
+                sub.getDepartment().getBuildingsAllowed().size();
+            }
+            if (s.getSchedule() != null) {
+                s.getSchedule().getBlockedDays().size();
+            }
 
             if (s.getBatch() != null) {
                 Batch b = s.getBatch();
                 b.getDepartment().getId();
                 b.getWorkingDays().size();
+                b.getHomeRoom();
             }
             if (s.getSection() != null) {
                 s.getSection().getId();
@@ -43,22 +49,29 @@ public class LazyAssociationInitializer {
         }
 
         for (Room r : rooms) {
-            r.getBuilding().getId();
+            if (r.getBuilding() != null) {
+                r.getBuilding().getId();
+            }
             r.getAvailableTimeslots().size();
         }
 
         for (Subject sub : subjects) {
-            sub.getDepartment().getId();
-            sub.getDepartment().getBuildingsAllowed().size();
+            if (sub.getDepartment() != null) {
+                sub.getDepartment().getId();
+                sub.getDepartment().getBuildingsAllowed().size();
+            }
         }
 
         for (Batch b : batches) {
             b.getDepartment().getId();
             b.getWorkingDays().size();
+            b.getHomeRoom();
+            b.getSubjects().size();
         }
 
         for (ClassSection sec : sections) {
             sec.getBatch().getId();
+            sec.getSubjects().size();
         }
     }
 }

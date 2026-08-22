@@ -5,8 +5,11 @@ import com.arare.features.batch.BatchRepository;
 import com.arare.features.building.Building;
 import com.arare.features.building.BuildingRepository;
 import com.arare.features.building.BuildingResponse;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsection.ClassSectionRepository;
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.institute.Institute;
+import com.arare.features.institute.InstituteRepository;
 import com.arare.features.subject.SubjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,11 +23,13 @@ import java.util.List;
 public class DepartmentServiceImpl implements DepartmentService {
 
     private final DepartmentRepository repo;
+    private final InstituteRepository instituteRepo;
     private final BuildingRepository buildingRepo;
     private final ClassSessionRepository sessionRepo;
     private final ClassSectionRepository sectionRepo;
     private final BatchRepository batchRepo;
     private final SubjectRepository subjectRepo;
+    private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
@@ -32,6 +37,7 @@ public class DepartmentServiceImpl implements DepartmentService {
         Department d = Department.builder()
             .name(req.name())
             .code(req.code())
+            .institute(resolveInstitute(req.instituteId()))
             .buildingsAllowed(resolveBuildings(req.buildingIds()))
             .build();
         return toResponse(repo.save(d));
@@ -43,7 +49,10 @@ public class DepartmentServiceImpl implements DepartmentService {
         Department d = findEntity(id);
         d.setName(req.name());
         d.setCode(req.code());
-        d.setBuildingsAllowed(resolveBuildings(req.buildingIds()));
+        d.setInstitute(resolveInstitute(req.instituteId()));
+        if (req.buildingIds() != null) {   // null = keep current buildings unchanged
+            d.setBuildingsAllowed(resolveBuildings(req.buildingIds()));
+        }
         return toResponse(repo.save(d));
     }
 
@@ -54,7 +63,7 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     public List<DepartmentResponse> findAll() {
-        return repo.findAll().stream().map(this::toResponse).toList();
+        return repo.findAllWithBuildings().stream().map(this::toResponse).toList();
     }
 
     @Override
@@ -69,6 +78,8 @@ public class DepartmentServiceImpl implements DepartmentService {
         sectionRepo.deleteByDepartmentId(id);
         // 4. Delete batches
         batchRepo.deleteByDepartmentId(id);
+        // 4b. Purge pre-allocations referencing this department's subjects/batches
+        cascadeDeletionService.purgePreAllocationsForDepartment(id);
         // 5. Clean up teacher_subjects join table entries for subjects of this dept
         subjectRepo.removeTeacherAssociationsByDepartment(id);
         // 6. Delete subjects
@@ -83,15 +94,34 @@ public class DepartmentServiceImpl implements DepartmentService {
             .orElseThrow(() -> new ResourceNotFoundException("Department", id));
     }
 
+    // Resolves building IDs to entities, failing with a 400-level error when any
+    // requested ID does not exist — consistent with TeacherServiceImpl.resolveAll().
+    private Institute resolveInstitute(Long id) {
+        if (id == null) {
+            throw new IllegalArgumentException("Institute id is required for a department.");
+        }
+        return instituteRepo.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Institute id does not exist: " + id));
+    }
+
     private List<Building> resolveBuildings(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
-        return buildingRepo.findAllById(ids);
+        List<Building> found = buildingRepo.findAllById(ids);
+        if (found.size() != new java.util.HashSet<>(ids).size()) {
+            throw new IllegalArgumentException("One or more Building ids do not exist: " + ids);
+        }
+        return found;
     }
 
     private DepartmentResponse toResponse(Department d) {
         List<BuildingResponse> buildings = d.getBuildingsAllowed().stream()
             .map(b -> new BuildingResponse(b.getId(), b.getName(), b.getLocation()))
             .toList();
-        return new DepartmentResponse(d.getId(), d.getName(), d.getCode(), buildings);
+        Institute inst = d.getInstitute();
+        return new DepartmentResponse(
+            d.getId(), d.getName(), d.getCode(),
+            inst != null ? inst.getId() : null,
+            inst != null ? inst.getName() : null,
+            buildings);
     }
 }

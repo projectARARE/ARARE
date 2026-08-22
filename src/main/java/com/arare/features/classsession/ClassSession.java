@@ -15,6 +15,8 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
 import lombok.*;
 
+import java.util.List;
+
 // The core planning entity for the timetable scheduler.
 // <p>Each ClassSession represents one teaching slot that the solver must
 // assign a {@link Teacher}, {@link Room}, and {@link Timeslot} to.</p>
@@ -104,6 +106,14 @@ public class ClassSession {
     @JoinColumn(name = "timeslot_id")
     private Timeslot timeslot;
 
+    // Teacher term-allotment gate, populated by TimetableProblemBuilder from
+    // TeacherAssignment facts. null/empty = no allotment for this class, the
+    // solver may use any qualified teacher. Non-empty = the HARD
+    // teacherNotAssignedToClass constraint may only assign these teacher ids.
+    // Not persisted; it is derived per problem build, never stored on a row.
+    @Transient
+    private List<Long> allowedTeacherIds;
+
 
     // Returns the student count relevant for room capacity checking. 
     @Transient
@@ -111,6 +121,17 @@ public class ClassSession {
         if (section != null) return section.getSize();
         if (batch != null) return batch.getStudentCount();
         return 0;
+    }
+
+    // Returns the batch this session belongs to, resolving the lab-split
+    // case where the session points at a ClassSection rather than a Batch
+    // directly. Centralising this here keeps the solver/impact/pre-allocation
+    // code (and their tests) on one definition instead of re-deriving it.
+    @Transient
+    public Batch getEffectiveBatch() {
+        if (batch != null) return batch;
+        if (section != null) return section.getBatch();
+        return null;
     }
 
     @PrePersist

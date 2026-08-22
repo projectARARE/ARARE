@@ -1,6 +1,7 @@
 package com.arare.features.timeslot;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ public class TimeslotServiceImpl implements TimeslotService {
 
     private final TimeslotRepository repo;
     private final ClassSessionRepository sessionRepo;
+    private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
@@ -60,6 +62,8 @@ public class TimeslotServiceImpl implements TimeslotService {
     public void delete(Long id) {
         findEntity(id);
         sessionRepo.clearTimeslotById(id);  // Unassign timeslot from sessions, keep sessions
+        cascadeDeletionService.purgePreAllocationsForTimeslot(id);
+        cascadeDeletionService.detachTimeslot(id);  // Clean availability + event join rows
         repo.deleteById(id);
     }
 
@@ -68,7 +72,7 @@ public class TimeslotServiceImpl implements TimeslotService {
     }
 
     private TimeslotResponse toResponse(Timeslot t) {
-        return new TimeslotResponse(t.getId(), t.getDay(), t.getStartTime(), t.getEndTime(), t.getSlotNumber(), t.getType());
+        return new TimeslotResponse(t.getId(), t.getVersion(), t.getDay(), t.getStartTime(), t.getEndTime(), t.getSlotNumber(), t.getType());
     }
 
     private void validateTimeslotRequest(TimeslotRequest req, Long currentId) {

@@ -1,25 +1,33 @@
 package com.arare.features.event;
 
 import com.arare.exception.ResourceNotFoundException;
-import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.impact.DisruptionRequest;
 import com.arare.features.impact.DisruptionService;
 import com.arare.features.impact.DisruptionType;
+import com.arare.features.room.Room;
 import com.arare.features.room.RoomRepository;
 import com.arare.features.schedule.ScheduleRepository;
-import com.arare.features.solver.TimetableSolverService;
+import com.arare.features.solvejob.SolveJobResponse;
+import com.arare.features.solvejob.SolveJobService;
+import com.arare.features.solver.DisruptionConstraintFact;
+import com.arare.features.teacher.Teacher;
 import com.arare.features.teacher.TeacherRepository;
+import com.arare.features.timeslot.Timeslot;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -29,23 +37,23 @@ public class EventServiceImpl implements EventService {
     private final RoomRepository roomRepo;
     private final TeacherRepository teacherRepo;
     private final TimeslotRepository timeslotRepo;
-    private final ClassSessionRepository sessionRepo;
     private final ScheduleRepository scheduleRepo;
-    private final TimetableSolverService solverService;
+    private final SolveJobService solveJobService;
     private final DisruptionService disruptionService;
 
     @Override
     @Transactional
     public EventResponse create(EventRequest req) {
+        validateDateRange(req);
         Event e = Event.builder()
             .title(req.title())
             .type(req.type())
             .startDate(req.startDate())
             .endDate(req.endDate())
             .description(req.description())
-            .affectedRooms(req.affectedRoomIds() == null ? List.of() : roomRepo.findAllById(req.affectedRoomIds()))
-            .affectedTeachers(req.affectedTeacherIds() == null ? List.of() : teacherRepo.findAllById(req.affectedTeacherIds()))
-            .affectedTimeslots(req.affectedTimeslotIds() == null ? List.of() : timeslotRepo.findAllById(req.affectedTimeslotIds()))
+            .affectedRooms(resolveRooms(req.affectedRoomIds()))
+            .affectedTeachers(resolveTeachers(req.affectedTeacherIds()))
+            .affectedTimeslots(resolveTimeslots(req.affectedTimeslotIds()))
             .build();
         return toResponse(repo.save(e));
     }
@@ -53,15 +61,16 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional
     public EventResponse update(Long id, EventRequest req) {
+        validateDateRange(req);
         Event e = findEntity(id);
         e.setTitle(req.title());
         e.setType(req.type());
         e.setStartDate(req.startDate());
         e.setEndDate(req.endDate());
         e.setDescription(req.description());
-        if (req.affectedRoomIds() != null)     e.setAffectedRooms(roomRepo.findAllById(req.affectedRoomIds()));
-        if (req.affectedTeacherIds() != null)  e.setAffectedTeachers(teacherRepo.findAllById(req.affectedTeacherIds()));
-        if (req.affectedTimeslotIds() != null) e.setAffectedTimeslots(timeslotRepo.findAllById(req.affectedTimeslotIds()));
+        if (req.affectedRoomIds() != null)     e.setAffectedRooms(resolveRooms(req.affectedRoomIds()));
+        if (req.affectedTeacherIds() != null)  e.setAffectedTeachers(resolveTeachers(req.affectedTeacherIds()));
+        if (req.affectedTimeslotIds() != null) e.setAffectedTimeslots(resolveTimeslots(req.affectedTimeslotIds()));
         return toResponse(repo.save(e));
     }
 
@@ -72,12 +81,12 @@ public class EventServiceImpl implements EventService {
 
     @Override
     public List<EventResponse> findAll() {
-        return repo.findAll().stream().map(this::toResponse).toList();
+        return repo.findAllWithDetails().stream().map(this::toResponse).toList();
     }
 
     @Override
     @Transactional
-    public void applyToSchedule(Long eventId, Long scheduleId) {
+    public SolveJobResponse applyToSchedule(Long eventId, Long scheduleId) {
         Event event = findEntity(eventId);
         scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
@@ -107,15 +116,63 @@ public class EventServiceImpl implements EventService {
         if (event.getAffectedRooms().isEmpty()
             && event.getAffectedTeachers().isEmpty()
             && event.getAffectedTimeslots().isEmpty()) {
-            LocalDate date = dates.isEmpty() ? null : dates.get(0);
-            impacted.addAll(disruptionService.previewImpact(scheduleId,
-                    new DisruptionRequest(DisruptionType.SPECIAL_EVENT, null, date, event.getDescription()))
-                .impactedSessionIds());
+            for (LocalDate date : dates) {
+                impacted.addAll(disruptionService.previewImpact(scheduleId,
+                        new DisruptionRequest(DisruptionType.SPECIAL_EVENT, null, date, event.getDescription()))
+                    .impactedSessionIds());
+            }
         }
 
-        if (!impacted.isEmpty()) {
-            solverService.partialResolve(scheduleId, impacted.stream().toList());
+        if (impacted.isEmpty()) {
+            log.info("Event {} applied to schedule {} — no sessions impacted", eventId, scheduleId);
+            return solveJobService.completedNoop(scheduleId);
         }
+
+        solveJobService.ensureNoActiveJobForSchedule(scheduleId);
+        log.info("Event {} applied to schedule {} — re-solving {} sessions",
+            eventId, scheduleId, impacted.size());
+        return solveJobService.submitPartialResolve(scheduleId, impacted.stream().toList(), buildFacts(event));
+    }
+
+    /**
+     * Converts an event into solver facts so the re-solve is forced to respect
+     * the blocked rooms/teachers/timeslots across every affected date.
+     *
+     * <p>Room/teacher blocks only become facts on dates where the day is known;
+     * a dayless block would wrongly force every session of that entity off the
+     * timetable on all days.
+     */
+    private List<DisruptionConstraintFact> buildFacts(Event event) {
+        List<DisruptionConstraintFact> facts = new ArrayList<>();
+        for (LocalDate date : eventDates(event)) {
+            String day = date != null ? date.getDayOfWeek().name() : null;
+            if (day == null) continue;
+            for (Room room : event.getAffectedRooms()) {
+                facts.add(new DisruptionConstraintFact(
+                    DisruptionType.ROOM_UNAVAILABLE, room.getId(), day));
+            }
+            for (Teacher teacher : event.getAffectedTeachers()) {
+                facts.add(new DisruptionConstraintFact(
+                    DisruptionType.TEACHER_UNAVAILABLE, teacher.getId(), day));
+            }
+        }
+        for (Timeslot timeslot : event.getAffectedTimeslots()) {
+            facts.add(new DisruptionConstraintFact(
+                DisruptionType.TIMESLOT_BLOCKED, timeslot.getId(), null));
+        }
+        // Broad event (no specific entities): a special event on each date.
+        if (event.getAffectedRooms().isEmpty()
+            && event.getAffectedTeachers().isEmpty()
+            && event.getAffectedTimeslots().isEmpty()) {
+            for (LocalDate date : eventDates(event)) {
+                String day = date != null ? date.getDayOfWeek().name() : null;
+                if (day != null) {
+                    facts.add(new DisruptionConstraintFact(
+                        DisruptionType.SPECIAL_EVENT, null, day));
+                }
+            }
+        }
+        return facts;
     }
 
     private List<LocalDate> eventDates(Event event) {
@@ -133,7 +190,7 @@ public class EventServiceImpl implements EventService {
             end = tmp;
         }
 
-        List<LocalDate> dates = new java.util.ArrayList<>();
+        List<LocalDate> dates = new ArrayList<>();
         LocalDate cur = start;
         while (!cur.isAfter(end)) {
             dates.add(cur);
@@ -147,6 +204,45 @@ public class EventServiceImpl implements EventService {
     public void delete(Long id) {
         findEntity(id);
         repo.deleteById(id);
+    }
+
+    private void validateDateRange(EventRequest req) {
+        if (req.startDate() != null && req.endDate() != null && req.endDate().isBefore(req.startDate())) {
+            throw new IllegalArgumentException(
+                "Event end date (" + req.endDate() + ") cannot be before start date (" + req.startDate() + ")"
+            );
+        }
+    }
+
+    private List<Room> resolveRooms(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        return requireAllFound(roomRepo.findAllById(ids), ids, "Room");
+    }
+
+    private List<Teacher> resolveTeachers(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        return requireAllFound(teacherRepo.findAllById(ids), ids, "Teacher");
+    }
+
+    private List<Timeslot> resolveTimeslots(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        return requireAllFound(timeslotRepo.findAllById(ids), ids, "Timeslot");
+    }
+
+    private <T> List<T> requireAllFound(List<T> found, List<Long> requested, String entity) {
+        Set<Long> foundIds = found.stream()
+            .map(o -> {
+                if (o instanceof Room r) return r.getId();
+                if (o instanceof Teacher t) return t.getId();
+                if (o instanceof Timeslot t) return t.getId();
+                throw new IllegalArgumentException("Unsupported entity type " + entity);
+            })
+            .collect(Collectors.toSet());
+        List<Long> missing = requested.stream().filter(id -> !foundIds.contains(id)).toList();
+        if (!missing.isEmpty()) {
+            throw new ResourceNotFoundException(entity, missing.get(0));
+        }
+        return found;
     }
 
     private Event findEntity(Long id) {

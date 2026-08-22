@@ -7,5 +7,7 @@ public record DepartmentResponse(
     Long id,
     String name,
     String code,
+    Long instituteId,
+    String instituteName,
     List<BuildingResponse> buildingsAllowed
 ) {}

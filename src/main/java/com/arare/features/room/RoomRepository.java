@@ -1,6 +1,7 @@
 package com.arare.features.room;
 
 import com.arare.common.enums.RoomType;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,14 @@ import java.util.List;
 
 @Repository
 public interface RoomRepository extends JpaRepository<Room, Long> {
+
+    @EntityGraph(attributePaths = {"building", "availableTimeslots"})
+    @Query("SELECT r FROM Room r")
+    List<Room> findAllWithDetails();
+
+    @EntityGraph(attributePaths = {"building", "availableTimeslots"})
+    @Query("SELECT r FROM Room r WHERE r.building.id = :buildingId")
+    List<Room> findByBuildingIdWithDetails(@Param("buildingId") Long buildingId);
 
     List<Room> findByBuildingId(Long buildingId);
 

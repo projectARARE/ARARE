@@ -1,7 +1,9 @@
 import { useState, useMemo, useCallback, type ReactNode, type ChangeEvent } from 'react'
-import { ChevronUp, ChevronDown, ChevronsUpDown, Search } from 'lucide-react'
+import { ChevronUp, ChevronDown, ChevronsUpDown, Search, Download, FileSpreadsheet } from 'lucide-react'
 import type { ContextMenuItem } from './ContextMenu'
 import ContextMenu from './ContextMenu'
+import { exportCsv, exportExcel, type ExportColumn } from '../../utils/exportUtils'
+import { useToast } from '../../contexts/ToastContext'
 
 export interface Column<T> {
   key: string
@@ -33,9 +35,25 @@ interface TableProps<T> {
   onSelectionChange?: (selected: T[]) => void
   /** Build a right-click context menu for a given row */
   onRowContextMenu?: (row: T) => ContextMenuItem[]
+  /** Show CSV/Excel export buttons; exports the currently filtered+sorted rows */
+  exportable?: boolean
+  /** Export filename (without extension) */
+  exportFilename?: string
+  /** Optional explicit export columns; defaults to columns with a sortValue, else all columns rendered as text */
+  exportColumns?: ExportColumn<T>[]
 }
 
 type SortDir = 'asc' | 'desc' | null
+
+function nodeToText(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(nodeToText).join(' ').trim()
+  if (typeof node === 'object' && 'props' in node) {
+    return nodeToText((node as { props: { children?: ReactNode } }).props?.children)
+  }
+  return ''
+}
 
 export default function Table<T>({
   columns,
@@ -48,12 +66,17 @@ export default function Table<T>({
   selectable = false,
   onSelectionChange,
   onRowContextMenu,
+  exportable = false,
+  exportFilename = 'table-export',
+  exportColumns,
 }: TableProps<T>) {
+  const { toast } = useToast()
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
   const [selected, setSelected] = useState<Set<string | number>>(new Set())
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   // ─── Search ────────────────────────────────────────────────────────────────
 
@@ -133,26 +156,84 @@ export default function Table<T>({
 
   const colCount = columns.length + (selectable ? 1 : 0)
 
+  // ─── Export ─────────────────────────────────────────────────────────────────
+
+  const effectiveExportColumns = useMemo<ExportColumn<T>[]>(() => {
+    if (exportColumns) return exportColumns
+    return columns
+      .filter((c) => c.header.trim() !== '')
+      .map((c) => ({
+        header: c.header,
+        value: (row: T) => (c.sortValue ? c.sortValue(row) : nodeToText(c.render(row, 0))),
+      }))
+  }, [exportColumns, columns])
+
+  const handleExportCsv = () => {
+    if (exporting) return
+    if (effectiveExportColumns.length === 0) {
+      toast.error('No columns available to export')
+      return
+    }
+    exportCsv(`${exportFilename}.csv`, effectiveExportColumns, sorted)
+  }
+
+  const handleExportExcel = async () => {
+    if (effectiveExportColumns.length === 0) {
+      toast.error('No sortable columns available to export')
+      return
+    }
+    setExporting(true)
+    try {
+      await exportExcel(`${exportFilename}.xlsx`, effectiveExportColumns, sorted)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Excel export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-3">
-      {searchable && (
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
-            placeholder="Search…"
-            className="w-full sm:w-64 pl-8 pr-8 py-1.5 text-sm border border-gray-300 rounded-md
-                       placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-          {query && (
-            <button
-              onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
-            >
-              ✕
-            </button>
+      {(searchable || exportable) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {searchable && (
+            <div className="relative flex-1 min-w-[180px] max-w-xs">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
+                placeholder="Search…"
+                className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-300 rounded-md
+                           placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
+          {exportable && sorted.length > 0 && (
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={handleExportCsv}
+                disabled={exporting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                <Download size={13} /> CSV
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={exporting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 border border-green-300 rounded-md hover:bg-green-50 transition-colors disabled:opacity-50"
+              >
+                <FileSpreadsheet size={13} /> {exporting ? 'Exporting…' : 'Excel'}
+              </button>
+            </div>
           )}
         </div>
       )}

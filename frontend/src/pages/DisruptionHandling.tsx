@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { AlertTriangle, RefreshCw, Zap } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Card, Button, Select, Table, Badge } from '../components/ui'
 import type { Column } from '../components/ui/Table'
+import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { scheduleApi, eventApi } from '../services/api'
+import { waitForJob } from '../hooks/useSolveJob'
 import type { Schedule, Event } from '../types'
+import { useToast } from '../contexts/ToastContext'
 
 export default function DisruptionHandling() {
+  const navigate = useNavigate()
+  const { toast } = useToast()
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [events, setEvents] = useState<Event[]>([])
   const [selectedSchedule, setSelectedSchedule] = useState<string>('')
@@ -20,7 +26,14 @@ export default function DisruptionHandling() {
         if (s.status === 'fulfilled') {
           const active = s.value.filter((x) => x.status === 'ACTIVE' || x.status === 'PARTIAL')
           setSchedules(active)
-          if (active.length) setSelectedSchedule(String(active[0].id))
+          // Keep the user's selection when possible; only auto-pick when there
+          // is none or the chosen schedule no longer exists.
+          setSelectedSchedule((current) => {
+            if (active.length && current && active.some((x) => String(x.id) === current)) {
+              return current
+            }
+            return active.length ? String(active[0].id) : ''
+          })
         }
         if (e.status === 'fulfilled') {
           setEvents(e.value)
@@ -39,7 +52,22 @@ export default function DisruptionHandling() {
     setApplying(eventId)
     setError(null)
     try {
-      await eventApi.applyToSchedule(eventId, +selectedSchedule)
+      const job = await eventApi.applyToSchedule(eventId, +selectedSchedule)
+      const finished = await waitForJob(job)
+      if (finished.status === 'FAILED') {
+        setError(finished.errorMessage || 'Re-optimization failed')
+        return
+      }
+      if (finished.status === 'CANCELLED') {
+        setError('Re-optimization was cancelled')
+        return
+      }
+      const schedule = await scheduleApi.getById(+selectedSchedule)
+      if (schedule.status === 'INFEASIBLE') {
+        toast.warning('Event applied, but the schedule is now infeasible')
+      } else {
+        toast.success('Event applied and schedule re-optimized')
+      }
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to apply event')
@@ -49,6 +77,14 @@ export default function DisruptionHandling() {
   }
 
   const scheduleOptions = schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))
+
+  const getContextItems = (e: Event): ContextMenuItem[] => {
+    const canApply = !!selectedSchedule
+    return [
+      { label: 'Apply to current schedule', icon: <Zap size={13} />, onClick: () => handleApply(e.id), disabled: !canApply },
+      { label: 'Manage events', icon: <RefreshCw size={13} />, divider: true, onClick: () => navigate('/events') },
+    ]
+  }
 
   const columns: Column<Event>[] = [
     { key: 'title', header: 'Event', render: (e) => <span className="font-medium">{e.title}</span> },
@@ -62,6 +98,7 @@ export default function DisruptionHandling() {
           variant="secondary"
           icon={<RefreshCw size={14} />}
           loading={applying === e.id}
+          disabled={!selectedSchedule}
           onClick={() => handleApply(e.id)}
         >
           Apply &amp; Re-solve
@@ -108,6 +145,9 @@ export default function DisruptionHandling() {
           data={events}
           loading={loading}
           keyExtractor={(e) => e.id}
+          exportable
+          exportFilename="events"
+          onRowContextMenu={getContextItems}
           emptyMessage="No events. Create events in the Events page first."
         />
       </Card>

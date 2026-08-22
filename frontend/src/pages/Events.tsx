@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, Zap } from 'lucide-react'
 import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog } from '../components/ui'
 import type { Column, ContextMenuItem } from '../components/ui'
 import { eventApi, scheduleApi, teacherApi, roomApi } from '../services/api'
+import { waitForJob } from '../hooks/useSolveJob'
 import type { Event, EventRequest, EventType, Schedule, Teacher, Room } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
@@ -104,6 +105,7 @@ export default function Events() {
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed')
+      setConfirmId(null)
     } finally {
       setDeleting(false)
     }
@@ -114,9 +116,23 @@ export default function Events() {
     setApplying(true)
     setApplyError(null)
     try {
-      await eventApi.applyToSchedule(applyTarget.eventId, +applyTarget.scheduleId)
+      const job = await eventApi.applyToSchedule(applyTarget.eventId, +applyTarget.scheduleId)
+      const finished = await waitForJob(job)
+      if (finished.status === 'FAILED') {
+        setApplyError(finished.errorMessage || 'Re-optimization failed')
+        return
+      }
+      if (finished.status === 'CANCELLED') {
+        setApplyError('Re-optimization was cancelled')
+        return
+      }
+      const schedule = await scheduleApi.getById(+applyTarget.scheduleId)
       setApplyTarget({ eventId: 0, scheduleId: '' })
-      toast.success('Event applied to schedule')
+      if (schedule.status === 'INFEASIBLE') {
+        toast.warning('Event applied, but the schedule is now infeasible')
+      } else {
+        toast.success('Event applied to schedule')
+      }
       load()
     } catch (e) {
       setApplyError(e instanceof Error ? e.message : 'Failed to apply event')
@@ -139,7 +155,9 @@ export default function Events() {
     })
   }
 
-  const scheduleOptions = schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))
+  const scheduleOptions = schedules
+    .filter((s) => s.status === 'ACTIVE' || s.status === 'PARTIAL')
+    .map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))
   const typeOptions = EVENT_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))
 
   const getContextItems = (e: Event): ContextMenuItem[] => [
@@ -156,10 +174,10 @@ export default function Events() {
       key: 'affected', header: 'Affected',
       render: (e) => (
         <span className="text-xs text-gray-500">
-          {[
-            e.affectedTeacherIds.length ? `${e.affectedTeacherIds.length} teacher(s)` : '',
-            e.affectedRoomIds.length ? `${e.affectedRoomIds.length} room(s)` : '',
-          ].filter(Boolean).join(', ') || '—'}
+           {[
+             (e.affectedTeacherIds ?? []).length ? `${(e.affectedTeacherIds ?? []).length} teacher(s)` : '',
+             (e.affectedRoomIds ?? []).length ? `${(e.affectedRoomIds ?? []).length} room(s)` : '',
+           ].filter(Boolean).join(', ') || '—'}
         </span>
       ),
     },
@@ -187,6 +205,7 @@ export default function Events() {
         <Table
           columns={columns} data={items} loading={loading} keyExtractor={(e) => e.id}
           searchable searchKeys={[(e) => e.title, (e) => e.type]}
+          exportable exportFilename="events"
           onRowContextMenu={getContextItems}
         />
       </Card>

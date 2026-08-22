@@ -1,6 +1,6 @@
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export type SchoolDay = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY'
+export type SchoolDay = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY'
 export type RoomType = 'LECTURE' | 'LAB'
 export type LabSubtype =
   | 'COMPUTER_LAB'
@@ -38,18 +38,37 @@ export interface BuildingRequest {
   location?: string
 }
 
+// ─── Institute (constituent college within the university) ───────────────────
+
+export interface Institute {
+  id: number
+  name: string
+  code: string
+  description?: string
+  departmentCount: number
+  createdAt?: string
+}
+export interface InstituteRequest {
+  name: string
+  code: string
+  description?: string
+}
+
 // ─── Department ──────────────────────────────────────────────────────────────
 
 export interface Department {
   id: number
   name: string
   code: string
+  instituteId?: number
+  instituteName?: string
   buildingsAllowed?: Building[]
   createdAt?: string
 }
 export interface DepartmentRequest {
   name: string
   code: string
+  instituteId: number
   buildingIds?: number[]
 }
 
@@ -78,6 +97,7 @@ export interface RoomRequest {
 
 export interface Teacher {
   id: number
+  employeeId?: string
   name: string
   subjectIds: number[]
   subjectNames?: string[]
@@ -90,6 +110,7 @@ export interface Teacher {
   preferredFreeDay?: SchoolDay
 }
 export interface TeacherRequest {
+  employeeId?: string
   name: string
   subjectIds?: number[]
   availableTimeslotIds?: number[]
@@ -107,8 +128,9 @@ export interface Subject {
   id: number
   name: string
   code: string
-  departmentId: number
+  departmentId?: number
   departmentName?: string
+  instituteId?: number
   weeklyHours: number
   chunkHours: number
   roomTypeRequired: RoomType
@@ -123,7 +145,7 @@ export interface Subject {
 export interface SubjectRequest {
   name: string
   code: string
-  departmentId: number
+  departmentId?: number
   weeklyHours: number
   chunkHours: number
   roomTypeRequired?: RoomType
@@ -135,17 +157,44 @@ export interface SubjectRequest {
   maxSessionsPerDay: number
 }
 
+// ─── Subject Offering ─────────────────────────────────────────────────────────
+
+export interface SubjectOffering {
+  id: number
+  subjectId: number
+  subjectCode?: string
+  subjectName?: string
+  batchId: number
+  batchLabel?: string
+  sectionId?: number
+  sectionLabel?: string
+  weeklyHours?: number
+  elective: boolean
+}
+export interface SubjectOfferingRequest {
+  subjectId: number
+  batchId?: number
+  sectionId?: number
+  weeklyHours?: number
+  elective?: boolean
+}
+
 // ─── Batch ───────────────────────────────────────────────────────────────────
 
 export interface Batch {
   id: number
   departmentId: number
   departmentName?: string
+  instituteId?: number
   year: number
   section: string
   studentCount: number
   workingDays?: SchoolDay[]
   preferredFreeDay?: SchoolDay
+  homeRoomId?: number
+  homeRoomNumber?: string
+  subjectIds?: number[]
+  subjectNames?: string[]
   createdAt?: string
 }
 export interface BatchRequest {
@@ -155,6 +204,8 @@ export interface BatchRequest {
   studentCount: number
   workingDays?: SchoolDay[]
   preferredFreeDay?: SchoolDay
+  homeRoomId?: number
+  subjectIds?: number[]
 }
 
 // ─── ClassSection ────────────────────────────────────────────────────────────
@@ -165,11 +216,14 @@ export interface ClassSection {
   batchName?: string
   label: string
   size: number
+  subjectIds?: number[]
+  subjectNames?: string[]
 }
 export interface ClassSectionRequest {
   batchId: number
   label: string
   size: number
+  subjectIds?: number[]
 }
 
 // ─── Timeslot ────────────────────────────────────────────────────────────────
@@ -211,6 +265,17 @@ export interface UniversityConfigRequest {
   workingDays?: SchoolDay[]
 }
 
+export interface UniversityConfigDiagnostics {
+  valid: boolean
+  summary: string
+  daysPerWeek: number | null
+  timeslotsPerDay: number | null
+  maxClassesPerDay: number | null
+  workingDays: SchoolDay[]
+  classSlotsPerDay: Record<string, number>
+  issues: string[]
+}
+
 // ─── Event ───────────────────────────────────────────────────────────────────
 
 export interface Event {
@@ -247,16 +312,109 @@ export interface Schedule {
   score?: string
   scoreExplanation?: string
   createdAt?: string
+  blockedDays?: SchoolDay[]
+  instituteId?: number
 }
 export interface ScheduleRequest {
   name: string
   scope: ScheduleScope
   parentScheduleId?: number
   departmentId?: number
+  instituteId?: number
   batchIds?: number[]
   teacherIds?: number[]
   roomIds?: number[]
   solvingTimeSeconds?: number
+  blockedDays?: SchoolDay[]
+  preAllocations?: PreAllocationSpec[]
+}
+
+// ─── Pre-Allocation (pre-assign teachers before solving) ──────────────────────
+
+export interface PreAllocationSpec {
+  batchId: number
+  subjectId: number
+  teacherId: number
+  roomId?: number
+  timeslotId?: number
+}
+
+export interface PreAllocationRequest {
+  scheduleId: number
+  batchId: number
+  subjectId: number
+  teacherId?: number
+  roomId?: number
+  timeslotId?: number
+  locked: boolean
+}
+
+export interface PreAllocation {
+  id: number
+  scheduleId: number
+  batchId: number
+  batchLabel?: string
+  subjectId: number
+  subjectName?: string
+  teacherId?: number
+  teacherName?: string
+  roomId?: number
+  roomNumber?: string
+  timeslotId?: number
+  day?: string
+  startTime?: string
+  locked: boolean
+}
+
+// ─── Teacher Assignment (term teaching allotment) ─────────────────────────────
+
+export interface TeacherAssignment {
+  id: number
+  teacherId: number
+  teacherName?: string
+  subjectId: number
+  subjectCode?: string
+  subjectName?: string
+  batchId?: number
+  batchLabel?: string
+  sectionId?: number
+  sectionLabel?: string
+  weeklyHours?: number
+  priority: number
+  notes?: string
+}
+
+export interface TeacherAssignmentRequest {
+  teacherId: number
+  subjectId: number
+  batchId?: number
+  sectionId?: number
+  weeklyHours?: number
+  priority?: number
+  notes?: string
+}
+
+// ─── Solve Job (async schedule generation) ────────────────────────────────────
+
+export type SolveJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED'
+export type SolveJobType = 'GENERATE' | 'PARTIAL_RESOLVE'
+
+export interface SolveJobResponse {
+  id?: number
+  scheduleId?: number
+  status: SolveJobStatus
+  jobType: SolveJobType
+  errorMessage?: string
+  score?: string
+  bestScore?: string
+  elapsedMillis?: number
+  createdAt?: string
+  startedAt?: string
+  finishedAt?: string
+}
+
+export function isSolveJobTerminal(job: SolveJobResponse): boolean {
+  return job.status === 'SUCCEEDED' || job.status === 'FAILED' || job.status === 'CANCELLED'
 }
 
 // ─── ClassSession ─────────────────────────────────────────────────────────────
@@ -310,12 +468,35 @@ export interface ConflictSuggestion {
   softPenalties: number
 }
 
-export interface CsvImportResponse {
-  entityType: string
+export interface FileImportStats {
+  fileName: string
   created: number
   updated: number
   skipped: number
   errors: string[]
+}
+
+export interface CsvZipImportResponse {
+  fileStats: Record<string, FileImportStats>
+  globalErrors: string[]
+  dryRun?: boolean
+}
+
+export interface CsvImportResponse {
+  entityType: string
+  displayName: string
+  created: number
+  updated: number
+  skipped: number
+  errors: string[]
+  dryRun: boolean
+}
+
+export interface ImportOrderStep {
+  name: string
+  displayName: string
+  fileName: string
+  dependencies: string[]
 }
 
 // ─── University Config Entry (key-value) ─────────────────────────────────────
@@ -342,6 +523,20 @@ export interface SessionAssignmentRequest {
   clearTeacher?: boolean
   clearRoom?: boolean
   clearTimeslot?: boolean
+}
+
+// ─── Session Creation (right-click "add session here") ───────────────────────
+
+export interface SessionCreateRequest {
+  scheduleId: number
+  subjectId: number
+  batchId?: number
+  sectionId?: number
+  teacherId?: number | null
+  roomId?: number | null
+  timeslotId?: number | null
+  duration?: number
+  locked?: boolean
 }
 
 // ─── AcademicTerm ─────────────────────────────────────────────────────────────

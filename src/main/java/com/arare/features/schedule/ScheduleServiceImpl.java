@@ -4,17 +4,22 @@ import com.arare.common.enums.ScheduleScope;
 import com.arare.common.enums.ScheduleStatus;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
+import com.arare.features.preallocation.PreAllocationService;
 import com.arare.features.classsession.ClassSession;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.classsession.ClassSessionResponse;
 import com.arare.features.solver.ScoreExplanationResponse;
+import com.arare.features.solver.TimetableSolverService;
+import com.arare.features.solvejob.SolveJobResponse;
+import com.arare.features.solvejob.SolveJobService;
 import com.arare.features.timeslot.Timeslot;
 import com.arare.features.timeslot.TimeslotRepository;
-import com.arare.features.solver.TimetableSolverService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -23,14 +28,17 @@ import java.util.List;
 public class ScheduleServiceImpl implements ScheduleService {
 
     private final ScheduleRepository repo;
-    private final TimetableSolverService solverService;
+    private final SolveJobService solveJobService;
     private final ClassSessionRepository sessionRepo;
     private final FeasibilityCheckService feasibilityCheckService;
     private final TimeslotRepository timeslotRepo;
+    private final CascadeDeletionService cascadeDeletionService;
+    private final TimetableSolverService solverService;
+    private final PreAllocationService preAllocationService;
 
     @Override
     @Transactional
-    public ScheduleResponse generate(ScheduleRequest req) {
+    public SolveJobResponse generate(ScheduleRequest req) {
         FeasibilityCheckResult feasibility = feasibilityCheckService.check(req);
         if (!feasibility.feasible()) {
             String detail = feasibility.issues().stream()
@@ -52,13 +60,18 @@ public class ScheduleServiceImpl implements ScheduleService {
             .scope(req.scope() != null ? req.scope() : ScheduleScope.DEPARTMENT)
             .status(ScheduleStatus.DRAFT)
             .parentSchedule(parent)
+            .instituteId(req.instituteId())
+            .blockedDays(req.blockedDays() != null ? req.blockedDays() : List.of())
             .build();
         schedule = repo.save(schedule);
 
-        solverService.solveSchedule(schedule.getId(), req.departmentId(),
-            req.batchIds(), req.teacherIds(), req.roomIds(), req.solvingTimeSeconds());
+        // Wizard pre-assignments are persisted here, BEFORE the solve job runs,
+        // so the solver reads them as locked/partial pre-allocations.
+        if (req.preAllocations() != null && !req.preAllocations().isEmpty()) {
+            preAllocationService.createAll(schedule.getId(), req.preAllocations());
+        }
 
-        return toResponse(repo.findById(schedule.getId()).orElseThrow());
+        return solveJobService.submitGenerate(schedule.getId(), req);
     }
 
     @Override
@@ -70,15 +83,68 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     @Transactional(readOnly = true)
     public List<ScheduleResponse> findAll() {
-        return repo.findAll().stream().map(this::toResponse).toList();
+        return repo.findAllWithDetails().stream().map(this::toResponse).toList();
     }
 
     @Override
     @Transactional
-    public ScheduleResponse partialResolve(Long scheduleId, List<Long> impactedSessionIds) {
+    public ScheduleResponse activate(Long id) {
+        Schedule schedule = findEntity(id);
+        solveJobService.ensureNoActiveJobForSchedule(id);
+
+        if (schedule.getStatus() == ScheduleStatus.ACTIVE) {
+            return toResponse(schedule);
+        }
+        if (schedule.getStatus() == ScheduleStatus.ARCHIVED) {
+            throw new IllegalStateException("Archived schedules cannot be activated. Create a new schedule instead.");
+        }
+        if (schedule.getStatus() == ScheduleStatus.INFEASIBLE) {
+            throw new IllegalStateException("Infeasible schedules cannot be activated. Regenerate before activating.");
+        }
+        if (schedule.getScore() == null) {
+            throw new IllegalStateException("Schedule has no solution yet. Generate before activating.");
+        }
+
+        // Single active schedule per institute scope. Any other active schedule
+        // for the same institute (null = university-wide) is superseded.
+        List<Schedule> actives = repo.findByStatus(ScheduleStatus.ACTIVE);
+        for (Schedule other : actives) {
+            if (other.getId().equals(id)) {
+                continue;
+            }
+            if (sameInstituteScope(schedule.getInstituteId(), other.getInstituteId())) {
+                other.setStatus(ScheduleStatus.ARCHIVED);
+                repo.save(other);
+            }
+        }
+
+        schedule.setStatus(ScheduleStatus.ACTIVE);
+        return toResponse(repo.save(schedule));
+    }
+
+    @Override
+    @Transactional
+    public ScheduleResponse archive(Long id) {
+        Schedule schedule = findEntity(id);
+        solveJobService.ensureNoActiveJobForSchedule(id);
+
+        if (schedule.getStatus() == ScheduleStatus.ARCHIVED) {
+            return toResponse(schedule);
+        }
+        schedule.setStatus(ScheduleStatus.ARCHIVED);
+        return toResponse(repo.save(schedule));
+    }
+
+    private static boolean sameInstituteScope(Long a, Long b) {
+        return (a == null && b == null) || (a != null && a.equals(b));
+    }
+
+    @Override
+    @Transactional
+    public SolveJobResponse partialResolve(Long scheduleId, List<Long> impactedSessionIds) {
         findEntity(scheduleId); // validate exists
-        solverService.partialResolve(scheduleId, impactedSessionIds);
-        return toResponse(repo.findById(scheduleId).orElseThrow());
+        solveJobService.ensureNoActiveJobForSchedule(scheduleId);
+        return solveJobService.submitPartialResolve(scheduleId, impactedSessionIds);
     }
 
     @Override
@@ -99,8 +165,8 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
-        sessionRepo.deleteByScheduleId(id);
-        repo.deleteById(id);
+        solveJobService.ensureNoActiveJobForSchedule(id);
+        cascadeDeletionService.purgeScheduleTree(id);
     }
 
     @Override
@@ -149,7 +215,9 @@ public class ScheduleServiceImpl implements ScheduleService {
             s.getId(), s.getName(), s.getScope(), s.getStatus(),
             s.getParentSchedule() != null ? s.getParentSchedule().getId() : null,
             s.getScore(), s.getScoreExplanation(),
-            s.getCreatedAt() != null ? s.getCreatedAt().toString() : null
+            s.getCreatedAt() != null ? s.getCreatedAt().toString() : null,
+            s.getBlockedDays() != null ? new ArrayList<>(s.getBlockedDays()) : List.of(),
+            s.getInstituteId()
         );
     }
 
@@ -167,7 +235,7 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         Long   roomId      = cs.getRoom() != null ? cs.getRoom().getId()           : null;
         String roomNumber  = cs.getRoom() != null ? cs.getRoom().getRoomNumber()   : null;
-        String buildingName = cs.getRoom() != null ? cs.getRoom().getBuilding().getName() : null;
+        String buildingName = (cs.getRoom() != null && cs.getRoom().getBuilding() != null) ? cs.getRoom().getBuilding().getName() : null;
 
         Long   timeslotId = cs.getTimeslot() != null ? cs.getTimeslot().getId()                    : null;
         String day        = cs.getTimeslot() != null ? cs.getTimeslot().getDay().name()            : null;

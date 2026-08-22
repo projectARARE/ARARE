@@ -10,8 +10,8 @@ import java.util.List;
 public record EventRequest(
     @NotBlank String title,
     @NotNull EventType type,
-    LocalDate startDate,
-    LocalDate endDate,
+    @NotNull LocalDate startDate,
+    @NotNull LocalDate endDate,
     String description,
     List<Long> affectedRoomIds,
     List<Long> affectedTeacherIds,

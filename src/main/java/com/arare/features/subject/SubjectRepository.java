@@ -1,5 +1,6 @@
 package com.arare.features.subject;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,7 +13,25 @@ import java.util.List;
 @Repository
 public interface SubjectRepository extends JpaRepository<Subject, Long> {
 
+    @EntityGraph(attributePaths = {"department", "department.institute"})
+    @Query("SELECT s FROM Subject s")
+    List<Subject> findAllWithDetails();
+
+    @EntityGraph(attributePaths = {"department", "department.institute"})
+    @Query("SELECT s FROM Subject s WHERE s.department.id = :departmentId")
+    List<Subject> findByDepartmentIdWithDetails(@Param("departmentId") Long departmentId);
+
+    @EntityGraph(attributePaths = {"department", "department.institute"})
+    @Query("SELECT s FROM Subject s WHERE s.department.institute.id = :instituteId")
+    List<Subject> findByDepartmentInstituteIdWithDetails(@Param("instituteId") Long instituteId);
+
     List<Subject> findByDepartmentId(Long departmentId);
+
+    @Query("SELECT s FROM Subject s WHERE s.department.institute.id = :instituteId")
+    List<Subject> findByDepartmentInstituteId(@Param("instituteId") Long instituteId);
+
+    @Query("SELECT s FROM Subject s WHERE s.department IS NULL")
+    List<Subject> findInstituteWide();
 
     @Query("SELECT s FROM Subject s WHERE s.isLab = :isLab")
     List<Subject> findByIsLab(@Param("isLab") boolean isLab);

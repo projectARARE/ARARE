@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog, SearchableSelect } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { subjectApi, departmentApi } from '../services/api'
@@ -20,7 +20,7 @@ const ROOM_TYPE_OPTIONS: { value: RoomType; label: string }[] = [
 const EMPTY: SubjectRequest = {
   name: '',
   code: '',
-  departmentId: 0,
+  departmentId: undefined,
   weeklyHours: 4,
   chunkHours: 1,
   roomTypeRequired: 'LECTURE',
@@ -59,7 +59,7 @@ export default function Subjects() {
 
   const openAdd = () => {
     setEditing(null)
-    setForm({ ...EMPTY, departmentId: depts[0]?.id ?? 0 })
+    setForm({ ...EMPTY, departmentId: depts[0]?.id })
     setOpen(true)
   }
 
@@ -85,7 +85,6 @@ export default function Subjects() {
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('Name is required'); return }
     if (!form.code.trim()) { toast.error('Code is required'); return }
-    if (!form.departmentId) { toast.error('Please select a department'); return }
     setSaving(true)
     try {
       const data: SubjectRequest = {
@@ -128,7 +127,10 @@ export default function Subjects() {
     }
   }
 
-  const deptOptions = depts.map((d) => ({ value: d.id, label: d.name }))
+  const deptOptions = [
+    { value: 0, label: '— Institute-wide (no department) —' },
+    ...depts.map((d) => ({ value: d.id, label: d.name })),
+  ]
   const subtypeOptions = LAB_SUBTYPES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))
 
   const columns: Column<Subject>[] = [
@@ -145,7 +147,7 @@ export default function Subjects() {
     {
       key: 'dept', header: 'Department',
       sortValue: (s) => s.departmentName ?? '',
-      render: (s) => s.departmentName ?? `#${s.departmentId}`,
+      render: (s) => s.departmentName ?? (s.departmentId ? `#${s.departmentId}` : <Badge label="Institute-wide" variant="green" />),
     },
     { key: 'hours', header: 'Weekly / Chunk', render: (s) => `${s.weeklyHours} slots / ${s.chunkHours} slots` },
     {
@@ -179,6 +181,8 @@ export default function Subjects() {
           loading={loading}
           keyExtractor={(s) => s.id}
           searchable
+          exportable
+          exportFilename="subjects"
           searchKeys={[(s) => s.name, (s) => s.code, (s) => s.departmentName ?? '']}
           onRowContextMenu={getContextItems}
         />
@@ -196,7 +200,14 @@ export default function Subjects() {
           <div className="grid grid-cols-2 gap-4">
             <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Data Structures" />
             <Input label="Code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="CS301" />
-            <Select label="Department" value={form.departmentId} onChange={(e) => setForm({ ...form, departmentId: +e.target.value })} options={deptOptions} placeholder="Select department…" />
+            <SearchableSelect
+              label="Department"
+              value={form.departmentId ?? null}
+              onChange={(v) => setForm({ ...form, departmentId: v == null ? undefined : +v })}
+              options={deptOptions}
+              helpText="Institute-wide subjects can be offered to any batch via Subject Offerings"
+              allowClear
+            />
             <Select
               label="Room Type Required"
               value={form.isLab ? 'LAB' : (form.roomTypeRequired ?? 'LECTURE')}

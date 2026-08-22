@@ -19,8 +19,7 @@ import java.time.LocalTime;
 @Table(
     name = "timeslots",
     uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"day", "start_time", "end_time"}),
-        @UniqueConstraint(columnNames = {"day", "slot_number"})
+        @UniqueConstraint(columnNames = {"day", "start_time", "end_time"})
     }
 )
 @Getter

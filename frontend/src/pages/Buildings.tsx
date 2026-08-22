@@ -22,7 +22,10 @@ export default function Buildings() {
 
   const load = () => {
     setLoading(true)
-    buildingApi.getAll().then(setItems).finally(() => setLoading(false))
+    buildingApi.getAll()
+      .then(setItems)
+      .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to load buildings'))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
@@ -109,6 +112,8 @@ export default function Buildings() {
           loading={loading}
           keyExtractor={(b) => b.id}
           searchable
+          exportable
+          exportFilename="buildings"
           searchKeys={[(b) => b.name, (b) => b.location ?? '']}
           onRowContextMenu={getContextItems}
         />

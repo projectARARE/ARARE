@@ -7,7 +7,7 @@ import java.util.List;
 
 // Request DTO: configure global university scheduling parameters. 
 public record UniversityConfigRequest(
-    @Min(5) @Max(6) int daysPerWeek,
+    @Min(1) @Max(7) int daysPerWeek,
     @Min(1) int timeslotsPerDay,
     @Min(1) int maxClassesPerDay,
     List<Integer> breakSlotIndices,

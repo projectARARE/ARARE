@@ -7,7 +7,7 @@ import { timeslotApi } from '../services/api'
 import type { Timeslot, TimeslotRequest, SchoolDay, TimeslotType } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
-const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 const TYPES: TimeslotType[] = ['CLASS', 'BREAK', 'BLOCKED']
 
 const EMPTY: TimeslotRequest = { day: 'MONDAY', startTime: '08:00', endTime: '09:00', slotNumber: 1, type: 'CLASS' }
@@ -28,7 +28,10 @@ export default function Timeslots() {
 
   const load = () => {
     setLoading(true)
-    timeslotApi.getAll().then(setItems).finally(() => setLoading(false))
+    timeslotApi.getAll()
+      .then(setItems)
+      .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to load timeslots'))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
@@ -43,6 +46,7 @@ export default function Timeslots() {
   const handleSave = async () => {
     if (!form.startTime) { toast.error('Start time is required'); return }
     if (!form.endTime) { toast.error('End time is required'); return }
+    if (form.endTime <= form.startTime) { toast.error('End time must be after start time'); return }
     setSaving(true)
     try {
       if (editing) {
@@ -125,6 +129,8 @@ export default function Timeslots() {
           loading={loading}
           keyExtractor={(t) => t.id}
           searchable
+          exportable
+          exportFilename="timeslots"
           searchKeys={[(t) => t.day, (t) => t.startTime, (t) => t.endTime, (t) => t.type]}
           onRowContextMenu={getContextItems}
         />

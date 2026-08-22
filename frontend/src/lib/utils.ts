@@ -2,10 +2,6 @@ export function cn(...classes: (string | undefined | false | null)[]): string {
   return classes.filter(Boolean).join(' ')
 }
 
-export function formatTime(time: string): string {
-  return time?.slice(0, 5) ?? ''
-}
-
 export const SCHOOL_DAYS = [
   'MONDAY',
   'TUESDAY',
@@ -13,6 +9,7 @@ export const SCHOOL_DAYS = [
   'THURSDAY',
   'FRIDAY',
   'SATURDAY',
+  'SUNDAY',
 ] as const
 
 export const DAY_LABELS: Record<string, string> = {
@@ -22,6 +19,7 @@ export const DAY_LABELS: Record<string, string> = {
   THURSDAY: 'Thu',
   FRIDAY: 'Fri',
   SATURDAY: 'Sat',
+  SUNDAY: 'Sun',
 }
 
 export const SCHOOL_DAY_OPTIONS = SCHOOL_DAYS.map((d) => ({

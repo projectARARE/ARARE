@@ -9,7 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public interface BuildingRepository extends JpaRepository<Building, Long> {
-    boolean existsByName(String name);
 
     // Remove from department_buildings join table before deleting a building. 
     @Transactional @Modifying

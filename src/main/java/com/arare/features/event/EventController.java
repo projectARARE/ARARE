@@ -1,5 +1,6 @@
 package com.arare.features.event;
 
+import com.arare.features.solvejob.SolveJobResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -36,13 +37,13 @@ public class EventController {
         return ResponseEntity.ok(service.findAll());
     }
 
-// Applies the event to an active schedule (marks blocked slots,
-// triggers partial re-optimization).
+// Applies the event to an active schedule (finds impacted sessions,
+// triggers asynchronous partial re-optimization).
     @PostMapping("/{eventId}/apply/{scheduleId}")
-    public ResponseEntity<Void> applyToSchedule(@PathVariable Long eventId,
+    public ResponseEntity<SolveJobResponse> applyToSchedule(@PathVariable Long eventId,
                                                 @PathVariable Long scheduleId) {
-        service.applyToSchedule(eventId, scheduleId);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(service.applyToSchedule(eventId, scheduleId));
     }
 
     @DeleteMapping("/{id}")

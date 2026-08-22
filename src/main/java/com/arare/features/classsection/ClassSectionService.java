@@ -4,6 +4,7 @@ import java.util.List;
 
 public interface ClassSectionService {
     ClassSectionResponse create(ClassSectionRequest request);
+    List<ClassSectionResponse> createMany(ClassSectionBulkRequest request);
     ClassSectionResponse update(Long id, ClassSectionRequest request);
     ClassSectionResponse findById(Long id);
     List<ClassSectionResponse> findAll();

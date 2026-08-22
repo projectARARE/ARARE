@@ -1,6 +1,7 @@
 package com.arare.features.subject;
 
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.department.Department;
 import com.arare.features.department.DepartmentRepository;
@@ -15,15 +16,15 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class SubjectServiceImpl implements SubjectService {
 
-    private final SubjectRepository repo;
-    private final DepartmentRepository departmentRepo;
-    private final ClassSessionRepository sessionRepo;
+private final SubjectRepository repo;
+private final DepartmentRepository departmentRepo;
+private final ClassSessionRepository sessionRepo;
+private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
     public SubjectResponse create(SubjectRequest req) {
-        Department dept = departmentRepo.findById(req.departmentId())
-            .orElseThrow(() -> new ResourceNotFoundException("Department", req.departmentId()));
+        Department dept = resolveDepartment(req.departmentId());
 
         Subject s = Subject.builder()
             .name(req.name())
@@ -46,8 +47,7 @@ public class SubjectServiceImpl implements SubjectService {
     @Transactional
     public SubjectResponse update(Long id, SubjectRequest req) {
         Subject s = findEntity(id);
-        Department dept = departmentRepo.findById(req.departmentId())
-            .orElseThrow(() -> new ResourceNotFoundException("Department", req.departmentId()));
+        Department dept = resolveDepartment(req.departmentId());
 
         s.setName(req.name());
         s.setCode(req.code());
@@ -71,12 +71,12 @@ public class SubjectServiceImpl implements SubjectService {
 
     @Override
     public List<SubjectResponse> findAll() {
-        return repo.findAll().stream().map(this::toResponse).toList();
+        return repo.findAllWithDetails().stream().map(this::toResponse).toList();
     }
 
     @Override
     public List<SubjectResponse> findByDepartment(Long departmentId) {
-        return repo.findByDepartmentId(departmentId).stream().map(this::toResponse).toList();
+        return repo.findByDepartmentIdWithDetails(departmentId).stream().map(this::toResponse).toList();
     }
 
     @Override
@@ -84,6 +84,7 @@ public class SubjectServiceImpl implements SubjectService {
     public void delete(Long id) {
         findEntity(id);
         sessionRepo.deleteBySubjectId(id);
+        cascadeDeletionService.purgePreAllocationsForSubject(id);
         repo.removeTeacherAssociations(id);  // Clean up teacher_subjects join table
         repo.deleteById(id);
     }
@@ -92,10 +93,23 @@ public class SubjectServiceImpl implements SubjectService {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Subject", id));
     }
 
+    // A null departmentId creates an institute-wide subject (no owning
+    // department), offered to specific batches via SubjectOffering.
+    private Department resolveDepartment(Long departmentId) {
+        if (departmentId == null) {
+            return null;
+        }
+        return departmentRepo.findById(departmentId)
+            .orElseThrow(() -> new ResourceNotFoundException("Department", departmentId));
+    }
+
     private SubjectResponse toResponse(Subject s) {
         return new SubjectResponse(
             s.getId(), s.getName(), s.getCode(),
-            s.getDepartment().getId(), s.getDepartment().getName(),
+            s.getDepartment() != null ? s.getDepartment().getId() : null,
+            s.getDepartment() != null ? s.getDepartment().getName() : null,
+            s.getDepartment() != null && s.getDepartment().getInstitute() != null
+                ? s.getDepartment().getInstitute().getId() : null,
             s.getWeeklyHours(), s.getChunkHours(),
             s.getRoomTypeRequired(), s.getLabSubtypeRequired(),
             s.isLab(), s.isRequiresTeacher(), s.isRequiresRoom(),

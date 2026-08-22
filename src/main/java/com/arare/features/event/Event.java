@@ -9,6 +9,8 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -58,6 +60,7 @@ public class Event extends BaseEntity {
         joinColumns = @JoinColumn(name = "event_id"),
         inverseJoinColumns = @JoinColumn(name = "room_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Room> affectedRooms = new ArrayList<>();
 
@@ -68,6 +71,7 @@ public class Event extends BaseEntity {
         joinColumns = @JoinColumn(name = "event_id"),
         inverseJoinColumns = @JoinColumn(name = "teacher_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Teacher> affectedTeachers = new ArrayList<>();
 
@@ -78,6 +82,7 @@ public class Event extends BaseEntity {
         joinColumns = @JoinColumn(name = "event_id"),
         inverseJoinColumns = @JoinColumn(name = "timeslot_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Timeslot> affectedTimeslots = new ArrayList<>();
 

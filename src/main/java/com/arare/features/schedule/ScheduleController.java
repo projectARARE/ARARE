@@ -5,12 +5,10 @@ import com.arare.features.impact.DisruptionRequest;
 import com.arare.features.impact.DisruptionResponse;
 import com.arare.features.impact.DisruptionService;
 import com.arare.features.solver.ScoreExplanationResponse;
+import com.arare.features.solvejob.SolveJobResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,12 +22,13 @@ public class ScheduleController {
     private final ScheduleService          service;
     private final DisruptionService        disruptionService;
     private final TimetableExportService   exportService;
-    private final TimetableCalendarExportService calendarExportService;
+    private final PdfExportService         pdfExportService;
+    private final ExcelExportService       excelExportService;
     private final FeasibilityCheckService  feasibilityCheckService;
 
     @PostMapping("/generate")
-    public ResponseEntity<ScheduleResponse> generate(@Valid @RequestBody ScheduleRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.generate(req));
+    public ResponseEntity<SolveJobResponse> generate(@Valid @RequestBody ScheduleRequest req) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.generate(req));
     }
 
     @GetMapping("/{id}")
@@ -42,12 +41,23 @@ public class ScheduleController {
         return ResponseEntity.ok(service.findAll());
     }
 
+    @PostMapping("/{id}/activate")
+    public ResponseEntity<ScheduleResponse> activate(@PathVariable Long id) {
+        return ResponseEntity.ok(service.activate(id));
+    }
+
+    @PostMapping("/{id}/archive")
+    public ResponseEntity<ScheduleResponse> archive(@PathVariable Long id) {
+        return ResponseEntity.ok(service.archive(id));
+    }
+
     @PostMapping("/{id}/partial-resolve")
-    public ResponseEntity<ScheduleResponse> partialResolve(
+    public ResponseEntity<SolveJobResponse> partialResolve(
         @PathVariable Long id,
-        @RequestBody List<Long> impactedSessionIds
+        @Valid @RequestBody PartialResolveRequest request
     ) {
-        return ResponseEntity.ok(service.partialResolve(id, impactedSessionIds));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+            .body(service.partialResolve(id, request.impactedSessionIds()));
     }
 
     @GetMapping("/{id}/score-explanation")
@@ -87,50 +97,49 @@ public class ScheduleController {
     }
 
     @PostMapping("/{id}/disruption/apply")
-    public ResponseEntity<ScheduleResponse> applyDisruption(
+    public ResponseEntity<SolveJobResponse> applyDisruption(
             @PathVariable Long id,
             @Valid @RequestBody DisruptionRequest request) {
-        return ResponseEntity.ok(disruptionService.applyDisruption(id, request));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+            .body(disruptionService.applyDisruption(id, request));
     }
+
     @GetMapping("/{id}/export/csv")
     public ResponseEntity<byte[]> exportCsv(@PathVariable Long id) {
         byte[] csv = exportService.exportCsv(id);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
-        headers.setContentDisposition(
-            ContentDisposition.attachment().filename("timetable-" + id + ".csv").build());
-        return new ResponseEntity<>(csv, headers, HttpStatus.OK);
+        return ResponseEntity.ok()
+            .header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".csv\"")
+            .body(csv);
     }
 
-    @GetMapping(value = "/ical/teacher/{teacherId}", produces = "text/calendar; charset=UTF-8")
-    public ResponseEntity<byte[]> exportTeacherIcal(
-            @PathVariable Long teacherId,
-            @RequestParam(required = false) Long scheduleId
-    ) {
-        byte[] ics = calendarExportService.exportTeacherCalendar(teacherId, scheduleId);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType("text/calendar; charset=UTF-8"));
-        headers.setContentDisposition(
-            ContentDisposition.inline().filename("teacher-" + teacherId + ".ics").build());
-        return new ResponseEntity<>(ics, headers, HttpStatus.OK);
+    @GetMapping("/{id}/export/pdf")
+    public ResponseEntity<byte[]> exportPdf(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "ALL") PdfExportService.View view,
+            @RequestParam(required = false) Long entityId) {
+        byte[] pdf = pdfExportService.exportPdf(id, view, entityId);
+        return ResponseEntity.ok()
+            .header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".pdf\"")
+            .contentType(org.springframework.http.MediaType.APPLICATION_PDF)
+            .body(pdf);
     }
 
-    @GetMapping(value = "/ical/batch/{batchId}", produces = "text/calendar; charset=UTF-8")
-    public ResponseEntity<byte[]> exportBatchIcal(
-            @PathVariable Long batchId,
-            @RequestParam(required = false) Long scheduleId
-    ) {
-        byte[] ics = calendarExportService.exportBatchCalendar(batchId, scheduleId);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType("text/calendar; charset=UTF-8"));
-        headers.setContentDisposition(
-            ContentDisposition.inline().filename("batch-" + batchId + ".ics").build());
-        return new ResponseEntity<>(ics, headers, HttpStatus.OK);
+    @GetMapping("/{id}/export/excel")
+    public ResponseEntity<byte[]> exportExcel(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "ALL") ExcelExportService.View view,
+            @RequestParam(required = false) Long entityId) {
+        byte[] excel = excelExportService.exportExcel(id, view, entityId);
+        return ResponseEntity.ok()
+            .header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".xlsx\"")
+            .contentType(org.springframework.http.MediaType
+                .parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .body(excel);
     }
 
     @PostMapping("/feasibility-check")
     public ResponseEntity<FeasibilityCheckResult> checkFeasibility(
-            @RequestBody ScheduleRequest req) {
+            @Valid @RequestBody ScheduleRequest req) {
         return ResponseEntity.ok(feasibilityCheckService.check(req));
     }
 }

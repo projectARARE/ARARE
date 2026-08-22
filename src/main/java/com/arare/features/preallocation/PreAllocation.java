@@ -50,8 +50,10 @@ public class PreAllocation extends BaseEntity {
     @JoinColumn(name = "room_id")
     private Room room;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "timeslot_id", nullable = false)
+    // Fixed timeslot; null when only the teacher (and optionally the room) is
+    // pinned and the solver is free to pick a compatible slot.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "timeslot_id")
     private Timeslot timeslot;
 
 // When true, the solver cannot override this assignment.
@@ -63,8 +65,8 @@ public class PreAllocation extends BaseEntity {
     @PrePersist
     @PreUpdate
     private void validateInvariant() {
-        if (batch == null || subject == null || schedule == null || timeslot == null) {
-            throw new IllegalStateException("PreAllocation requires schedule, batch, subject, and timeslot.");
+        if (batch == null || subject == null || schedule == null) {
+            throw new IllegalStateException("PreAllocation requires schedule, batch, and subject.");
         }
     }
 }

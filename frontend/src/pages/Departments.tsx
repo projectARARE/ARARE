@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Table, ConfirmDialog } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, ConfirmDialog } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
-import { departmentApi, buildingApi } from '../services/api'
-import type { Department, DepartmentRequest, Building } from '../types'
+import { departmentApi, buildingApi, instituteApi } from '../services/api'
+import type { Department, DepartmentRequest, Building, Institute } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
-const EMPTY: DepartmentRequest = { name: '', code: '', buildingIds: [] }
+const EMPTY: DepartmentRequest = { name: '', code: '', instituteId: 0, buildingIds: [] }
 
 export default function Departments() {
   const { toast } = useToast()
   const [items, setItems] = useState<Department[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [institutes, setInstitutes] = useState<Institute[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Department | null>(null)
@@ -23,24 +24,30 @@ export default function Departments() {
 
   const load = () => {
     setLoading(true)
-    Promise.allSettled([departmentApi.getAll(), buildingApi.getAll()])
-      .then(([deps, bldgs]) => {
+    Promise.allSettled([departmentApi.getAll(), buildingApi.getAll(), instituteApi.getAll()])
+      .then(([deps, bldgs, insts]) => {
         if (deps.status === 'fulfilled') setItems(deps.value)
         if (bldgs.status === 'fulfilled') setBuildings(bldgs.value)
-        const failed = [deps, bldgs].filter((x) => x.status === 'rejected').length
-        if (failed > 0) toast.error(`Some department data failed to refresh (${failed}/2)`)
+        if (insts.status === 'fulfilled') setInstitutes(insts.value)
+        const failed = [deps, bldgs, insts].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some department data failed to refresh (${failed}/3)`)
       })
       .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
 
-  const openAdd = () => { setEditing(null); setForm(EMPTY); setOpen(true) }
+  const openAdd = () => {
+    setEditing(null)
+    setForm({ ...EMPTY, instituteId: institutes[0]?.id ?? 0 })
+    setOpen(true)
+  }
   const openEdit = (d: Department) => {
     setEditing(d)
     setForm({
       name: d.name,
       code: d.code,
+      instituteId: d.instituteId ?? institutes[0]?.id ?? 0,
       buildingIds: (d.buildingsAllowed ?? []).map((b) => b.id),
     })
     setOpen(true)
@@ -49,6 +56,7 @@ export default function Departments() {
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('Name is required'); return }
     if (!form.code.trim()) { toast.error('Code is required'); return }
+    if (!form.instituteId) { toast.error('Please select an institute'); return }
     setSaving(true)
     try {
       if (editing) {
@@ -93,6 +101,8 @@ export default function Departments() {
     })
   }
 
+  const instituteOptions = institutes.map((i) => ({ value: i.id, label: i.name }))
+
   const columns: Column<Department>[] = [
     {
       key: 'name', header: 'Name',
@@ -103,6 +113,11 @@ export default function Departments() {
       key: 'code', header: 'Code',
       sortValue: (d) => d.code,
       render: (d) => <code className="bg-gray-100 px-1 rounded text-xs">{d.code}</code>,
+    },
+    {
+      key: 'institute', header: 'Institute',
+      sortValue: (d) => d.instituteName ?? '',
+      render: (d) => d.instituteName ?? <span className="text-gray-400">—</span>,
     },
     {
       key: 'buildings', header: 'Allowed Buildings',
@@ -139,6 +154,8 @@ export default function Departments() {
           loading={loading}
           keyExtractor={(d) => d.id}
           searchable
+          exportable
+          exportFilename="departments"
           searchKeys={[(d) => d.name, (d) => d.code]}
           onRowContextMenu={getContextItems}
         />
@@ -158,6 +175,7 @@ export default function Departments() {
         <div className="space-y-4">
           <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Computer Science" />
           <Input label="Code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="CS" helpText="Short identifier used in scheduling (e.g. CS, EE, ME)" />
+          <Select label="Institute" value={form.instituteId} onChange={(e) => setForm({ ...form, instituteId: +e.target.value })} options={instituteOptions} placeholder="Select institute…" />
 
           <div>
             <p className="block text-sm font-medium text-gray-700 mb-2">

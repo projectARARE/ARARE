@@ -47,9 +47,11 @@ public class Subject extends BaseEntity {
     @Column
     private String code;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "department_id", nullable = false)
+    // Owning department, or null for institute-wide subjects (a subject shared
+    // across every department/institute — e.g. Environmental Studies, Yoga).
+    // Institute-wide subjects can be offered to any batch via SubjectOffering.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
     private Department department;
 
     // Total contact load per week, expressed in slot units (e.g. 4). 
@@ -116,6 +118,9 @@ public class Subject extends BaseEntity {
             }
         }
 
+        if (chunkHours <= 0) {
+            throw new IllegalStateException("chunkHours must be > 0 for subject " + name);
+        }
         if (weeklyHours < chunkHours) {
             throw new IllegalStateException("weeklyHours must be >= chunkHours for subject " + name);
         }

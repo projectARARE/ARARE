@@ -6,14 +6,23 @@ interface AvailabilityPainterProps {
   selectedIds: number[]
   onChange: (ids: number[]) => void
   mode?: 'available' | 'blocked'
+  days?: SchoolDay[]
 }
 
-const DAY_ORDER: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAY_ORDER: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
-export default function AvailabilityPainter({ timeslots, selectedIds, onChange, mode = 'available' }: AvailabilityPainterProps) {
+export default function AvailabilityPainter({ timeslots, selectedIds, onChange, mode = 'available', days }: AvailabilityPainterProps) {
   const [painting, setPainting] = useState(false)
   const [paintValue, setPaintValue] = useState<boolean>(true)
   const touchedRef = useRef<Set<number>>(new Set())
+
+  const visibleDays = useMemo(() => {
+    if (days && days.length > 0) return days
+    const present = new Set<SchoolDay>()
+    timeslots.forEach((ts) => present.add(ts.day))
+    if (present.size > 0) return DAY_ORDER.filter((d) => present.has(d))
+    return DAY_ORDER
+  }, [days, timeslots])
 
   const classSlots = useMemo(() =>
     timeslots
@@ -28,7 +37,7 @@ export default function AvailabilityPainter({ timeslots, selectedIds, onChange, 
 
   const slotsByDay = useMemo(() => {
     const map: Record<SchoolDay, Timeslot[]> = {
-      MONDAY: [], TUESDAY: [], WEDNESDAY: [], THURSDAY: [], FRIDAY: [], SATURDAY: [],
+      MONDAY: [], TUESDAY: [], WEDNESDAY: [], THURSDAY: [], FRIDAY: [], SATURDAY: [], SUNDAY: [],
     }
     for (const slot of classSlots) map[slot.day].push(slot)
     return map
@@ -63,7 +72,7 @@ export default function AvailabilityPainter({ timeslots, selectedIds, onChange, 
           <thead>
             <tr className="bg-slate-50">
               <th className="border border-slate-200 px-2 py-2 text-left">Time</th>
-              {DAY_ORDER.map((day) => (
+              {visibleDays.map((day) => (
                 <th key={day} className="border border-slate-200 px-2 py-2">{day.slice(0, 3)}</th>
               ))}
             </tr>
@@ -74,9 +83,9 @@ export default function AvailabilityPainter({ timeslots, selectedIds, onChange, 
               return (
                 <tr key={timeKey}>
                   <td className="border border-slate-200 px-2 py-1.5 bg-slate-50">{start} - {end}</td>
-                  {DAY_ORDER.map((day) => {
+                  {visibleDays.map((day) => {
                     const slot = slotsByDay[day].find((s) => `${s.startTime}-${s.endTime}` === timeKey)
-                    if (!slot) return <td key={day} className="border border-slate-200 bg-slate-100" />
+                    if (!slot) return <td key={day} title="No class timeslot configured for this time." className="border border-slate-200 bg-slate-100" />
                     const active = selectedIds.includes(slot.id)
                     return (
                       <td

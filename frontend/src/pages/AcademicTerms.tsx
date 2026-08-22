@@ -177,6 +177,8 @@ export default function AcademicTerms() {
           loading={loading}
           keyExtractor={(t) => t.id}
           searchable
+          exportable
+          exportFilename="academic-terms"
           searchKeys={[(t) => t.name, (t) => t.academicYear ?? '', (t) => t.status]}
           onRowContextMenu={getContextItems}
         />

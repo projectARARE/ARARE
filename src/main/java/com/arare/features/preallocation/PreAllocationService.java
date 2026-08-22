@@ -7,4 +7,5 @@ public interface PreAllocationService {
     PreAllocationResponse findById(Long id);
     List<PreAllocationResponse> findBySchedule(Long scheduleId);
     void delete(Long id);
+    List<PreAllocationResponse> createAll(Long scheduleId, List<PreAllocationSpec> specs);
 }

@@ -9,8 +9,8 @@ import jakarta.validation.constraints.NotNull;
 // Request DTO: create or update a Subject. 
 public record SubjectRequest(
     @NotBlank String name,
-    String code,
-    @NotNull Long departmentId,
+    @NotBlank String code,
+    Long departmentId,
     @Min(1) int weeklyHours,
     @Min(1) int chunkHours,
     @NotNull RoomType roomTypeRequired,

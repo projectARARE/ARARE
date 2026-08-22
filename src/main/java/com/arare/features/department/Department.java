@@ -2,6 +2,7 @@ package com.arare.features.department;
 
 import com.arare.common.BaseEntity;
 import com.arare.features.building.Building;
+import com.arare.features.institute.Institute;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -32,6 +33,13 @@ public class Department extends BaseEntity {
     @Pattern(regexp = "^[A-Za-z0-9_-]+$")
     @Column(nullable = false, unique = true)
     private String code;
+
+    // Constituent institute/college this department belongs to. Every
+    // department has exactly one home institute; a department's subjects and
+    // batches are scoped to that institute for scheduling.
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "institute_id", nullable = false)
+    private Institute institute;
 
 // Buildings this department is allowed to schedule sessions in.
 // Soft constraint: sessions should prefer these buildings.

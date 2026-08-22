@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog, SearchableSelect } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { roomApi, buildingApi, timeslotApi } from '../services/api'
@@ -12,7 +12,7 @@ const LAB_SUBTYPES: LabSubtype[] = [
   'MECHANICAL_LAB', 'CIVIL_LAB', 'NETWORK_LAB', 'GENERAL_LAB',
 ]
 
-const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
 const EMPTY: RoomRequest = { buildingId: 0, roomNumber: '', type: 'LECTURE', capacity: 30, availableTimeslotIds: [] }
 
@@ -159,6 +159,8 @@ export default function Rooms() {
           loading={loading}
           keyExtractor={(r) => r.id}
           searchable
+          exportable
+          exportFilename="rooms"
           searchKeys={[(r) => r.roomNumber, (r) => r.buildingName ?? '']}
           onRowContextMenu={getContextItems}
         />
@@ -176,7 +178,7 @@ export default function Rooms() {
           <div className="grid grid-cols-2 gap-4">
             <Input label="Room Number" value={form.roomNumber} onChange={(e) => setForm({ ...form, roomNumber: e.target.value })} placeholder="101" />
             <Input label="Capacity" type="number" min={1} value={form.capacity} onChange={(e) => setForm({ ...form, capacity: +e.target.value })} />
-            <Select label="Building" value={form.buildingId} onChange={(e) => setForm({ ...form, buildingId: +e.target.value })} options={bldgOptions} placeholder="Select building…" />
+            <SearchableSelect label="Building" value={form.buildingId || null} onChange={(v) => setForm({ ...form, buildingId: v == null ? 0 : +v })} options={bldgOptions} placeholder="Select building…" allowClear />
             <Select label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as RoomType, labSubtype: undefined })} options={typeOptions} />
           </div>
           {form.type === 'LAB' && (
