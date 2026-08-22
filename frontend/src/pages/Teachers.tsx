@@ -189,6 +189,8 @@ export default function Teachers() {
           loading={loading}
           keyExtractor={(t) => t.id}
           searchable
+          exportable
+          exportFilename="teachers"
           searchKeys={[(t) => t.name, (t) => getTeacherSubjectNames(t).join(' ')]}
           onRowContextMenu={getContextItems}
         />

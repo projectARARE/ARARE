@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Card, Select } from '../components/ui'
 import { scheduleApi } from '../services/api'
 import type { Schedule, ClassSession } from '../types'
+import { useToast } from '../contexts/ToastContext'
 
 function parseScore(score?: string) {
   if (!score) return { hard: 0, medium: 0, soft: 0 }
@@ -24,27 +25,45 @@ function metricsFromSessions(sessions: ClassSession[]) {
 }
 
 export default function WhatIfComparison() {
+  const { toast } = useToast()
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [aId, setAId] = useState<number | undefined>()
   const [bId, setBId] = useState<number | undefined>()
   const [aSessions, setASessions] = useState<ClassSession[]>([])
   const [bSessions, setBSessions] = useState<ClassSession[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadingSessions, setLoadingSessions] = useState(false)
 
   useEffect(() => {
     scheduleApi.getAll().then((res) => {
       setSchedules(res)
       if (res.length > 0) setAId(res[0].id)
       if (res.length > 1) setBId(res[1].id)
-    }).catch(() => setSchedules([]))
+    }).catch((e) => {
+      setSchedules([])
+      toast.error(e instanceof Error ? e.message : 'Failed to load schedules')
+    }).finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
     if (!aId) return
-    scheduleApi.getSessions(aId).then(setASessions).catch(() => setASessions([]))
+    setLoadingSessions(true)
+    scheduleApi.getSessions(aId)
+      .then(setASessions)
+      .catch((e) => {
+        setASessions([])
+        toast.error(e instanceof Error ? e.message : 'Failed to load Schedule A sessions')
+      })
+      .finally(() => setLoadingSessions(false))
   }, [aId])
   useEffect(() => {
     if (!bId) return
-    scheduleApi.getSessions(bId).then(setBSessions).catch(() => setBSessions([]))
+    scheduleApi.getSessions(bId)
+      .then(setBSessions)
+      .catch((e) => {
+        setBSessions([])
+        toast.error(e instanceof Error ? e.message : 'Failed to load Schedule B sessions')
+      })
   }, [bId])
 
   const aSchedule = schedules.find((s) => s.id === aId)
@@ -77,23 +96,41 @@ export default function WhatIfComparison() {
   return (
     <div className="space-y-4">
       <Card title="What-If Comparison" description="Compare two generated schedules side-by-side.">
-        <div className="grid md:grid-cols-2 gap-3">
-          <Select
-            label="Schedule A"
-            value={aId ?? ''}
-            onChange={(e) => setAId(+e.target.value)}
-            options={schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))}
-          />
-          <Select
-            label="Schedule B"
-            value={bId ?? ''}
-            onChange={(e) => setBId(+e.target.value)}
-            options={schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))}
-          />
-        </div>
+        {loading ? (
+          <div className="h-16 bg-gray-100 rounded-lg animate-pulse" />
+        ) : schedules.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-gray-500">No schedules available. Generate a schedule first.</p>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-3">
+            <Select
+              label="Schedule A"
+              value={aId ?? ''}
+              onChange={(e) => setAId(+e.target.value)}
+              options={schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))}
+            />
+            <Select
+              label="Schedule B"
+              value={bId ?? ''}
+              onChange={(e) => setBId(+e.target.value)}
+              options={schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))}
+            />
+            {schedules.length === 1 && (
+              <p className="text-sm text-gray-500 md:col-span-2">
+                Only one schedule exists — pick a second to compare, or generate a new one.
+              </p>
+            )}
+          </div>
+        )}
       </Card>
 
       <Card>
+        {loadingSessions ? (
+          <div className="h-48 bg-gray-100 rounded-lg animate-pulse" />
+        ) : schedules.length === 0 ? (
+          <div className="text-center py-8 text-sm text-gray-500">Nothing to compare yet.</div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm border-collapse">
             <thead>
@@ -116,6 +153,7 @@ export default function WhatIfComparison() {
             </tbody>
           </table>
         </div>
+        )}
       </Card>
     </div>
   )

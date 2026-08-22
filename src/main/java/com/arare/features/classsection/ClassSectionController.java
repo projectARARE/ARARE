@@ -20,6 +20,11 @@ public class ClassSectionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(req));
     }
 
+    @PostMapping("/bulk")
+    public ResponseEntity<List<ClassSectionResponse>> createMany(@Valid @RequestBody ClassSectionBulkRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.createMany(req));
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<ClassSectionResponse> update(@PathVariable Long id,
                                                        @Valid @RequestBody ClassSectionRequest req) {

@@ -98,4 +98,81 @@ class PreAllocationApplierTest {
         assertNull(session.getTeacher());
         assertNull(session.getRoom());
     }
+
+    @Test
+    void skipsFullPinForImpactedSession() {
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(1L);
+
+        Subject subject = Subject.builder().name("Physics Lab").isLab(true).build();
+        subject.setId(2L);
+        Teacher teacher = Teacher.builder().name("Dr. X").build();
+        teacher.setId(3L);
+        Room room = Room.builder().roomNumber("L-101").build();
+        room.setId(4L);
+        Timeslot timeslot = new Timeslot();
+        timeslot.setId(6L);
+
+        ClassSession session = ClassSession.builder()
+            .id(10L)
+            .subject(subject)
+            .batch(batch)
+            .duration(1)
+            .isLocked(false)
+            .build();
+
+        PreAllocation pa = PreAllocation.builder()
+            .batch(batch)
+            .subject(subject)
+            .teacher(teacher)
+            .room(room)
+            .timeslot(timeslot)
+            .locked(true)
+            .build();
+        pa.setId(20L);
+
+        applier.apply(List.of(session), List.of(pa), List.of(10L));
+
+        // Impacted session must stay movable: not locked, not pinned, no facts.
+        assertFalse(session.isLocked());
+        assertNull(session.getTeacher());
+        assertNull(session.getRoom());
+    }
+
+    @Test
+    void skipsPartialPinForImpactedSession() {
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(1L);
+
+        Subject subject = Subject.builder().name("Physics").build();
+        subject.setId(2L);
+        Teacher teacher = Teacher.builder().name("Dr. X").build();
+        teacher.setId(3L);
+        Room room = Room.builder().roomNumber("L-101").build();
+        room.setId(4L);
+
+        ClassSession session = ClassSession.builder()
+            .id(10L)
+            .subject(subject)
+            .batch(batch)
+            .duration(1)
+            .isLocked(false)
+            .build();
+
+        PreAllocation pa = PreAllocation.builder()
+            .batch(batch)
+            .subject(subject)
+            .teacher(teacher)
+            .room(room)
+            .timeslot(null)
+            .locked(true)
+            .build();
+        pa.setId(20L);
+
+        var facts = applier.apply(List.of(session), List.of(pa), List.of(10L));
+
+        assertTrue(facts.isEmpty());
+        assertNull(session.getTeacher());
+        assertNull(session.getRoom());
+    }
 }

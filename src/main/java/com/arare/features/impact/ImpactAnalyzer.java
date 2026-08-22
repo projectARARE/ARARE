@@ -103,9 +103,12 @@ public class ImpactAnalyzer {
 
 private boolean matchesDay(ClassSession s, DisruptionRequest event) {
         if (event.date() == null) {
-            // No date provided: only match sessions with no timeslot assigned.
-            // This prevents an empty event from flooding the entire schedule.
-            return s.getTimeslot() == null;
+            // No date provided: the disruption has no defined scope and therefore
+            // matches nothing. This keeps the preview in sync with the solver
+            // facts (a dayless teacher/room block produces no fact), so a
+            // dateless disruption reports zero impact and degrades to a no-op
+            // instead of claiming impact and then doing nothing on re-solve.
+            return false;
         }
         String disruptionDay = event.date().getDayOfWeek().name(); // e.g. "MONDAY"
         return s.getTimeslot() != null && s.getTimeslot().getDay().name().equals(disruptionDay);

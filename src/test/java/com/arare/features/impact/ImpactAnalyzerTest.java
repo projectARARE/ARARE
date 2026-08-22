@@ -121,4 +121,31 @@ class ImpactAnalyzerTest {
         Set<Long> impacted = analyzer.analyze(dateless, graph, List.of(s1, s2));
         assertTrue(impacted.isEmpty(), "dateless special event must not flood the schedule");
     }
+
+    /**
+     * M5 regression: a dateless TEACHER_UNAVAILABLE must report ZERO impact.
+     * It has no defined scope (which day is the teacher out?), so the preview
+     * would claim sessions were hit while the solver received no fact to move
+     * anything — an apply that promised a re-solve and then did nothing.
+     */
+    @Test
+    void datelessTeacherUnavailableReportsNoImpact() {
+        Teacher teacher = Teacher.builder().name("T").build();
+        teacher.setId(1L);
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(2L);
+        Timeslot mon = slot(100L, SchoolDay.MONDAY, LocalTime.of(9, 0));
+
+        ClassSession s1 = session(1L, teacher, batch, mon);
+        ClassSession unassigned = ClassSession.builder()
+            .id(3L).teacher(teacher).batch(batch).timeslot(null)
+            .duration(1).isLocked(false).build();
+
+        DependencyGraph graph = builder.build(List.of(s1, unassigned));
+        DisruptionRequest dateless = new DisruptionRequest(
+            DisruptionType.TEACHER_UNAVAILABLE, teacher.getId(), null, "no scope");
+
+        Set<Long> impacted = analyzer.analyze(dateless, graph, List.of(s1, unassigned));
+        assertTrue(impacted.isEmpty(), "dateless teacher disruption must not report impact");
+    }
 }

@@ -71,12 +71,12 @@ public class RoomServiceImpl implements RoomService {
 
     @Override
     public List<RoomResponse> findAll() {
-        return repo.findAll().stream().map(this::toResponse).toList();
+        return repo.findAllWithDetails().stream().map(this::toResponse).toList();
     }
 
     @Override
     public List<RoomResponse> findByBuilding(Long buildingId) {
-        return repo.findByBuildingId(buildingId).stream().map(this::toResponse).toList();
+        return repo.findByBuildingIdWithDetails(buildingId).stream().map(this::toResponse).toList();
     }
 
     @Override

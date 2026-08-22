@@ -82,6 +82,27 @@ public class TimetableSolution {
     @ProblemFactCollectionProperty
     private List<UniversityConfig> configs;
 
+    // Teacher/room pins from pre-allocations that leave the timeslot to the
+    // solver (see {@link PreAllocationConstraintFact}). 
+    @ProblemFactCollectionProperty
+    private List<PreAllocationConstraintFact> preAllocationFacts;
+
+    // (teacher, day, slot-range) already booked in other ACTIVE schedules.
+    @ProblemFactCollectionProperty
+    private List<TeacherBusyInterval> teacherBusyIntervals;
+
+    // Assignments from a parent schedule, used to minimise disruption on
+    // regenerate.
+    @ProblemFactCollectionProperty
+    private List<PreviousAssignment> previousAssignments;
+
+    // Disruptions being repaired by a partial resolve. The solver is forced to
+    // move sessions out of the blocked teacher/room/timeslot/day, so "apply
+    // disruption" actually changes the timetable instead of reporting success
+    // while keeping everything in place.
+    @ProblemFactCollectionProperty
+    private List<DisruptionConstraintFact> disruptionFacts = List.of();
+
     // ------------------------------------------------------------------
     // Planning Entities – the solver assigns teacher/room/timeslot here
     // ------------------------------------------------------------------

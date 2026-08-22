@@ -38,18 +38,37 @@ export interface BuildingRequest {
   location?: string
 }
 
+// ─── Institute (constituent college within the university) ───────────────────
+
+export interface Institute {
+  id: number
+  name: string
+  code: string
+  description?: string
+  departmentCount: number
+  createdAt?: string
+}
+export interface InstituteRequest {
+  name: string
+  code: string
+  description?: string
+}
+
 // ─── Department ──────────────────────────────────────────────────────────────
 
 export interface Department {
   id: number
   name: string
   code: string
+  instituteId?: number
+  instituteName?: string
   buildingsAllowed?: Building[]
   createdAt?: string
 }
 export interface DepartmentRequest {
   name: string
   code: string
+  instituteId: number
   buildingIds?: number[]
 }
 
@@ -109,8 +128,9 @@ export interface Subject {
   id: number
   name: string
   code: string
-  departmentId: number
+  departmentId?: number
   departmentName?: string
+  instituteId?: number
   weeklyHours: number
   chunkHours: number
   roomTypeRequired: RoomType
@@ -125,7 +145,7 @@ export interface Subject {
 export interface SubjectRequest {
   name: string
   code: string
-  departmentId: number
+  departmentId?: number
   weeklyHours: number
   chunkHours: number
   roomTypeRequired?: RoomType
@@ -137,17 +157,44 @@ export interface SubjectRequest {
   maxSessionsPerDay: number
 }
 
+// ─── Subject Offering ─────────────────────────────────────────────────────────
+
+export interface SubjectOffering {
+  id: number
+  subjectId: number
+  subjectCode?: string
+  subjectName?: string
+  batchId: number
+  batchLabel?: string
+  sectionId?: number
+  sectionLabel?: string
+  weeklyHours?: number
+  elective: boolean
+}
+export interface SubjectOfferingRequest {
+  subjectId: number
+  batchId?: number
+  sectionId?: number
+  weeklyHours?: number
+  elective?: boolean
+}
+
 // ─── Batch ───────────────────────────────────────────────────────────────────
 
 export interface Batch {
   id: number
   departmentId: number
   departmentName?: string
+  instituteId?: number
   year: number
   section: string
   studentCount: number
   workingDays?: SchoolDay[]
   preferredFreeDay?: SchoolDay
+  homeRoomId?: number
+  homeRoomNumber?: string
+  subjectIds?: number[]
+  subjectNames?: string[]
   createdAt?: string
 }
 export interface BatchRequest {
@@ -157,6 +204,8 @@ export interface BatchRequest {
   studentCount: number
   workingDays?: SchoolDay[]
   preferredFreeDay?: SchoolDay
+  homeRoomId?: number
+  subjectIds?: number[]
 }
 
 // ─── ClassSection ────────────────────────────────────────────────────────────
@@ -167,11 +216,14 @@ export interface ClassSection {
   batchName?: string
   label: string
   size: number
+  subjectIds?: number[]
+  subjectNames?: string[]
 }
 export interface ClassSectionRequest {
   batchId: number
   label: string
   size: number
+  subjectIds?: number[]
 }
 
 // ─── Timeslot ────────────────────────────────────────────────────────────────
@@ -261,17 +313,85 @@ export interface Schedule {
   scoreExplanation?: string
   createdAt?: string
   blockedDays?: SchoolDay[]
+  instituteId?: number
 }
 export interface ScheduleRequest {
   name: string
   scope: ScheduleScope
   parentScheduleId?: number
   departmentId?: number
+  instituteId?: number
   batchIds?: number[]
   teacherIds?: number[]
   roomIds?: number[]
   solvingTimeSeconds?: number
   blockedDays?: SchoolDay[]
+  preAllocations?: PreAllocationSpec[]
+}
+
+// ─── Pre-Allocation (pre-assign teachers before solving) ──────────────────────
+
+export interface PreAllocationSpec {
+  batchId: number
+  subjectId: number
+  teacherId: number
+  roomId?: number
+  timeslotId?: number
+}
+
+export interface PreAllocationRequest {
+  scheduleId: number
+  batchId: number
+  subjectId: number
+  teacherId?: number
+  roomId?: number
+  timeslotId?: number
+  locked: boolean
+}
+
+export interface PreAllocation {
+  id: number
+  scheduleId: number
+  batchId: number
+  batchLabel?: string
+  subjectId: number
+  subjectName?: string
+  teacherId?: number
+  teacherName?: string
+  roomId?: number
+  roomNumber?: string
+  timeslotId?: number
+  day?: string
+  startTime?: string
+  locked: boolean
+}
+
+// ─── Teacher Assignment (term teaching allotment) ─────────────────────────────
+
+export interface TeacherAssignment {
+  id: number
+  teacherId: number
+  teacherName?: string
+  subjectId: number
+  subjectCode?: string
+  subjectName?: string
+  batchId?: number
+  batchLabel?: string
+  sectionId?: number
+  sectionLabel?: string
+  weeklyHours?: number
+  priority: number
+  notes?: string
+}
+
+export interface TeacherAssignmentRequest {
+  teacherId: number
+  subjectId: number
+  batchId?: number
+  sectionId?: number
+  weeklyHours?: number
+  priority?: number
+  notes?: string
 }
 
 // ─── Solve Job (async schedule generation) ────────────────────────────────────

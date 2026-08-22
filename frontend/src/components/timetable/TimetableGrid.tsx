@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Plus } from 'lucide-react'
 import type { ClassSession, Timeslot, SchoolDay } from '../../types'
 import SessionCell from './SessionCell'
 
@@ -28,12 +29,15 @@ interface TimetableGridProps {
   onSlotDragHover?: (slot: Timeslot | null) => void
   onSlotDrop?: (slot: Timeslot) => void
   onCellContextMenu?: (slot: Timeslot, x: number, y: number) => void
+  /** Quick-add affordance: show a "+" on empty cells and fire this on click */
+  onSlotAdd?: (slot: Timeslot) => void
   filterBatchId?: number
   filterTeacherId?: number
   filterRoomId?: number
   heatmapEnabled?: boolean
   heatBySessionId?: Record<number, { hard: number; soft: number; notes: string[] }>
   highlightedSessionIds?: Set<number>
+  preAllocatedSessionIds?: Set<number>
   dragPreview?: {
     slotId: number
     severity: 'hard' | 'soft' | 'clean'
@@ -55,12 +59,14 @@ export default function TimetableGrid({
   onSlotDragHover,
   onSlotDrop,
   onCellContextMenu,
+  onSlotAdd,
   filterBatchId,
   filterTeacherId,
   filterRoomId,
   heatmapEnabled = false,
   heatBySessionId = {},
   highlightedSessionIds,
+  preAllocatedSessionIds,
   dragPreview,
   onOrphanSessionsCount,
   blockedDays = [],
@@ -257,7 +263,7 @@ export default function TimetableGrid({
                   <td
                     key={day}
                     rowSpan={rowSpan}
-                    className={`border border-gray-200 px-2 py-2 align-top min-h-[60px] ${
+                    className={`group border border-gray-200 px-2 py-2 align-top min-h-[60px] ${
                       isBlockedDay ? 'bg-slate-200/50' : ''
                     }`}
                     title={isBlockedDay ? `${DAY_LABELS[day]} is blocked for this schedule` : undefined}
@@ -311,9 +317,21 @@ export default function TimetableGrid({
                             heatState={heatState}
                             inspectorNotes={heat.notes}
                             highlighted={highlightedSessionIds?.has(s.id) ?? false}
+                            preAllocated={preAllocatedSessionIds?.has(s.id) ?? false}
                           />
                         )
                       })}
+                      {!isBlockedDay && slot && cellSessions.length === 0 && !activePreview && onSlotAdd && (
+                        <button
+                          type="button"
+                          aria-label={`Add session at ${DAY_LABELS[day]} ${startTime}`}
+                          title="Add session here"
+                          onClick={() => onSlotAdd(slot)}
+                          className="hidden h-7 w-full items-center justify-center gap-1 rounded-md border border-dashed border-slate-300 text-[11px] font-medium text-slate-400 opacity-0 transition group-hover:flex group-hover:opacity-100 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:opacity-100"
+                        >
+                          <Plus size={12} /> Add
+                        </button>
+                      )}
                     </div>
                   </td>
                 )

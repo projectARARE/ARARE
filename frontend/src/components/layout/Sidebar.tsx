@@ -19,12 +19,18 @@ import {
   BarChart3,
   GitCompare,
   FileSpreadsheet,
+  UserCheck,
+  School,
+  BookCopy,
+  ClipboardList,
 } from 'lucide-react'
+import { useUiPreferences, type FeatureKey } from '../../contexts/UiPreferencesContext'
 
 interface NavItem {
   to: string
   icon: React.ComponentType<{ className?: string }>
   label: string
+  feature?: FeatureKey
 }
 
 interface NavGroup {
@@ -37,7 +43,7 @@ const nav: NavGroup[] = [
     group: 'Overview',
     items: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+      { to: '/analytics', icon: BarChart3, label: 'Analytics', feature: 'analytics' },
     ],
   },
   {
@@ -45,10 +51,11 @@ const nav: NavGroup[] = [
     items: [
       { to: '/schedule/generate', icon: CalendarPlus, label: 'Generate Schedule' },
       { to: '/schedule/history', icon: History, label: 'History' },
-      { to: '/what-if', icon: GitCompare, label: 'What-If Compare' },
-      { to: '/academic-terms', icon: CalendarDays, label: 'Academic Terms' },
-      { to: '/events', icon: CalendarX2, label: 'Events' },
-      { to: '/disruptions', icon: AlertTriangle, label: 'Disruptions' },
+      { to: '/sessions/manual', icon: ClipboardList, label: 'Manual Sessions', feature: 'manualSessions' },
+      { to: '/what-if', icon: GitCompare, label: 'What-If Compare', feature: 'whatIf' },
+      { to: '/academic-terms', icon: CalendarDays, label: 'Academic Terms', feature: 'academicTerms' },
+      { to: '/events', icon: CalendarX2, label: 'Events', feature: 'events' },
+      { to: '/disruptions', icon: AlertTriangle, label: 'Disruptions', feature: 'disruptions' },
     ],
   },
   {
@@ -62,10 +69,13 @@ const nav: NavGroup[] = [
   {
     group: 'Academics',
     items: [
+      { to: '/institutes', icon: School, label: 'Institutes' },
       { to: '/departments', icon: Layers, label: 'Departments' },
       { to: '/subjects', icon: BookOpen, label: 'Subjects' },
+      { to: '/offerings', icon: BookCopy, label: 'Subject Offerings' },
       { to: '/batches', icon: GraduationCap, label: 'Batches' },
       { to: '/sections', icon: UsersRound, label: 'Sections' },
+      { to: '/assignments', icon: UserCheck, label: 'Teacher Assignments' },
       { to: '/timeslots', icon: Clock, label: 'Timeslots' },
     ],
   },
@@ -73,12 +83,21 @@ const nav: NavGroup[] = [
     group: 'Configuration',
     items: [
       { to: '/config', icon: Settings, label: 'University Config' },
-      { to: '/import/csv', icon: FileSpreadsheet, label: 'Import / Export' },
+      { to: '/import/csv', icon: FileSpreadsheet, label: 'Import / Export', feature: 'importExport' },
     ],
   },
 ]
 
 export default function Sidebar() {
+  const { prefs } = useUiPreferences()
+
+  const visibleNav = nav
+    .map(({ group, items }) => ({
+      group,
+      items: items.filter((item) => !item.feature || prefs[item.feature]),
+    }))
+    .filter(({ items }) => items.length > 0)
+
   return (
     <aside className="w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0 overflow-y-auto">
       <div className="px-6 py-5 border-b border-gray-200 flex items-center gap-3">
@@ -93,7 +112,7 @@ export default function Sidebar() {
         </div>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-6">
-        {nav.map(({ group, items }) => (
+        {visibleNav.map(({ group, items }) => (
           <div key={group}>
             <p className="px-3 mb-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
               {group}

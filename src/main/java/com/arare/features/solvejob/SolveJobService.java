@@ -2,8 +2,10 @@ package com.arare.features.solvejob;
 
 import ai.timefold.solver.core.api.solver.Solver;
 import com.arare.exception.ResourceBusyException;
+import com.arare.exception.ResourceConflictException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.schedule.ScheduleRequest;
+import com.arare.features.solver.DisruptionConstraintFact;
 import com.arare.features.solver.TimetableSolution;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +43,7 @@ public class SolveJobService {
             .status(SolveJobStatus.QUEUED)
             .solvingTimeSeconds(req.solvingTimeSeconds())
             .departmentId(req.departmentId())
+            .instituteId(req.instituteId())
             .batchIdsCsv(join(req.batchIds()))
             .teacherIdsCsv(join(req.teacherIds()))
             .roomIdsCsv(join(req.roomIds()))
@@ -54,11 +57,21 @@ public class SolveJobService {
      * Creates a PARTIAL_RESOLVE job for an existing schedule.
      */
     public SolveJobResponse submitPartialResolve(Long scheduleId, List<Long> impactedSessionIds) {
+        return submitPartialResolve(scheduleId, impactedSessionIds, null);
+    }
+
+    /**
+     * Creates a PARTIAL_RESOLVE job for an existing schedule, carrying the
+     * disruption facts the solver must enforce while repairing the schedule.
+     */
+    public SolveJobResponse submitPartialResolve(
+            Long scheduleId, List<Long> impactedSessionIds, List<DisruptionConstraintFact> disruptionFacts) {
         SolveJob job = SolveJob.builder()
             .jobType(SolveJobType.PARTIAL_RESOLVE)
             .scheduleId(scheduleId)
             .status(SolveJobStatus.QUEUED)
             .impactedSessionIdsCsv(join(impactedSessionIds))
+            .disruptionFactsCsv(DisruptionConstraintFact.encode(disruptionFacts))
             .build();
         job = jobRepo.save(job);
         scheduleWorkerAfterCommit(job.getId());
@@ -98,22 +111,30 @@ public class SolveJobService {
 
     public SolveJobResponse cancel(Long jobId) {
         SolveJob job = find(jobId);
-        if (job.getStatus() == SolveJobStatus.QUEUED) {
-            job.setStatus(SolveJobStatus.CANCELLED);
-            job.setFinishedAt(java.time.LocalDateTime.now());
-            job = jobRepo.save(job);
-        } else if (job.getStatus() == SolveJobStatus.RUNNING) {
-            if (job.getProblemId() != null) {
+        if (job.getStatus() == SolveJobStatus.QUEUED || job.getStatus() == SolveJobStatus.RUNNING) {
+            if (job.getStatus() == SolveJobStatus.RUNNING && job.getProblemId() != null) {
                 Solver<TimetableSolution> solver = solverRegistry.get(job.getProblemId());
                 if (solver != null) {
                     solver.terminateEarly();
                 }
             }
-            job.setStatus(SolveJobStatus.CANCELLED);
-            job.setFinishedAt(java.time.LocalDateTime.now());
-            job = jobRepo.save(job);
+            int updated = jobRepo.transitionTerminal(
+                jobId,
+                List.of(SolveJobStatus.QUEUED, SolveJobStatus.RUNNING),
+                SolveJobStatus.CANCELLED,
+                null,
+                null,
+                java.time.LocalDateTime.now(),
+                null);
+            if (updated == 0) {
+                // The job left QUEUED/RUNNING between our read and the update
+                // (e.g. the runner just finished). Report it as not cancellable.
+                throw new ResourceConflictException(
+                    "Job " + jobId + " is not cancellable in status " + job.getStatus());
+            }
+            job = find(jobId);
         } else {
-            throw new IllegalStateException(
+            throw new ResourceConflictException(
                 "Job " + jobId + " is not cancellable in status " + job.getStatus());
         }
         return toResponse(job);

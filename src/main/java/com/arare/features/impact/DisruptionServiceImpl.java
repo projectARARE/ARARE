@@ -6,6 +6,7 @@ import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.schedule.ScheduleRepository;
 import com.arare.features.solvejob.SolveJobResponse;
 import com.arare.features.solvejob.SolveJobService;
+import com.arare.features.solver.DisruptionConstraintFact;
 import com.arare.features.teacher.TeacherRepository;
 import com.arare.features.room.RoomRepository;
 import com.arare.features.timeslot.TimeslotRepository;
@@ -69,6 +70,15 @@ public class DisruptionServiceImpl implements DisruptionService {
     public SolveJobResponse applyDisruption(Long scheduleId, DisruptionRequest request) {
         validateSchedule(scheduleId);
         validateRequest(request);
+
+        // A cancelled session is removed from the timetable directly — the
+        // solver cannot express "leave this session unplaced" because timeslot
+        // is a mandatory planning variable, so routing it through a partial
+        // resolve would always come back INFEASIBLE.
+        if (request.type() == DisruptionType.SESSION_CANCELLED) {
+            return cancelSession(scheduleId, request.affectedEntityId());
+        }
+
         List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId);
 
         DependencyGraph graph = graphBuilder.build(sessions);
@@ -83,7 +93,24 @@ public class DisruptionServiceImpl implements DisruptionService {
             return solveJobService.completedNoop(scheduleId);
         }
 
-        return solveJobService.submitPartialResolve(scheduleId, new ArrayList<>(impactedIds));
+        solveJobService.ensureNoActiveJobForSchedule(scheduleId);
+        return solveJobService.submitPartialResolve(scheduleId, new ArrayList<>(impactedIds), buildFacts(request));
+    }
+
+    /**
+     * Cancels a single session by clearing its assignment. The session row is
+     * kept (it surfaces as an unplaced/orphan session in the UI) so the change
+     * is visible and reversible by a later generate.
+     */
+    private SolveJobResponse cancelSession(Long scheduleId, Long sessionId) {
+        ClassSession session = sessionRepo.findById(sessionId)
+            .orElseThrow(() -> new ResourceNotFoundException("ClassSession", sessionId));
+        if (session.getSchedule() == null || !session.getSchedule().getId().equals(scheduleId)) {
+            throw new IllegalArgumentException("Session " + sessionId + " does not belong to schedule " + scheduleId);
+        }
+        sessionRepo.clearTimeslotForSession(sessionId);
+        log.info("Session {} cancelled on schedule {}", sessionId, scheduleId);
+        return solveJobService.completedNoop(scheduleId);
     }
 
     // ------------------------------------------------------------------
@@ -93,6 +120,35 @@ public class DisruptionServiceImpl implements DisruptionService {
     private void validateSchedule(Long scheduleId) {
         scheduleRepo.findById(scheduleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
+    }
+
+    /**
+     * Converts a disruption request into solver facts so the re-solve is forced
+     * to move affected sessions out of the blocked resource/time.
+     *
+     * <p>Teacher/room unavailability only becomes a fact when a day is known
+     * (matching the impact analyzer, where a null date is effectively a no-op).
+     * A dayless teacher/room fact would wrongly force every one of that
+     * teacher's sessions off the timetable across all days.
+     */
+    private List<DisruptionConstraintFact> buildFacts(DisruptionRequest request) {
+        String day = request.date() != null
+            ? request.date().getDayOfWeek().name()
+            : null;
+        switch (request.type()) {
+            case TIMESLOT_BLOCKED:
+            case SESSION_CANCELLED:
+                return List.of(new DisruptionConstraintFact(
+                    request.type(), request.affectedEntityId(), null));
+            case SPECIAL_EVENT:
+                if (day == null) return List.of();
+                return List.of(new DisruptionConstraintFact(
+                    DisruptionType.SPECIAL_EVENT, null, day));
+            default: // TEACHER_UNAVAILABLE, ROOM_UNAVAILABLE
+                if (day == null || request.affectedEntityId() == null) return List.of();
+                return List.of(new DisruptionConstraintFact(
+                    request.type(), request.affectedEntityId(), day));
+        }
     }
 
     private void validateRequest(DisruptionRequest request) {

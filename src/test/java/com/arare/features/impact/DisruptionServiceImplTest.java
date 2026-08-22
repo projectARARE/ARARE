@@ -8,6 +8,7 @@ import com.arare.features.solvejob.SolveJobResponse;
 import com.arare.features.solvejob.SolveJobService;
 import com.arare.features.solvejob.SolveJobStatus;
 import com.arare.features.solvejob.SolveJobType;
+import com.arare.features.solver.DisruptionConstraintFact;
 import com.arare.features.teacher.TeacherRepository;
 import com.arare.features.timeslot.TimeslotRepository;
 import org.junit.jupiter.api.Test;
@@ -60,7 +61,7 @@ class DisruptionServiceImplTest {
         when(sessionRepo.findByScheduleId(1L)).thenReturn(List.of());
         when(graphBuilder.build(any())).thenReturn(new DependencyGraph());
         when(impactAnalyzer.analyze(any(), any(), any())).thenReturn(Set.of(10L, 11L));
-        when(solveJobService.submitPartialResolve(eq(1L), anyList())).thenReturn(job());
+        when(solveJobService.submitPartialResolve(eq(1L), anyList(), any())).thenReturn(job());
 
         DisruptionRequest request = new DisruptionRequest(
             DisruptionType.SPECIAL_EVENT, null, LocalDate.of(2026, 8, 10), "Assembly");
@@ -69,7 +70,7 @@ class DisruptionServiceImplTest {
 
         assertEquals(1L, response.scheduleId());
         verify(solveJobService).submitPartialResolve(eq(1L),
-            argThat(ids -> new HashSet<>(ids).equals(Set.of(10L, 11L))));
+            argThat(ids -> new HashSet<>(ids).equals(Set.of(10L, 11L))), any());
         verify(solveJobService, never()).completedNoop(any());
     }
 
@@ -90,7 +91,7 @@ class DisruptionServiceImplTest {
 
         assertEquals(1L, response.scheduleId());
         verify(solveJobService).completedNoop(1L);
-        verify(solveJobService, never()).submitPartialResolve(any(), anyList());
+        verify(solveJobService, never()).submitPartialResolve(any(), anyList(), any());
     }
 
     @Test
@@ -103,5 +104,50 @@ class DisruptionServiceImplTest {
             DisruptionType.TEACHER_UNAVAILABLE, null, null, "Absent");
 
         assertThrows(IllegalArgumentException.class, () -> service.applyDisruption(1L, request));
+    }
+
+    @Test
+    void applyDisruption_sessionCancelled_clearsTimeslotWithoutSolve() {
+        Schedule schedule = new Schedule();
+        schedule.setId(1L);
+        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
+
+        com.arare.features.classsession.ClassSession session =
+            com.arare.features.classsession.ClassSession.builder().build();
+        session.setId(99L);
+        session.setSchedule(schedule);
+        when(sessionRepo.findById(99L)).thenReturn(Optional.of(session));
+        when(solveJobService.completedNoop(1L)).thenReturn(job());
+
+        DisruptionRequest request = new DisruptionRequest(
+            DisruptionType.SESSION_CANCELLED, 99L, null, "Cancel");
+
+        SolveJobResponse response = service.applyDisruption(1L, request);
+
+        assertEquals(1L, response.scheduleId());
+        verify(sessionRepo).clearTimeslotForSession(99L);
+        verify(solveJobService).completedNoop(1L);
+        verify(solveJobService, never()).submitPartialResolve(any(), anyList(), any());
+    }
+
+    @Test
+    void applyDisruption_sessionCancelled_rejectsSessionFromOtherSchedule() {
+        Schedule schedule = new Schedule();
+        schedule.setId(1L);
+        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
+
+        Schedule other = new Schedule();
+        other.setId(2L);
+        com.arare.features.classsession.ClassSession session =
+            com.arare.features.classsession.ClassSession.builder().build();
+        session.setId(99L);
+        session.setSchedule(other);
+        when(sessionRepo.findById(99L)).thenReturn(Optional.of(session));
+
+        DisruptionRequest request = new DisruptionRequest(
+            DisruptionType.SESSION_CANCELLED, 99L, null, "Cancel");
+
+        assertThrows(IllegalArgumentException.class, () -> service.applyDisruption(1L, request));
+        verify(sessionRepo, never()).clearTimeslotForSession(any());
     }
 }

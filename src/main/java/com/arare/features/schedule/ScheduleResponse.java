@@ -15,5 +15,6 @@ public record ScheduleResponse(
     String score,
     String scoreExplanation,
     String createdAt,
-    List<SchoolDay> blockedDays
+    List<SchoolDay> blockedDays,
+    Long instituteId
 ) {}

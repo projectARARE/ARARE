@@ -23,12 +23,16 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // eslint-disable-next-line no-console
-    console.error('Unhandled UI error:', error, info.componentStack)
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.error('Unhandled UI error:', error, info.componentStack)
+    }
   }
 
   private reset = (): void => {
-    this.setState({ error: null })
+    // Full reload: a render crash may have left the router/store in a bad
+    // state that a simple re-mount cannot recover from.
+    window.location.reload()
   }
 
   render(): ReactNode {
@@ -43,9 +47,6 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
             The page hit an unexpected error. Your data is safe — reload the page or
             go back and try again.
           </p>
-          <pre className="max-w-lg overflow-auto rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600">
-            {this.state.error.message}
-          </pre>
           <button
             type="button"
             onClick={this.reset}

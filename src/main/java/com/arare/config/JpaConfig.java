@@ -56,6 +56,9 @@ public class JpaConfig {
     }
 
     private void ensureDatabaseExists() {
+        if (datasourceUrl != null && datasourceUrl.startsWith("jdbc:h2:")) {
+            return;
+        }
         String targetDb = extractDatabaseName(datasourceUrl);
         String adminUrl = datasourceUrl.replace("/" + targetDb, "/postgres");
 

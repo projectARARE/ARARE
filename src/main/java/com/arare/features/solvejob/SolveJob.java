@@ -48,6 +48,9 @@ public class SolveJob extends BaseEntity {
     @Column
     private Long departmentId;
 
+    @Column
+    private Long instituteId;
+
     @Column(columnDefinition = "TEXT")
     private String batchIdsCsv;
 
@@ -60,6 +63,12 @@ public class SolveJob extends BaseEntity {
     // ── Request snapshot (PARTIAL_RESOLVE) ──────────────────────────────────
     @Column(columnDefinition = "TEXT")
     private String impactedSessionIdsCsv;
+
+    // Disruptions being repaired by this partial resolve, encoded as
+    // "TYPE:id:day" entries joined by ";". Empty/null when the job is a plain
+    // generate or a manual partial resolve without a disruption.
+    @Column(columnDefinition = "TEXT")
+    private String disruptionFactsCsv;
 
     // ── Outcome ─────────────────────────────────────────────────────────────
     @Column

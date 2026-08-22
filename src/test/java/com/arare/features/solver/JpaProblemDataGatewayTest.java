@@ -54,7 +54,7 @@ class JpaProblemDataGatewayTest {
     private JpaProblemDataGateway gateway;
 
     private ProblemBuildRequest request(List<Long> batchIds, List<Long> teacherIds, List<Long> roomIds) {
-        return new ProblemBuildRequest(null, null, null, batchIds, teacherIds, roomIds);
+        return new ProblemBuildRequest(null, null, null, null, batchIds, teacherIds, roomIds, null);
     }
 
     @Test

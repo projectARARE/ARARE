@@ -17,12 +17,14 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { scheduleApi, teacherApi, roomApi, subjectApi } from '../../services/api'
+import { useUiPreferences, type FeatureKey } from '../../contexts/UiPreferencesContext'
 import type { Schedule } from '../../types'
 
 interface PaletteItem {
   id: string
   label: string
   hint?: string
+  feature?: FeatureKey
   run: () => void
 }
 
@@ -43,6 +45,7 @@ const NAV_ICONS: Record<string, typeof LayoutDashboard> = {
 
 export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
+  const { prefs } = useUiPreferences()
   const [query, setQuery] = useState('')
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [teachers, setTeachers] = useState<{ id: number; name: string }[]>([])
@@ -81,22 +84,24 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
     { id: 'nav-dashboard', label: 'Dashboard', hint: '/dashboard', run: go('/dashboard') },
     { id: 'nav-generate', label: 'Generate Schedule', hint: '/schedule/generate', run: go('/schedule/generate') },
     { id: 'nav-history', label: 'Schedule History', hint: '/schedule/history', run: go('/schedule/history') },
-    { id: 'nav-events', label: 'Events', hint: '/events', run: go('/events') },
-    { id: 'nav-disruptions', label: 'Disruptions', hint: '/disruptions', run: go('/disruptions') },
+    { id: 'nav-events', label: 'Events', hint: '/events', feature: 'events', run: go('/events') },
+    { id: 'nav-disruptions', label: 'Disruptions', hint: '/disruptions', feature: 'disruptions', run: go('/disruptions') },
     { id: 'nav-teachers', label: 'Teachers', hint: '/teachers', run: go('/teachers') },
     { id: 'nav-rooms', label: 'Rooms', hint: '/rooms', run: go('/rooms') },
     { id: 'nav-subjects', label: 'Subjects', hint: '/subjects', run: go('/subjects') },
     { id: 'nav-batches', label: 'Batches', hint: '/batches', run: go('/batches') },
     { id: 'nav-sections', label: 'Class Sections', hint: '/sections', run: go('/sections') },
     { id: 'nav-timeslots', label: 'Timeslots', hint: '/timeslots', run: go('/timeslots') },
-    { id: 'nav-import', label: 'Import / Export', hint: '/import/csv', run: go('/import/csv') },
+    { id: 'nav-import', label: 'Import / Export', hint: '/import/csv', feature: 'importExport', run: go('/import/csv') },
   ]
+
+  const visibleNav = useMemo(() => NAV_ITEMS.filter((i) => !i.feature || prefs[i.feature]), [prefs])
 
   const items = useMemo<PaletteItem[]>(() => {
     const q = query.trim().toLowerCase()
     const result: PaletteItem[] = []
     if (q) {
-      const nav = NAV_ITEMS.filter((i) => i.label.toLowerCase().includes(q) || (i.hint ?? '').includes(q))
+      const nav = visibleNav.filter((i) => i.label.toLowerCase().includes(q) || (i.hint ?? '').includes(q))
       result.push(...nav)
       schedules.filter((s) => s.name.toLowerCase().includes(q)).forEach((s) =>
         result.push({ id: `sched-${s.id}`, label: `Schedule: ${s.name}`, hint: `[${s.status}]`, run: () => openSchedule(s.id) }))
@@ -107,12 +112,12 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
       subjects.filter((s) => s.name.toLowerCase().includes(q) || (s.code ?? '').toLowerCase().includes(q)).forEach((s) =>
         result.push({ id: `subject-${s.id}`, label: `Subject: ${s.name}`, hint: s.code, run: () => { onClose(); navigate(`/subjects`) } }))
     } else {
-      result.push(...NAV_ITEMS)
+      result.push(...visibleNav)
       schedules.slice(0, 8).forEach((s) =>
         result.push({ id: `sched-${s.id}`, label: `Schedule: ${s.name}`, hint: `[${s.status}]`, run: () => openSchedule(s.id) }))
     }
     return result.slice(0, 12)
-  }, [query, schedules, teachers, rooms, subjects])
+  }, [query, visibleNav, schedules, teachers, rooms, subjects])
 
   useEffect(() => setSelected(0), [query])
 

@@ -10,6 +10,7 @@ import ai.timefold.solver.core.config.solver.termination.TerminationConfig;
 import com.arare.features.schedule.Schedule;
 import com.arare.features.schedule.ScheduleRepository;
 import com.arare.features.solver.ProblemBuildRequest;
+import com.arare.features.solver.DisruptionConstraintFact;
 import com.arare.features.solver.SolutionPersister;
 import com.arare.features.solver.TimetableProblemBuilder;
 import com.arare.features.solver.TimetableSolution;
@@ -106,16 +107,32 @@ public class SolveJobRunner {
                 throw new IllegalStateException("Schedule not found: " + workJob.getScheduleId());
             }
 
-            solutionPersister.persist(schedule, solution);
+            // Close the cancel/persist race: attempt the QUEUED/RUNNING →
+            // SUCCEEDED transition FIRST, inside the same transaction as the
+            // persist. If the operator cancelled concurrently, the transition
+            // loses (0 rows), so we must not persist — the schedule data would
+            // otherwise be written for a job the user just cancelled.
+            boolean committed = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+                int updated = jobRepo.transitionTerminal(
+                    jobId,
+                    List.of(SolveJobStatus.QUEUED, SolveJobStatus.RUNNING),
+                    SolveJobStatus.SUCCEEDED,
+                    solution.getScore() != null ? solution.getScore().toString() : null,
+                    elapsedMillis,
+                    LocalDateTime.now(),
+                    null);
+                if (updated == 0) {
+                    log.info("Solve job {} finished but was cancelled concurrently; result not persisted", jobId);
+                    return false;
+                }
+                solutionPersister.persist(schedule, solution);
+                return true;
+            }));
 
-            fresh.setStatus(SolveJobStatus.SUCCEEDED);
-            fresh.setScore(solution.getScore() != null ? solution.getScore().toString() : null);
-            fresh.setElapsedMillis(elapsedMillis);
-            fresh.setFinishedAt(LocalDateTime.now());
-            jobRepo.save(fresh);
-            log.info("Solve job {} succeeded in {}ms with score {}", jobId, elapsedMillis, fresh.getScore());
-        } catch (IllegalStateException e) {
-            markFailed(workJob, startedMillis, e);
+            if (committed) {
+                log.info("Solve job {} succeeded in {}ms with score {}",
+                    jobId, elapsedMillis, solution.getScore());
+            }
         } catch (Exception e) {
             markFailed(workJob, startedMillis, e);
         } finally {
@@ -125,19 +142,25 @@ public class SolveJobRunner {
 
     private void markFailed(SolveJob job, long startedMillis, Exception e) {
         long elapsedMillis = System.currentTimeMillis() - startedMillis;
-        SolveJob fresh = jobRepo.findById(job.getId()).orElse(job);
-        if (fresh.getStatus() == SolveJobStatus.CANCELLED) {
-            fresh.setFinishedAt(LocalDateTime.now());
-            fresh.setElapsedMillis(elapsedMillis);
-            jobRepo.save(fresh);
+        int updated = jobRepo.transitionTerminal(
+            job.getId(),
+            List.of(SolveJobStatus.QUEUED, SolveJobStatus.RUNNING),
+            SolveJobStatus.FAILED,
+            null,
+            elapsedMillis,
+            LocalDateTime.now(),
+            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+        if (updated == 0) {
+            SolveJob fresh = jobRepo.findById(job.getId()).orElse(job);
+            if (fresh.getStatus() == SolveJobStatus.CANCELLED) {
+                log.info("Solve job {} failed after cancellation; status kept as {}", job.getId(), fresh.getStatus());
+            } else {
+                log.warn("Solve job {} failed but could not transition (status {}): {}",
+                    job.getId(), fresh.getStatus(), e.getMessage(), e);
+            }
             return;
         }
-        fresh.setStatus(SolveJobStatus.FAILED);
-        fresh.setErrorMessage(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
-        fresh.setElapsedMillis(elapsedMillis);
-        fresh.setFinishedAt(LocalDateTime.now());
-        jobRepo.save(fresh);
-        log.warn("Solve job {} failed: {}", job.getId(), fresh.getErrorMessage(), e);
+        log.warn("Solve job {} failed: {}", job.getId(), e.getMessage(), e);
     }
 
     private TimetableSolution buildProblem(SolveJob job) {
@@ -148,9 +171,11 @@ public class SolveJobRunner {
             schedule,
             parseIds(job.getImpactedSessionIdsCsv()),
             job.getDepartmentId(),
+            job.getInstituteId(),
             parseIds(job.getBatchIdsCsv()),
             parseIds(job.getTeacherIdsCsv()),
-            parseIds(job.getRoomIdsCsv())
+            parseIds(job.getRoomIdsCsv()),
+            DisruptionConstraintFact.decode(job.getDisruptionFactsCsv())
         );
         return problemBuilder.build(request);
     }
@@ -178,13 +203,15 @@ public class SolveJobRunner {
      */
     private static final class BestScoreListener implements SolverEventListener<TimetableSolution> {
 
-private final SolveJobRepository jobRepo;
-        private SolveJob job;
+        private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BestScoreListener.class);
+
+        private final SolveJobRepository jobRepo;
+        private final Long jobId;
         private String lastPersistedScore;
 
         private BestScoreListener(SolveJob job, SolveJobRepository jobRepo) {
-            this.job = job;
             this.jobRepo = jobRepo;
+            this.jobId = job.getId();
         }
 
         @Override
@@ -198,9 +225,18 @@ private final SolveJobRepository jobRepo;
             if (scoreText.equals(lastPersistedScore)) {
                 return;
             }
-            job.setBestScore(scoreText);
-            job = jobRepo.save(job);
-            lastPersistedScore = job.getBestScore();
+            try {
+                // Guarded update: only applies while the job is QUEUED/RUNNING.
+                // Never merges the detached entity, so a concurrent cancel can
+                // never be resurrected to RUNNING by a stale telemetry write.
+                jobRepo.updateBestScoreIfActive(jobId, scoreText);
+                lastPersistedScore = scoreText;
+            } catch (RuntimeException ex) {
+                // Telemetry only: a transient DB failure must never abort the
+                // solve. The next best-score change will retry the save.
+                log.warn("Failed to persist best score {} for job {}: {}",
+                    scoreText, jobId, ex.getMessage());
+            }
         }
     }
 }

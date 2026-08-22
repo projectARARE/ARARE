@@ -10,6 +10,8 @@ public interface ScheduleService {
     SolveJobResponse generate(ScheduleRequest request);
     ScheduleResponse findById(Long id);
     List<ScheduleResponse> findAll();
+    ScheduleResponse activate(Long id);
+    ScheduleResponse archive(Long id);
     SolveJobResponse partialResolve(Long scheduleId, List<Long> impactedSessionIds);
     ScoreExplanationResponse explainScore(Long scheduleId);
     String getExplanation(Long id);

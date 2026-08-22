@@ -3,6 +3,7 @@ package com.arare.features.classsession;
 import com.arare.common.enums.RoomType;
 import com.arare.common.enums.SchoolDay;
 import com.arare.common.enums.TimeslotType;
+import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
 import com.arare.features.batch.BatchRepository;
 import com.arare.features.classsection.ClassSection;
@@ -440,5 +441,22 @@ class ClassSessionServiceImplTest {
         assertThrows(IllegalArgumentException.class, () -> service.create(
             new SessionCreateRequest(300L, 100L, 5L, null, 220L, null, 410L, null, null)));
         verify(repo, never()).save(any());
+    }
+
+    @Test
+    void delete_removesExistingSession() {
+        when(repo.existsById(55L)).thenReturn(true);
+
+        service.delete(55L);
+
+        verify(repo).deleteById(55L);
+    }
+
+    @Test
+    void delete_throwsWhenSessionMissing() {
+        when(repo.existsById(55L)).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> service.delete(55L));
+        verify(repo, never()).deleteById(any());
     }
 }

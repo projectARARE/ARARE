@@ -3,9 +3,11 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import CommandPalette from './CommandPalette'
+import SettingsPanel from './SettingsPanel'
 
 export default function Layout() {
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -15,11 +17,14 @@ export default function Layout() {
       }
     }
     const onOpen = () => setPaletteOpen(true)
+    const onOpenSettings = () => setSettingsOpen(true)
     window.addEventListener('keydown', onKey)
     window.addEventListener('arare:open-command-palette', onOpen)
+    window.addEventListener('arare:open-settings', onOpenSettings)
     return () => {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('arare:open-command-palette', onOpen)
+      window.removeEventListener('arare:open-settings', onOpenSettings)
     }
   }, [])
 
@@ -33,6 +38,7 @@ export default function Layout() {
         </main>
       </div>
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Eye, Trash2, Plus, GitBranch } from 'lucide-react'
+import { Eye, Trash2, Plus, GitBranch, CheckCircle2, Archive } from 'lucide-react'
 import { Card, Button, Table, Badge, ConfirmDialog } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
@@ -23,7 +23,7 @@ export default function ScheduleHistory() {
   const [loading, setLoading] = useState(true)
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
-
+  const [busyId, setBusyId] = useState<number | null>(null)
   const load = () => {
     setLoading(true)
     scheduleApi.getAll()
@@ -47,6 +47,34 @@ export default function ScheduleHistory() {
       setConfirmId(null)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleActivate = async (s: Schedule) => {
+    if (busyId !== null) return
+    setBusyId(s.id)
+    try {
+      await scheduleApi.activate(s.id)
+      toast.success(`"${s.name}" is now active`)
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to activate schedule')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleArchive = async (s: Schedule) => {
+    if (busyId !== null) return
+    setBusyId(s.id)
+    try {
+      await scheduleApi.archive(s.id)
+      toast.success(`"${s.name}" archived`)
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to archive schedule')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -98,11 +126,24 @@ export default function ScheduleHistory() {
       },
     },
     {
-      key: 'actions', header: '', width: '130px',
+      key: 'actions', header: '', width: '220px',
       render: (s) => (
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" icon={<Eye size={14} />}
             onClick={() => navigate(`/schedule/view/${s.id}`)}>View</Button>
+          {s.status === 'DRAFT' && (
+            <Button variant="ghost" size="sm" icon={<CheckCircle2 size={14} />}
+              className="text-green-600 hover:text-green-700"
+              loading={busyId === s.id}
+              disabled={busyId !== null}
+              onClick={() => handleActivate(s)}>Publish</Button>
+          )}
+          {(s.status === 'ACTIVE' || s.status === 'PARTIAL') && (
+            <Button variant="ghost" size="sm" icon={<Archive size={14} />}
+              loading={busyId === s.id}
+              disabled={busyId !== null}
+              onClick={() => handleArchive(s)}>Archive</Button>
+          )}
           <Button variant="ghost" size="sm" icon={<Trash2 size={14} />}
             className="text-red-600 hover:text-red-700"
             onClick={() => setConfirmId(s.id)}>Delete</Button>
@@ -111,11 +152,20 @@ export default function ScheduleHistory() {
     },
   ]
 
-  const getContextItems = (s: Schedule): ContextMenuItem[] => [
-    { label: 'View', icon: <Eye size={13} />, onClick: () => navigate(`/schedule/view/${s.id}`) },
-    { label: 'Continue from this', icon: <GitBranch size={13} />, onClick: () => navigate(`/schedule/generate?parentId=${s.id}`) },
-    { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(s.id) },
-  ]
+  const getContextItems = (s: Schedule): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      { label: 'View', icon: <Eye size={13} />, onClick: () => navigate(`/schedule/view/${s.id}`) },
+      { label: 'Continue from this', icon: <GitBranch size={13} />, onClick: () => navigate(`/schedule/generate?parentId=${s.id}`) },
+    ]
+    if (s.status === 'DRAFT') {
+      items.push({ label: 'Publish', icon: <CheckCircle2 size={13} />, onClick: () => handleActivate(s) })
+    }
+    if (s.status === 'ACTIVE' || s.status === 'PARTIAL') {
+      items.push({ label: 'Archive', icon: <Archive size={13} />, onClick: () => handleArchive(s) })
+    }
+    items.push({ label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(s.id) })
+    return items
+  }
 
   return (
     <>
@@ -130,6 +180,8 @@ export default function ScheduleHistory() {
           loading={loading}
           keyExtractor={(s) => s.id}
           searchable
+          exportable
+          exportFilename="schedule-history"
           searchKeys={[(s) => s.name, (s) => s.scope, (s) => s.status]}
           onRowContextMenu={getContextItems}
         />

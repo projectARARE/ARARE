@@ -81,6 +81,38 @@ public class CsvImportController {
             .body(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
+    /** Full set of example templates (all entities + relationship pairing files). */
+    @GetMapping(value = "/template/zip", produces = "application/zip")
+    public ResponseEntity<byte[]> exportTemplateZip() {
+        try (java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+             java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos,
+                 java.nio.charset.StandardCharsets.UTF_8)) {
+            for (CsvEntityType type : CsvEntityType.importOrder()) {
+                writeTemplateEntry(zos, csvTemplateService.templateFileName(type),
+                    csvTemplateService.exportTemplateCsv(type));
+            }
+            for (String filename : csvTemplateService.relationshipFileNames()) {
+                String csv = csvTemplateService.relationshipTemplate(filename);
+                if (csv != null && !csv.isBlank()) {
+                    writeTemplateEntry(zos, filename.replace(".csv", "-template.csv"), csv);
+                }
+            }
+            zos.finish();
+            return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"arare-csv-templates.zip\"")
+                .body(baos.toByteArray());
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Failed to build template ZIP", e);
+        }
+    }
+
+    private static void writeTemplateEntry(java.util.zip.ZipOutputStream zos, String filename, String content)
+            throws java.io.IOException {
+        zos.putNextEntry(new java.util.zip.ZipEntry(filename));
+        zos.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        zos.closeEntry();
+    }
+
     /** Canonical dependency-ordered import sequence for UI consumption. */
     @GetMapping("/order")
     public ResponseEntity<List<ImportOrderStep>> importOrder() {

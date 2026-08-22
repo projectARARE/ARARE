@@ -9,6 +9,7 @@ public record SubjectResponse(
     String code,
     Long departmentId,
     String departmentName,
+    Long instituteId,
     int weeklyHours,
     int chunkHours,
     RoomType roomTypeRequired,

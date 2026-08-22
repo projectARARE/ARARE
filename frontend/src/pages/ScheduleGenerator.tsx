@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle, Clock, GitBranch, Settings, ShieldCheck, Wand2, X, Zap } from 'lucide-react'
-import { Card, Button, Input, Select } from '../components/ui'
-import { scheduleApi, departmentApi, batchApi, teacherApi, roomApi } from '../services/api'
+import { ArrowLeft, ArrowRight, CheckCircle, Clock, GitBranch, Plus, Settings, ShieldCheck, Trash2, Wand2, X, Zap } from 'lucide-react'
+import { Card, Button, Input, Select, SearchableSelect, MultiSelect } from '../components/ui'
+import { scheduleApi, departmentApi, instituteApi, batchApi, teacherApi, roomApi, subjectApi } from '../services/api'
 import { useSolveJobPoll } from '../hooks/useSolveJob'
-import type { ScheduleRequest, ScheduleScope, Department, Batch, Teacher, Room, Schedule, FeasibilityCheckResult, SolveJobResponse } from '../types'
+import type { ScheduleRequest, ScheduleScope, Department, Batch, Teacher, Room, Schedule, Subject, FeasibilityCheckResult, SolveJobResponse, PreAllocationSpec, Institute } from '../types'
 
 const SCOPE_OPTIONS: { value: ScheduleScope; label: string }[] = [
   { value: 'DEPARTMENT', label: 'Department' },
@@ -14,10 +14,11 @@ const SCOPE_OPTIONS: { value: ScheduleScope; label: string }[] = [
 
 const TIME_MARKS = [10, 30, 60, 120, 300]
 const WIZARD_STEPS = [
-  { id: 1, label: 'Scope Selection' },
-  { id: 2, label: 'Resource Selection' },
-  { id: 3, label: 'Review' },
-  { id: 4, label: 'Run & Validate' },
+  { id: 1, label: 'Scope Selection', optional: false },
+  { id: 2, label: 'Resource Selection', optional: false },
+  { id: 3, label: 'Pre-assign Teachers', optional: true },
+  { id: 4, label: 'Review', optional: false },
+  { id: 5, label: 'Run & Validate', optional: false },
 ]
 
 export default function ScheduleGenerator() {
@@ -25,10 +26,15 @@ export default function ScheduleGenerator() {
   const [searchParams] = useSearchParams()
 
   const [departments, setDepartments] = useState<Department[]>([])
+  const [institutes, setInstitutes] = useState<Institute[]>([])
   const [allBatches, setAllBatches] = useState<Batch[]>([])
   const [allTeachers, setAllTeachers] = useState<Teacher[]>([])
   const [allRooms, setAllRooms] = useState<Room[]>([])
+  const [allSubjects, setAllSubjects] = useState<Subject[]>([])
   const [allSchedules, setAllSchedules] = useState<Schedule[]>([])
+
+  const [preAllocations, setPreAllocations] = useState<PreAllocationSpec[]>([])
+  const [draft, setDraft] = useState<PreAllocationSpec>({ batchId: 0, subjectId: 0, teacherId: 0 })
 
   const [form, setForm] = useState<ScheduleRequest>({
     name: `Schedule ${new Date().toLocaleDateString()}`,
@@ -62,15 +68,19 @@ export default function ScheduleGenerator() {
   useEffect(() => {
     Promise.allSettled([
       departmentApi.getAll(),
+      instituteApi.getAll(),
       batchApi.getAll(),
       teacherApi.getAll(),
       roomApi.getAll(),
+      subjectApi.getAll(),
       scheduleApi.getAll(),
-    ]).then(([d, b, t, r, s]) => {
+    ]).then(([d, inst, b, t, r, su, s]) => {
       if (d.status === 'fulfilled') setDepartments(d.value)
+      if (inst.status === 'fulfilled') setInstitutes(inst.value)
       if (b.status === 'fulfilled') setAllBatches(b.value)
       if (t.status === 'fulfilled') setAllTeachers(t.value)
       if (r.status === 'fulfilled') setAllRooms(r.value)
+      if (su.status === 'fulfilled') setAllSubjects(su.value)
       if (s.status === 'fulfilled') {
         setAllSchedules(s.value)
         const parentId = searchParams.get('parentId')
@@ -81,27 +91,60 @@ export default function ScheduleGenerator() {
               ...prev,
               parentScheduleId: parent.id,
               scope: parent.scope,
+              instituteId: parent.instituteId,
               name: `${parent.name} (re-solve)`,
             }))
           }
         }
       }
-      const failed = [d, b, t, r, s].filter((x) => x.status === 'rejected').length
+      const failed = [d, inst, b, t, r, su, s].filter((x) => x.status === 'rejected').length
       if (failed > 0) {
-        setError(`Some prerequisites failed to load (${failed}/5)`)
+        setError(`Some prerequisites failed to load (${failed}/7)`)
       }
     })
   }, [])
 
   const visibleBatches = form.scope === 'DEPARTMENT' && form.departmentId
     ? allBatches.filter((b) => b.departmentId === form.departmentId)
-    : allBatches
+    : form.scope === 'COLLEGE' && form.instituteId
+      ? allBatches.filter((b) => b.instituteId === form.instituteId)
+      : allBatches
+  const visibleSubjects = form.scope === 'DEPARTMENT' && form.departmentId
+    ? allSubjects.filter((s) => !s.departmentId || s.departmentId === form.departmentId)
+    : form.scope === 'COLLEGE' && form.instituteId
+      ? allSubjects.filter((s) => !s.departmentId || s.instituteId === form.instituteId)
+      : allSubjects
+  const preAllocBatches = builderMode && selectedBatchIds.length > 0
+    ? visibleBatches.filter((b) => selectedBatchIds.includes(b.id))
+    : visibleBatches
   const toggleId = (
     id: number,
     current: number[],
     setter: (ids: number[]) => void,
   ) => {
     setter(current.includes(id) ? current.filter((x) => x !== id) : [...current, id])
+  }
+
+  const buildRequest = (): ScheduleRequest => ({
+    ...form,
+    batchIds: builderMode && selectedBatchIds.length > 0 ? selectedBatchIds : undefined,
+    teacherIds: builderMode && selectedTeacherIds.length > 0 ? selectedTeacherIds : undefined,
+    roomIds: builderMode && selectedRoomIds.length > 0 ? selectedRoomIds : undefined,
+    preAllocations: preAllocations.length > 0 ? preAllocations : undefined,
+  })
+
+  const addPreAllocation = () => {
+    if (!draft.batchId || !draft.subjectId || !draft.teacherId) {
+      setError('Pre-assignments need a batch, a subject, and a teacher')
+      return
+    }
+    setPreAllocations((prev) => [...prev, { ...draft }])
+    setDraft({ batchId: 0, subjectId: 0, teacherId: 0 })
+    setError(null)
+  }
+
+  const removePreAllocation = (index: number) => {
+    setPreAllocations((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleGenerate = async () => {
@@ -119,12 +162,7 @@ export default function ScheduleGenerator() {
     setActiveJob(null)
 
     try {
-      const request: ScheduleRequest = {
-        ...form,
-        batchIds: builderMode && selectedBatchIds.length > 0 ? selectedBatchIds : undefined,
-        teacherIds: builderMode && selectedTeacherIds.length > 0 ? selectedTeacherIds : undefined,
-        roomIds: builderMode && selectedRoomIds.length > 0 ? selectedRoomIds : undefined,
-      }
+      const request = buildRequest()
       const job = await scheduleApi.generate(request)
       if (job.id == null) {
         // No-op response (nothing to solve): the schedule already exists.
@@ -142,12 +180,7 @@ export default function ScheduleGenerator() {
       // If generation is infeasible, immediately fetch structured diagnostics for the UI.
       if (/infeasible|unprocessable|hard score/i.test(msg)) {
         try {
-          const request: ScheduleRequest = {
-            ...form,
-            batchIds: builderMode && selectedBatchIds.length > 0 ? selectedBatchIds : undefined,
-            teacherIds: builderMode && selectedTeacherIds.length > 0 ? selectedTeacherIds : undefined,
-            roomIds: builderMode && selectedRoomIds.length > 0 ? selectedRoomIds : undefined,
-          }
+          const request = buildRequest()
           const result = await scheduleApi.checkFeasibility(request)
           setFeasibility(result)
           if (wizardStep < 4) setWizardStep(4)
@@ -158,11 +191,26 @@ export default function ScheduleGenerator() {
     }
   }
 
-  const handleJobFinished = (job: SolveJobResponse) => {
+  const handleJobFinished = async (job: SolveJobResponse) => {
     setRunning(false)
     setJobStartedAt(null)
     if (job.status === 'SUCCEEDED') {
-      if (job.scheduleId) navigate(`/schedule/view/${job.scheduleId}`)
+      if (job.scheduleId) {
+        // Infeasible solves now SUCCEED with the partial result persisted.
+        // Surface that clearly instead of silently dropping the user onto a
+        // read-only INFEASIBLE schedule.
+        try {
+          const schedule = await scheduleApi.getById(job.scheduleId)
+          if (schedule.status === 'INFEASIBLE') {
+            setActiveJob(null)
+            setError('Generated schedule is INFEASIBLE (hard conflicts remain). The partial result was saved — open it from History to inspect what blocked generation.')
+            return
+          }
+        } catch {
+          // Fall through to the normal navigation if the status check fails.
+        }
+        navigate(`/schedule/view/${job.scheduleId}`)
+      }
     } else if (job.status === 'FAILED') {
       setError(job.errorMessage || 'Solver failed — check the schedule data and try again.')
     } else {
@@ -174,13 +222,7 @@ export default function ScheduleGenerator() {
     setCheckingFeasibility(true)
     setFeasibility(null)
     try {
-      const req = {
-        ...form,
-        batchIds: builderMode && selectedBatchIds.length > 0 ? selectedBatchIds : undefined,
-        teacherIds: builderMode && selectedTeacherIds.length > 0 ? selectedTeacherIds : undefined,
-        roomIds: builderMode && selectedRoomIds.length > 0 ? selectedRoomIds : undefined,
-      }
-      const result = await scheduleApi.checkFeasibility(req)
+      const result = await scheduleApi.checkFeasibility(buildRequest())
       setFeasibility(result)
       if (wizardStep < 4) setWizardStep(4)
     } catch (e) {
@@ -191,6 +233,7 @@ export default function ScheduleGenerator() {
   }
 
   const deptOptions = departments.map((d) => ({ value: d.id, label: `${d.name} (${d.code})` }))
+  const instituteOptions = institutes.map((i) => ({ value: i.id, label: i.name }))
   const parentOptions = [
     { value: '', label: '- None (generate from scratch) -' },
     ...allSchedules.map((s) => ({ value: s.id, label: `${s.name} [${s.score ?? s.status}]` })),
@@ -207,8 +250,8 @@ export default function ScheduleGenerator() {
         : true
 
   const gotoNextStep = () => {
-    if (!canNext || wizardStep >= 4) return
-    setWizardStep((x) => Math.min(4, x + 1))
+    if (!canNext || wizardStep >= 5) return
+    setWizardStep((x) => Math.min(5, x + 1))
   }
 
   const gotoPrevStep = () => {
@@ -238,7 +281,7 @@ export default function ScheduleGenerator() {
             </div>
           </div>
 
-          <ol className="grid md:grid-cols-4 gap-2">
+          <ol className="grid md:grid-cols-5 gap-2">
             {WIZARD_STEPS.map((step) => (
               <li
                 key={step.id}
@@ -251,6 +294,11 @@ export default function ScheduleGenerator() {
                 }`}
               >
                 <span className="font-semibold">{step.id}. </span>{step.label}
+                {step.optional && (
+                  <span className="ml-1.5 rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 uppercase">
+                    Optional
+                  </span>
+                )}
               </li>
             ))}
           </ol>
@@ -290,14 +338,36 @@ export default function ScheduleGenerator() {
                   helpText="Only batches and subjects from this department will be scheduled"
                 />
               )}
-              {allSchedules.length > 0 && (
+              {form.scope === 'COLLEGE' && institutes.length > 1 && (
                 <Select
-                  label="Derive from existing schedule"
-                  value={form.parentScheduleId ?? ''}
-                  onChange={(e) => setForm({ ...form, parentScheduleId: +e.target.value || undefined })}
-                  options={parentOptions}
-                  helpText="Optional: re-solve from a prior schedule with lock inheritance"
+                  label="Institute"
+                  value={form.instituteId ?? ''}
+                  onChange={(e) => {
+                    setForm({ ...form, instituteId: +e.target.value || undefined })
+                    setSelectedBatchIds([])
+                  }}
+                  options={instituteOptions}
+                  placeholder="Select institute"
+                  helpText="Only batches and subjects from this institute will be scheduled"
                 />
+              )}
+              {allSchedules.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Derive from existing schedule
+                    </label>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                      Optional
+                    </span>
+                  </div>
+                  <Select
+                    value={form.parentScheduleId ?? ''}
+                    onChange={(e) => setForm({ ...form, parentScheduleId: +e.target.value || undefined })}
+                    options={parentOptions}
+                    helpText="Re-solve from a prior schedule with lock inheritance"
+                  />
+                </div>
               )}
               {form.parentScheduleId && (
                 <div className="flex items-center gap-2 rounded-md bg-indigo-50 border border-indigo-200 px-4 py-3 text-sm text-indigo-700">
@@ -375,38 +445,47 @@ export default function ScheduleGenerator() {
                   </Card>
 
                   <Card title="Teachers" className="bg-white border-gray-200 text-gray-900">
-                    <div className="grid grid-cols-2 gap-2">
-                      {allTeachers.map((t) => (
-                        <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer text-gray-800">
-                          <input
-                            type="checkbox"
-                            checked={selectedTeacherIds.includes(t.id)}
-                            onChange={() => toggleId(t.id, selectedTeacherIds, setSelectedTeacherIds)}
-                          />
-                          {t.name}
-                        </label>
-                      ))}
-                    </div>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Pick which teachers participate. {allTeachers.length} available — search to narrow.
+                    </p>
+                    <MultiSelect
+                      label=""
+                      options={allTeachers.map((t) => ({ value: t.id, label: t.name }))}
+                      selected={selectedTeacherIds}
+                      onChange={setSelectedTeacherIds}
+                      maxHeight={280}
+                    />
                   </Card>
 
                   <Card title="Rooms" className="bg-white border-gray-200 text-gray-900">
-                    <div className="grid grid-cols-2 gap-2">
-                      {allRooms.map((r) => (
-                        <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer text-gray-800">
-                          <input
-                            type="checkbox"
-                            checked={selectedRoomIds.includes(r.id)}
-                            onChange={() => toggleId(r.id, selectedRoomIds, setSelectedRoomIds)}
-                          />
-                          {r.roomNumber} [{r.type}]
-                        </label>
-                      ))}
-                    </div>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Pick which rooms participate. {allRooms.length} available — search to narrow.
+                    </p>
+                    <MultiSelect
+                      label=""
+                      options={allRooms.map((r) => ({
+                        value: r.id,
+                        label: `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''} [${r.type}]`,
+                      }))}
+                      selected={selectedRoomIds}
+                      onChange={setSelectedRoomIds}
+                      maxHeight={280}
+                    />
                   </Card>
                 </>
               )}
 
-              <Card title="Blocked Days" className="bg-white border-gray-200 text-gray-900">
+              <Card
+                title={
+                  <span className="flex items-center gap-2">
+                    Blocked Days
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                      Optional
+                    </span>
+                  </span>
+                }
+                className="bg-white border-gray-200 text-gray-900"
+              >
                 <p className="text-xs text-gray-500 mb-2">
                   Whole days this timetable must not use (e.g. a Saturday that is closed). Nothing is blocked
                   by default — the solver treats every other day as schedulable. Per-batch rest days can be set
@@ -446,6 +525,105 @@ export default function ScheduleGenerator() {
 
            {wizardStep === 3 && (
              <div className="space-y-4">
+               <div className="flex items-center justify-between gap-3 flex-wrap rounded-md bg-cyan-50 border border-cyan-200 px-4 py-3 text-sm text-cyan-800">
+                 <div>
+                   <span className="font-semibold">Optional step.</span>{' '}
+                   Pin specific teachers (and optionally rooms or exact slots) to batch + subject pairs
+                   before the solver runs. Everything else remains fully scheduled by the solver.
+                 </div>
+                 <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cyan-700">
+                   Optional
+                 </span>
+               </div>
+
+               <div className="grid md:grid-cols-2 gap-4">
+                 <SearchableSelect
+                   label="Batch"
+                   value={draft.batchId || null}
+                   onChange={(v) => setDraft({ ...draft, batchId: v == null ? 0 : +v })}
+                   options={preAllocBatches.map((b) => ({
+                     value: b.id,
+                     label: `${b.departmentName ? `${b.departmentName} ` : ''}Yr ${b.year}-${b.section}`,
+                   }))}
+                   placeholder="Select batch"
+                   allowClear
+                 />
+                 <SearchableSelect
+                   label="Subject"
+                   value={draft.subjectId || null}
+                   onChange={(v) => setDraft({ ...draft, subjectId: v == null ? 0 : +v })}
+                   options={visibleSubjects.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))}
+                   placeholder="Select subject"
+                   allowClear
+                 />
+                 <SearchableSelect
+                   label="Teacher (pinned)"
+                   value={draft.teacherId || null}
+                   onChange={(v) => setDraft({ ...draft, teacherId: v == null ? 0 : +v })}
+                   options={allTeachers.map((t) => ({ value: t.id, label: t.name }))}
+                   placeholder="Select teacher"
+                   allowClear
+                 />
+                 <SearchableSelect
+                   label="Room (optional)"
+                   value={draft.roomId ?? null}
+                   onChange={(v) => setDraft({ ...draft, roomId: v == null ? undefined : +v })}
+                   options={allRooms.map((r) => ({
+                     value: r.id,
+                     label: `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''} [${r.type}]`,
+                   }))}
+                   placeholder="Any room"
+                   allowClear
+                 />
+               </div>
+
+               <Button variant="secondary" icon={<Plus size={15} />} onClick={addPreAllocation}>
+                 Add Pre-assignment
+               </Button>
+
+               {preAllocations.length > 0 && (
+                 <Card title={`Pre-assignments (${preAllocations.length})`} className="bg-white border-gray-200 text-gray-900">
+                   <div className="divide-y divide-gray-100 text-sm">
+                     {preAllocations.map((p, i) => {
+                       const batch = allBatches.find((b) => b.id === p.batchId)
+                       const subject = allSubjects.find((s) => s.id === p.subjectId)
+                       const teacher = allTeachers.find((t) => t.id === p.teacherId)
+                       const room = p.roomId ? allRooms.find((r) => r.id === p.roomId) : undefined
+                       return (
+                         <div key={i} className="flex items-center justify-between gap-3 py-2">
+                           <div>
+                             <p className="font-medium">
+                               {subject ? `${subject.code} - ${subject.name}` : `Subject #${p.subjectId}`}
+                             </p>
+                             <p className="text-xs text-gray-500">
+                               {batch ? `Yr ${batch.year}-${batch.section}` : `Batch #${p.batchId}`}
+                               {' · '}{teacher ? teacher.name : `Teacher #${p.teacherId}`}
+                               {room ? ` · ${room.roomNumber}` : ' · any room'}
+                             </p>
+                           </div>
+                           <button
+                             type="button"
+                             onClick={() => removePreAllocation(i)}
+                             className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-rose-600 hover:bg-rose-50"
+                           >
+                             <Trash2 size={13} />
+                             Remove
+                           </button>
+                         </div>
+                       )
+                     })}
+                   </div>
+                 </Card>
+               )}
+
+               {preAllocations.length === 0 && (
+                 <p className="text-xs text-gray-500">No pre-assignments yet — the solver will assign all teachers itself.</p>
+               )}
+             </div>
+           )}
+
+{wizardStep === 5 && (
+             <div className="space-y-4">
                <div className="rounded-md bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-700">
                  <p className="mb-1">
                    <span className="font-semibold text-gray-900">{form.name}</span>
@@ -460,12 +638,37 @@ export default function ScheduleGenerator() {
                       ? `${selectedBatchIds.length} batches, ${selectedTeacherIds.length} teachers, ${selectedRoomIds.length} rooms selected · `
                       : 'All configured resources for the selected scope · '}
                     solving time {timeLabel(form.solvingTimeSeconds ?? 30)}
+                    {preAllocations.length > 0 && (
+                      <span> · {preAllocations.length} teacher pre-assignment{preAllocations.length !== 1 ? 's' : ''}</span>
+                    )}
                     {(form.blockedDays?.length ?? 0) > 0 && (
                       <span> · blocked: {form.blockedDays!.map((d) => d.slice(0, 3)).join(', ')}</span>
                     )}
                   </p>
-               </div>
-             </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    loading={checkingFeasibility}
+                    disabled={running}
+                    icon={<ShieldCheck size={16} />}
+                    onClick={handleCheckFeasibility}
+                  >
+                    Check Feasibility
+                  </Button>
+                  <Button
+                    size="lg"
+                    loading={running}
+                    disabled={running}
+                    icon={<Zap size={18} />}
+                    onClick={handleGenerate}
+                  >
+                    Launch Solver
+                  </Button>
+                </div>
+              </div>
            )}
 
           {wizardStep === 4 && (
@@ -517,10 +720,21 @@ export default function ScheduleGenerator() {
           )}
 
           <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-            <Button variant="secondary" onClick={gotoPrevStep} disabled={wizardStep === 1} icon={<ArrowLeft size={14} />}>
-              Back
-            </Button>
-            <Button onClick={gotoNextStep} disabled={wizardStep === 4 || !canNext} icon={<ArrowRight size={14} />}>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={gotoPrevStep} disabled={wizardStep === 1} icon={<ArrowLeft size={14} />}>
+                Back
+              </Button>
+              {WIZARD_STEPS.find((s) => s.id === wizardStep)?.optional && (
+                <Button
+                  variant="ghost"
+                  onClick={() => setWizardStep((x) => Math.min(5, x + 1))}
+                  icon={<ArrowRight size={14} />}
+                >
+                  Skip step
+                </Button>
+              )}
+            </div>
+            <Button onClick={gotoNextStep} disabled={wizardStep === 5 || !canNext} icon={<ArrowRight size={14} />}>
               Next
             </Button>
           </div>
@@ -578,7 +792,7 @@ function SolveProgress({
   elapsedSeconds: number
   onDone: (job: SolveJobResponse) => void
 }) {
-  const { job: freshJob, done, cancel } = useSolveJobPoll(job, onDone)
+  const { job: freshJob, done, error: pollError, cancel } = useSolveJobPoll(job, onDone)
 
   const cancelled = freshJob.status === 'CANCELLED'
   const failed = freshJob.status === 'FAILED'
@@ -630,6 +844,9 @@ function SolveProgress({
           style={{ width: done ? '100%' : '70%' }}
         />
       </div>
+      {done && pollError && (
+        <p className="text-xs text-rose-600">{pollError}</p>
+      )}
       {done && (
         <p className="text-xs text-slate-500">
           {cancelled

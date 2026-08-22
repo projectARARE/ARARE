@@ -8,6 +8,6 @@ public record PreAllocationRequest(
     @NotNull Long subjectId,
     Long teacherId,
     Long roomId,
-    @NotNull Long timeslotId,
+    Long timeslotId,
     boolean locked
 ) {}

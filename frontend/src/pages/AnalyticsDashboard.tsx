@@ -3,13 +3,17 @@ import { BarChart, Bar, CartesianGrid, Tooltip, ResponsiveContainer, XAxis, YAxi
 import { Card, Select } from '../components/ui'
 import { scheduleApi, teacherApi, roomApi } from '../services/api'
 import type { ClassSession, Schedule, Teacher, Room } from '../types'
+import { useToast } from '../contexts/ToastContext'
 
 export default function AnalyticsDashboard() {
+  const { toast } = useToast()
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [selectedScheduleId, setSelectedScheduleId] = useState<number | undefined>()
   const [sessions, setSessions] = useState<ClassSession[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadingSessions, setLoadingSessions] = useState(false)
 
   useEffect(() => {
     Promise.allSettled([scheduleApi.getAll(), teacherApi.getAll(), roomApi.getAll()])
@@ -17,15 +21,27 @@ export default function AnalyticsDashboard() {
         if (sch.status === 'fulfilled') {
           setSchedules(sch.value)
           if (sch.value.length > 0) setSelectedScheduleId(sch.value[0].id)
+        } else {
+          toast.error('Failed to load schedules')
         }
         if (t.status === 'fulfilled') setTeachers(t.value)
+        else toast.error('Failed to load teachers')
         if (r.status === 'fulfilled') setRooms(r.value)
+        else toast.error('Failed to load rooms')
       })
+      .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
     if (!selectedScheduleId) return
-    scheduleApi.getSessions(selectedScheduleId).then(setSessions).catch(() => setSessions([]))
+    setLoadingSessions(true)
+    scheduleApi.getSessions(selectedScheduleId)
+      .then(setSessions)
+      .catch((e) => {
+        setSessions([])
+        toast.error(e instanceof Error ? e.message : 'Failed to load sessions')
+      })
+      .finally(() => setLoadingSessions(false))
   }, [selectedScheduleId])
 
   const teacherLoad = useMemo(() => {
@@ -66,16 +82,27 @@ export default function AnalyticsDashboard() {
   return (
     <div className="space-y-4">
       <Card title="Resource Analytics" description="Load, occupancy, and schedule quality insights.">
-        <div className="max-w-sm">
-          <Select
-            label="Schedule"
-            value={selectedScheduleId ?? ''}
-            onChange={(e) => setSelectedScheduleId(+e.target.value)}
-            options={schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))}
-          />
-        </div>
+        {loading ? (
+          <div className="h-16 bg-gray-100 rounded-lg animate-pulse" />
+        ) : schedules.length === 0 ? (
+          <div className="text-center py-6">
+            <p className="text-gray-500">No schedules available. Generate a schedule first.</p>
+          </div>
+        ) : (
+          <div className="max-w-sm">
+            <Select
+              label="Schedule"
+              value={selectedScheduleId ?? ''}
+              onChange={(e) => setSelectedScheduleId(+e.target.value)}
+              options={schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))}
+            />
+          </div>
+        )}
       </Card>
 
+      {loadingSessions ? (
+        <div className="h-72 bg-gray-100 rounded-lg animate-pulse" />
+      ) : schedules.length === 0 ? null : (
       <div className="grid xl:grid-cols-2 gap-4">
         <Card title="Teacher Load Distribution" description="Hours assigned per teacher.">
           <div className="h-72">
@@ -105,6 +132,7 @@ export default function AnalyticsDashboard() {
           </div>
         </Card>
       </div>
+      )}
 
       <Card title="Constraint Health Radar" description="Quality surface across core objective categories.">
         <div className="h-80">

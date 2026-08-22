@@ -24,6 +24,7 @@ import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -128,13 +129,22 @@ public class RelationalCsvImportService {
                 if (filename.contains("/")) filename = filename.substring(filename.lastIndexOf('/') + 1);
                 filename = filename.toLowerCase(Locale.ROOT);
                 if (filename.endsWith(".csv")) {
-                    String content = new String(zis.readAllBytes(), StandardCharsets.UTF_8);
-                    if (!content.isEmpty()) {
-                        totalChars += content.length();
+                    // Guard against decompression bombs: stream the entry and
+                    // abort as soon as the combined size cap is crossed, so a
+                    // single highly-compressed entry cannot OOM the JVM.
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] chunk = new byte[8192];
+                    int read;
+                    while ((read = zis.read(chunk)) != -1) {
+                        totalChars += read;
                         if (totalChars > MAX_UNCOMPRESSED_CHARS) {
                             throw new IllegalArgumentException(
                                 "ZIP archive exceeds the maximum combined CSV size");
                         }
+                        buffer.write(chunk, 0, read);
+                    }
+                    String content = buffer.toString(StandardCharsets.UTF_8);
+                    if (!content.isEmpty()) {
                         files.put(filename, content);
                     }
                 }
@@ -370,8 +380,10 @@ public class RelationalCsvImportService {
 
         int written = 0;
         for (Map.Entry<Batch, List<SchoolDay>> entry : grouped.entrySet()) {
-            entry.getKey().setWorkingDays(new ArrayList<>(new LinkedHashSet<>(entry.getValue())));
-            batchRepository.save(entry.getKey());
+            Batch b = entry.getKey();
+            b.getWorkingDays().clear();
+            b.getWorkingDays().addAll(new LinkedHashSet<>(entry.getValue()));
+            batchRepository.save(b);
             written += entry.getValue().size();
         }
         stats.put("batch_working_days.csv",
@@ -396,7 +408,8 @@ public class RelationalCsvImportService {
             }
         }
         if (days.isEmpty()) return;
-        config.setWorkingDays(new ArrayList<>(new LinkedHashSet<>(days)));
+        config.getWorkingDays().clear();
+        config.getWorkingDays().addAll(new LinkedHashSet<>(days));
         config.setDaysPerWeek(config.getWorkingDays().size());
         configRepository.save(config);
         stats.put("config_working_days.csv",
@@ -421,7 +434,8 @@ public class RelationalCsvImportService {
             }
         }
         if (indices.isEmpty()) return;
-        config.setBreakSlotIndices(new ArrayList<>(new LinkedHashSet<>(indices)));
+        config.getBreakSlotIndices().clear();
+        config.getBreakSlotIndices().addAll(new LinkedHashSet<>(indices));
         configRepository.save(config);
         stats.put("config_break_indices.csv",
             new CsvZipImportResponse.FileImportStats("config_break_indices.csv", indices.size(), 0, skipped, errors));

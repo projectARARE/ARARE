@@ -1,5 +1,6 @@
 package com.arare.features.batch;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,7 +13,24 @@ import java.util.List;
 @Repository
 public interface BatchRepository extends JpaRepository<Batch, Long> {
 
+    // subjects fetched via @Fetch(SUBSELECT); workingDays (bag) + to-one graph
+    // are joined eagerly. No multiple-bag fetch is triggered.
+    @EntityGraph(attributePaths = {"department", "department.institute", "homeRoom", "workingDays"})
+    @Query("SELECT b FROM Batch b")
+    List<Batch> findAllWithDetails();
+
+    @EntityGraph(attributePaths = {"department", "department.institute", "homeRoom", "workingDays"})
+    @Query("SELECT b FROM Batch b WHERE b.department.id = :departmentId")
+    List<Batch> findByDepartmentIdWithDetails(@Param("departmentId") Long departmentId);
+
+    @EntityGraph(attributePaths = {"department", "department.institute", "homeRoom", "workingDays"})
+    @Query("SELECT b FROM Batch b WHERE b.department.institute.id = :instituteId")
+    List<Batch> findByDepartmentInstituteIdWithDetails(@Param("instituteId") Long instituteId);
+
     List<Batch> findByDepartmentId(Long departmentId);
+
+    @Query("SELECT b FROM Batch b WHERE b.department.institute.id = :instituteId")
+    List<Batch> findByDepartmentInstituteId(@Param("instituteId") Long instituteId);
 
     List<Batch> findByDepartmentIdAndYear(Long departmentId, int year);
 

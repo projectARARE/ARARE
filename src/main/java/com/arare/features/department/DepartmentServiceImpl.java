@@ -8,6 +8,8 @@ import com.arare.features.building.BuildingResponse;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsection.ClassSectionRepository;
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.institute.Institute;
+import com.arare.features.institute.InstituteRepository;
 import com.arare.features.subject.SubjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ import java.util.List;
 public class DepartmentServiceImpl implements DepartmentService {
 
     private final DepartmentRepository repo;
+    private final InstituteRepository instituteRepo;
     private final BuildingRepository buildingRepo;
     private final ClassSessionRepository sessionRepo;
     private final ClassSectionRepository sectionRepo;
@@ -34,6 +37,7 @@ public class DepartmentServiceImpl implements DepartmentService {
         Department d = Department.builder()
             .name(req.name())
             .code(req.code())
+            .institute(resolveInstitute(req.instituteId()))
             .buildingsAllowed(resolveBuildings(req.buildingIds()))
             .build();
         return toResponse(repo.save(d));
@@ -45,6 +49,7 @@ public class DepartmentServiceImpl implements DepartmentService {
         Department d = findEntity(id);
         d.setName(req.name());
         d.setCode(req.code());
+        d.setInstitute(resolveInstitute(req.instituteId()));
         if (req.buildingIds() != null) {   // null = keep current buildings unchanged
             d.setBuildingsAllowed(resolveBuildings(req.buildingIds()));
         }
@@ -91,6 +96,14 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     // Resolves building IDs to entities, failing with a 400-level error when any
     // requested ID does not exist — consistent with TeacherServiceImpl.resolveAll().
+    private Institute resolveInstitute(Long id) {
+        if (id == null) {
+            throw new IllegalArgumentException("Institute id is required for a department.");
+        }
+        return instituteRepo.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Institute id does not exist: " + id));
+    }
+
     private List<Building> resolveBuildings(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
         List<Building> found = buildingRepo.findAllById(ids);
@@ -104,6 +117,11 @@ public class DepartmentServiceImpl implements DepartmentService {
         List<BuildingResponse> buildings = d.getBuildingsAllowed().stream()
             .map(b -> new BuildingResponse(b.getId(), b.getName(), b.getLocation()))
             .toList();
-        return new DepartmentResponse(d.getId(), d.getName(), d.getCode(), buildings);
+        Institute inst = d.getInstitute();
+        return new DepartmentResponse(
+            d.getId(), d.getName(), d.getCode(),
+            inst != null ? inst.getId() : null,
+            inst != null ? inst.getName() : null,
+            buildings);
     }
 }

@@ -6,10 +6,15 @@ import com.arare.features.classsection.ClassSectionRepository;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.department.Department;
 import com.arare.features.department.DepartmentRepository;
+import com.arare.features.room.RoomRepository;
+import com.arare.features.subject.Subject;
+import com.arare.features.subject.SubjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 @Service
@@ -19,8 +24,10 @@ public class BatchServiceImpl implements BatchService {
 
     private final BatchRepository repo;
     private final DepartmentRepository departmentRepo;
+    private final RoomRepository roomRepo;
     private final ClassSessionRepository sessionRepo;
     private final ClassSectionRepository sectionRepo;
+    private final SubjectRepository subjectRepo;
     private final CascadeDeletionService cascadeDeletionService;
 
     @Override
@@ -36,6 +43,11 @@ public class BatchServiceImpl implements BatchService {
             .studentCount(req.studentCount())
             .workingDays(req.workingDays() == null ? List.of() : req.workingDays())
             .preferredFreeDay(req.preferredFreeDay())
+            .homeRoom(req.homeRoomId() != null
+                ? roomRepo.findById(req.homeRoomId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Room", req.homeRoomId()))
+                : null)
+            .subjects(resolveSubjects(req.subjectIds()))
             .build();
         return toResponse(repo.save(b));
     }
@@ -53,7 +65,27 @@ public class BatchServiceImpl implements BatchService {
         b.setStudentCount(req.studentCount());
         if (req.workingDays() != null) b.setWorkingDays(req.workingDays());
         b.setPreferredFreeDay(req.preferredFreeDay());
+        b.setHomeRoom(req.homeRoomId() != null
+            ? roomRepo.findById(req.homeRoomId())
+                .orElseThrow(() -> new ResourceNotFoundException("Room", req.homeRoomId()))
+            : null);
+        if (req.subjectIds() != null) {
+            b.setSubjects(resolveSubjects(req.subjectIds()));
+        }
         return toResponse(repo.save(b));
+    }
+
+    // Resolves every requested subject id, rejecting unknown ones instead of
+    // silently dropping curriculum entries.
+    private List<Subject> resolveSubjects(List<Long> subjectIds) {
+        if (subjectIds == null || subjectIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<Subject> found = subjectRepo.findAllById(subjectIds);
+        if (found.size() != new HashSet<>(subjectIds).size()) {
+            throw new IllegalArgumentException("One or more subject ids do not exist: " + subjectIds);
+        }
+        return found;
     }
 
     @Override
@@ -63,12 +95,12 @@ public class BatchServiceImpl implements BatchService {
 
     @Override
     public List<BatchResponse> findAll() {
-        return repo.findAll().stream().map(this::toResponse).toList();
+        return repo.findAllWithDetails().stream().map(this::toResponse).toList();
     }
 
     @Override
     public List<BatchResponse> findByDepartment(Long departmentId) {
-        return repo.findByDepartmentId(departmentId).stream().map(this::toResponse).toList();
+        return repo.findByDepartmentIdWithDetails(departmentId).stream().map(this::toResponse).toList();
     }
 
     @Override
@@ -91,11 +123,17 @@ public class BatchServiceImpl implements BatchService {
     }
 
     private BatchResponse toResponse(Batch b) {
+        List<Long> subjectIds = b.getSubjects().stream().map(s -> s.getId()).toList();
+        List<String> subjectNames = b.getSubjects().stream().map(s -> s.getName()).toList();
         return new BatchResponse(
             b.getId(),
             b.getDepartment().getId(), b.getDepartment().getName(),
+            b.getDepartment().getInstitute() != null ? b.getDepartment().getInstitute().getId() : null,
             b.getYear(), b.getSection(), b.getStudentCount(),
-            b.getWorkingDays(), b.getPreferredFreeDay()
+            b.getWorkingDays(), b.getPreferredFreeDay(),
+            b.getHomeRoom() != null ? b.getHomeRoom().getId() : null,
+            b.getHomeRoom() != null ? b.getHomeRoom().getRoomNumber() : null,
+            subjectIds, subjectNames
         );
     }
 }

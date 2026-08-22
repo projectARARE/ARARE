@@ -12,5 +12,9 @@ public record BatchRequest(
     @NotNull String section,
     @Min(1) int studentCount,
     List<SchoolDay> workingDays,
-    SchoolDay preferredFreeDay
+    SchoolDay preferredFreeDay,
+    Long homeRoomId,
+    // Curriculum: subject ids this batch actually offers this term.
+    // Empty/null = inherit everything the department offers.
+    List<Long> subjectIds
 ) {}

@@ -3,8 +3,12 @@ package com.arare.features.solver;
 import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
 import ai.timefold.solver.core.api.score.constraint.ConstraintMatchTotal;
 import ai.timefold.solver.core.api.solver.SolutionManager;
+import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.schedule.Schedule;
 import com.arare.features.schedule.ScheduleRepository;
+import com.arare.features.solvejob.SolveJob;
+import com.arare.features.solvejob.SolveJobRepository;
+import com.arare.features.solvejob.SolveJobType;
 import java.util.Collection;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -25,19 +29,28 @@ public class TimetableSolverService {
     private final SolutionManager<TimetableSolution, HardMediumSoftScore> solutionManager;
     private final ScheduleRepository scheduleRepo;
     private final TimetableProblemBuilder problemBuilder;
+    private final SolveJobRepository solveJobRepo;
 
     @Transactional(readOnly = true)
     public ScoreExplanationResponse explainSchedule(Long scheduleId) {
         Schedule schedule = scheduleRepo.findById(scheduleId)
-            .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + scheduleId));
+            .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
+
+        // Recompute the explanation with the SAME disruption facts as the last
+        // partial-resolve that produced this schedule, so the breakdown matches
+        // the persisted score. Without this, an infeasible partial resolve would
+        // be re-scored without its disruption constraints and reported feasible.
+        List<DisruptionConstraintFact> disruptionFacts = latestPartialResolveFacts(scheduleId);
 
         TimetableSolution solution = problemBuilder.build(new ProblemBuildRequest(
             schedule,
             null,
             null,
+            schedule.getInstituteId(),
             null,
             null,
-            null
+            null,
+            disruptionFacts
         ));
 
         var explanation = solutionManager.explain(solution);
@@ -70,5 +83,12 @@ public class TimetableSolverService {
             score != null ? score.softScore() : 0,
             breakdowns
         );
+    }
+
+    private List<DisruptionConstraintFact> latestPartialResolveFacts(Long scheduleId) {
+        return solveJobRepo.findTopByScheduleIdAndJobTypeOrderByCreatedAtDesc(scheduleId, SolveJobType.PARTIAL_RESOLVE)
+            .map(SolveJob::getDisruptionFactsCsv)
+            .map(DisruptionConstraintFact::decode)
+            .orElseGet(List::of);
     }
 }

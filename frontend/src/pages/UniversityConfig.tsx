@@ -6,6 +6,12 @@ import type { Timeslot } from '../types'
 
 const ALL_DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
+const DAY_PRESETS: { label: string; days: SchoolDay[] }[] = [
+  { label: 'Mon – Fri', days: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'] },
+  { label: 'Mon – Sat', days: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] },
+  { label: 'Mon – Sun', days: ALL_DAYS },
+]
+
 const DEFAULT_CONFIG: UniversityConfig = {
   active: true,
   daysPerWeek: 5,
@@ -34,7 +40,7 @@ export default function UniversityConfigPage() {
 
     for (const day of days) {
       for (let slot = 0; slot < slotsPerDay; slot++) {
-        const existing = timeslots.find((t) => t.day === day && t.slotNumber === slot && t.type === 'CLASS')
+        const existing = timeslots.find((t) => t.day === day && t.slotNumber === slot + 1 && t.type === 'CLASS')
         if (existing) {
           preview.push(existing)
         } else {
@@ -92,6 +98,11 @@ export default function UniversityConfigPage() {
   }
 
   const handleSave = async () => {
+    const workingCount = form.workingDays.length
+    if (form.daysPerWeek !== workingCount) {
+      setError(`Days per week (${form.daysPerWeek}) must match the number of working days selected (${workingCount})`)
+      return
+    }
     setSaving(true)
     setError(null)
     setSaved(false)
@@ -131,7 +142,24 @@ export default function UniversityConfigPage() {
           )}
 
           <div>
-            <p className="block text-sm font-medium text-gray-700 mb-2">Working Days</p>
+            <p className="block text-sm font-medium text-gray-700 mb-1">Working Days</p>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              {DAY_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setForm((prev) => ({
+                    ...prev,
+                    workingDays: [...preset.days],
+                    daysPerWeek: preset.days.length,
+                  }))}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium border transition-colors bg-gray-50 text-gray-700 border-gray-300 hover:border-primary-400 hover:bg-primary-50"
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <span className="text-xs text-gray-400">or pick days below</span>
+            </div>
             <div className="flex flex-wrap gap-2">
               {ALL_DAYS.map((day) => (
                 <button
@@ -205,9 +233,11 @@ export default function UniversityConfigPage() {
           </div>
 
           <div>
-            <p className="block text-sm font-medium text-gray-700 mb-1">Visual Availability Painter (Preview only)</p>
+            <p className="block text-sm font-medium text-gray-700 mb-1">Availability Preview</p>
             <p className="text-xs text-gray-500 mb-2">
-              Paint the campus-wide preferred available windows. Use this to prototype operating hours quickly.
+              Visualizes the operating window implied by the current configuration. This grid is
+              informational only — painting here does not change saved settings. Use the Working Days,
+              Timeslots per Day, and Break Slot controls above to configure the actual schedule.
             </p>
             {timeslots.filter((ts) => ts.type === 'CLASS').length === 0 && (
               <p className="text-xs text-amber-700 mb-2">
@@ -218,6 +248,7 @@ export default function UniversityConfigPage() {
               timeslots={painterTimeslots}
               selectedIds={paintedAvailableTimeslotIds}
               onChange={setPaintedAvailableTimeslotIds}
+              days={form.workingDays.length > 0 ? form.workingDays : undefined}
             />
           </div>
 

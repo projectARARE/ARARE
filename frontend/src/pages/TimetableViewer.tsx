@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useParams } from 'react-router-dom'
-import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus } from 'lucide-react'
-import { Card, Button, Select, Badge, Modal, ContextMenu, Input } from '../components/ui'
+import { useParams, useNavigate } from 'react-router-dom'
+import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus, Pin, CheckCircle2, Archive, FileText, Sheet, Pencil, Trash2, Copy, X } from 'lucide-react'
+import { Card, Button, Select, Badge, Modal, ContextMenu, Input, ConfirmDialog, SearchableSelect } from '../components/ui'
+import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import TimetableGrid from '../components/timetable/TimetableGrid'
 import SessionCell from '../components/timetable/SessionCell'
 import ScoreBreakdownPanel from '../components/timetable/ScoreBreakdownPanel'
 import ConflictSolverSidecar, { buildConflictSuggestions } from '../components/timetable/ConflictSolverSidecar'
-import { scheduleApi, timeslotApi, batchApi, teacherApi, roomApi, sessionApi, subjectApi, classSectionApi } from '../services/api'
+import { scheduleApi, timeslotApi, batchApi, teacherApi, roomApi, sessionApi, subjectApi, classSectionApi, preAllocationApi } from '../services/api'
 import { waitForJob } from '../hooks/useSolveJob'
 import type {
   Schedule,
@@ -23,6 +24,7 @@ import type {
   ScoreExplanation,
   ConflictSuggestion,
   SessionCreateRequest,
+  PreAllocation,
 } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
@@ -125,6 +127,12 @@ type SlotContextMenuState = {
   slot: Timeslot
 }
 
+type SessionContextMenuState = {
+  x: number
+  y: number
+  session: ClassSession
+}
+
 const savedViewsKey = (scheduleId: number) => `arare.savedViews.${scheduleId}`
 const MAX_SAVED_VIEWS = 20
 
@@ -183,6 +191,7 @@ function buildDragPreview(dragged: ClassSession | null, slot: Timeslot | null, s
 
 export default function TimetableViewer() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const parsedId = Number(id)
   const scheduleId = Number.isFinite(parsedId) && parsedId > 0 ? parsedId : NaN
   const { toast } = useToast()
@@ -195,7 +204,9 @@ export default function TimetableViewer() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [sections, setSections] = useState<ClassSection[]>([])
+  const [preAllocations, setPreAllocations] = useState<PreAllocation[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('batch')
   const [batchFilterId, setBatchFilterId] = useState<number | undefined>()
   const [teacherFilterId, setTeacherFilterId] = useState<number | undefined>()
@@ -208,6 +219,8 @@ export default function TimetableViewer() {
   const [editLocked, setEditLocked] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  const [publishing, setPublishing] = useState(false)
+  const [archiving, setArchiving] = useState(false)
 
   const [scoreBreakdown, setScoreBreakdown] = useState<ScoreExplanation | null>(null)
   const [rawExplanation, setRawExplanation] = useState<string | null>(null)
@@ -222,6 +235,9 @@ export default function TimetableViewer() {
   const [dropSaving, setDropSaving] = useState(false)
 
   const [slotContextMenu, setSlotContextMenu] = useState<SlotContextMenuState | null>(null)
+  const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null)
+  const [deleteSession, setDeleteSession] = useState<ClassSession | null>(null)
+  const [deleteSaving, setDeleteSaving] = useState(false)
   const [createSessionOpen, setCreateSessionOpen] = useState(false)
   const [createSlot, setCreateSlot] = useState<Timeslot | null>(null)
   const [createSubjectId, setCreateSubjectId] = useState('')
@@ -245,11 +261,23 @@ export default function TimetableViewer() {
 
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
 
+  const scheduleReadonly = schedule?.status === 'ARCHIVED' || schedule?.status === 'INFEASIBLE'
+
   useEffect(() => {
     setSavedViews(loadSavedViews(scheduleId))
   }, [scheduleId])
 
   const heatBySessionId = useMemo(() => computeHeatMap(sessions), [sessions])
+
+  const preAllocatedSessionIds = useMemo(() => {
+    if (preAllocations.length === 0) return new Set<number>()
+    const keys = new Set(preAllocations.map((p) => `${p.batchId}:${p.subjectId}`))
+    return new Set(
+      sessions
+        .filter((s) => s.batchId != null && s.subjectId != null && keys.has(`${s.batchId}:${s.subjectId}`))
+        .map((s) => s.id),
+    )
+  }, [preAllocations, sessions])
 
   const unassignedCount = useMemo(
     () => sessions.filter((s) => !s.timeslotId).length,
@@ -314,9 +342,15 @@ export default function TimetableViewer() {
   }
 
   const load = () => {
-    if (!Number.isFinite(scheduleId)) return
+    if (!Number.isFinite(scheduleId)) {
+      setSchedule(null)
+      setSessions([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    Promise.all([
+    setLoadFailed(false)
+    Promise.allSettled([
       scheduleApi.getById(scheduleId),
       scheduleApi.getSessions(scheduleId),
       timeslotApi.getAll(),
@@ -325,24 +359,34 @@ export default function TimetableViewer() {
       roomApi.getAll(),
       subjectApi.getAll(),
       classSectionApi.getAll(),
+      preAllocationApi.getBySchedule(scheduleId),
     ])
-      .then(([sched, sess, ts, b, t, r, subj, sec]) => {
-        setSchedule(sched)
-        setSessions(sess)
-        setTimeslots(ts)
-        setBatches(b)
-        setTeachers(t)
-        setRooms(r)
-        setSubjects(subj)
-        setSections(sec)
-        const batchInSessions = new Set(sess.map((s) => s.batchId).filter((x): x is number => x != null))
-        const teacherInSessions = new Set(sess.map((s) => s.teacherId).filter((x): x is number => x != null))
-        const roomInSessions = new Set(sess.map((s) => s.roomId).filter((x): x is number => x != null))
-        setBatchFilterId(b.find((x) => batchInSessions.has(x.id))?.id)
-        setTeacherFilterId(t.find((x) => teacherInSessions.has(x.id))?.id)
-        setRoomFilterId(r.find((x) => roomInSessions.has(x.id))?.id)
+      .then(([sched, sess, ts, b, t, r, subj, sec, pre]) => {
+        // The schedule itself is mandatory; the rest degrade gracefully so a
+        // single unrelated failure (e.g. a slow reference-data call) never
+        // blanks the entire timetable.
+        if (sched.status === 'rejected') {
+          setLoadFailed(true)
+          toast.error(sched.reason instanceof Error ? sched.reason.message : 'Failed to load schedule')
+          return
+        }
+        setSchedule(sched.value)
+        setSessions(sess.status === 'fulfilled' ? sess.value : [])
+        setTimeslots(ts.status === 'fulfilled' ? ts.value : [])
+        setBatches(b.status === 'fulfilled' ? b.value : [])
+        setTeachers(t.status === 'fulfilled' ? t.value : [])
+        setRooms(r.status === 'fulfilled' ? r.value : [])
+        setSubjects(subj.status === 'fulfilled' ? subj.value : [])
+        setSections(sec.status === 'fulfilled' ? sec.value : [])
+        setPreAllocations(pre.status === 'fulfilled' ? pre.value : [])
+        const failed = [sess, ts, b, t, r, subj, sec, pre].filter((x) => x.status === 'rejected').length
+        if (failed > 0) {
+          toast.warning(`Some schedule data failed to refresh (${failed}/8)`)
+        }
+        // Do NOT auto-pick a filter here: the grid must show every session by
+        // default so dropped sessions never appear to vanish. The operator
+        // chooses a batch/teacher/room filter explicitly.
       })
-      .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to load schedule'))
       .finally(() => setLoading(false))
 
     loadExplanations()
@@ -363,6 +407,82 @@ export default function TimetableViewer() {
       URL.revokeObjectURL(url)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Export failed')
+    }
+  }
+
+  const handleExportPdf = async () => {
+    try {
+      const view = viewMode === 'teacher' ? 'TEACHER' : viewMode === 'room' ? 'ROOM' : 'BATCH'
+      const blob = await scheduleApi.exportPdf(
+        scheduleId,
+        currentFilterId ? view : 'ALL',
+        currentFilterId || undefined,
+      )
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const suffix = currentFilterId
+        ? viewMode === 'teacher' ? '-teacher' : viewMode === 'room' ? '-room' : '-batch'
+        : ''
+      a.href = url
+      a.download = `timetable-${schedule?.name ?? scheduleId}${suffix}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'PDF export failed')
+    }
+  }
+
+  const handleExportExcel = async () => {
+    try {
+      const view = viewMode === 'teacher' ? 'TEACHER' : viewMode === 'room' ? 'ROOM' : 'BATCH'
+      const blob = await scheduleApi.exportExcel(
+        scheduleId,
+        currentFilterId ? view : 'ALL',
+        currentFilterId || undefined,
+      )
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const suffix = currentFilterId
+        ? viewMode === 'teacher' ? '-teacher' : viewMode === 'room' ? '-room' : '-batch'
+        : ''
+      a.href = url
+      a.download = `timetable-${schedule?.name ?? scheduleId}${suffix}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Excel export failed')
+    }
+  }
+
+  const handlePublish = async () => {
+    if (!schedule || publishing) return
+    setPublishing(true)
+    try {
+      const updated = await scheduleApi.activate(schedule.id)
+      setSchedule(updated)
+      toast.success(`"${schedule.name}" is now active`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to activate schedule')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  const handleArchive = async () => {
+    if (!schedule || archiving) return
+    setArchiving(true)
+    try {
+      const updated = await scheduleApi.archive(schedule.id)
+      setSchedule(updated)
+      toast.success(`"${schedule.name}" archived`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to archive schedule')
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -402,7 +522,18 @@ export default function TimetableViewer() {
         toast.error(finished.errorMessage || 'Re-solving after disruption failed')
         return
       }
-      toast.success(`Disruption applied - re-solved ${disruptionPreview?.impactedSessionCount ?? '?'} sessions`)
+      if (finished.status === 'CANCELLED') {
+        toast.error('Re-solving after disruption was cancelled')
+        return
+      }
+      const updated = await scheduleApi.getById(scheduleId)
+      if (updated.status === 'INFEASIBLE') {
+        toast.warning(
+          `Disruption applied, but the schedule is now infeasible (${updated.score ?? 'no score'}) — partial result kept`,
+        )
+      } else {
+        toast.success(`Disruption applied - re-solved ${disruptionPreview?.impactedSessionCount ?? '?'} sessions`)
+      }
       setShowDisruptionPanel(false)
       setDisruptionPreview(null)
       load()
@@ -430,6 +561,10 @@ export default function TimetableViewer() {
 
   const handleSaveAssignment = async () => {
     if (!selectedSession) return
+    if (scheduleReadonly) {
+      setEditError('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
     if (editLocked && !selectedSession.isLocked) {
       // Session is being created locked: nothing to do besides locking.
       setEditError(null)
@@ -479,6 +614,10 @@ export default function TimetableViewer() {
 
   const handleQuickLockToggle = async () => {
     if (!selectedSession) return
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
     try {
       await sessionApi.updateAssignment(selectedSession.id, { locked: !selectedSession.isLocked })
       toast.success(selectedSession.isLocked ? 'Session unlocked' : 'Session locked')
@@ -489,8 +628,101 @@ export default function TimetableViewer() {
     }
   }
 
+  const handleDeleteSession = async () => {
+    if (!deleteSession) return
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      setDeleteSession(null)
+      setSessionContextMenu(null)
+      return
+    }
+    setDeleteSaving(true)
+    try {
+      await sessionApi.delete(deleteSession.id)
+      toast.success(`Session "${deleteSession.subjectName ?? `#${deleteSession.id}`}" deleted`)
+      setDeleteSession(null)
+      setSessionContextMenu(null)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete session')
+    } finally {
+      setDeleteSaving(false)
+    }
+  }
+
+  const handleDuplicateSession = async (session: ClassSession) => {
+    setSessionContextMenu(null)
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
+    if (!session.timeslotId) {
+      toast.error('Cannot duplicate an unassigned session')
+      return
+    }
+    setCreateSlot(timeslots.find((t) => t.id === session.timeslotId) ?? null)
+    setCreateSessionOpen(true)
+    setCreateSubjectId(String(session.subjectId ?? ''))
+    setCreateBatchId(String(session.batchId ?? ''))
+    setCreateSectionId(String(session.sectionId ?? ''))
+    setCreateTeacherId(String(session.teacherId ?? ''))
+    setCreateRoomId(String(session.roomId ?? ''))
+    setCreateDuration(session.duration ?? 1)
+    setCreateLocked(session.isLocked)
+    setCreateError(null)
+  }
+
+  const handleSessionContextMenu = (session: ClassSession, x: number, y: number) => {
+    setSessionContextMenu({ x, y, session })
+  }
+
+  const buildSessionContextItems = (s: ClassSession): ContextMenuItem[] => {
+    if (scheduleReadonly) return []
+    return [
+    { label: 'Edit assignment', icon: <Pencil size={13} />, onClick: () => openSessionDetail(s) },
+    { label: s.isLocked ? 'Unlock' : 'Lock', icon: s.isLocked ? <Unlock size={13} /> : <Lock size={13} />, onClick: () => handleQuickLockToggleFrom(s) },
+    { label: 'Duplicate session', icon: <Copy size={13} />, onClick: () => handleDuplicateSession(s) },
+    { label: 'Remove from slot', icon: <X size={13} />, onClick: () => handleClearTimeslot(s), disabled: !s.timeslotId || s.isLocked },
+    { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setDeleteSession(s) },
+  ]
+  }
+
+  const handleQuickLockToggleFrom = async (s: ClassSession) => {
+    setSessionContextMenu(null)
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
+    try {
+      await sessionApi.updateAssignment(s.id, { locked: !s.isLocked })
+      toast.success(s.isLocked ? 'Session unlocked' : 'Session locked')
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update lock state')
+    }
+  }
+
+  const handleClearTimeslot = async (s: ClassSession) => {
+    setSessionContextMenu(null)
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
+    try {
+      await sessionApi.updateAssignment(s.id, { timeslotId: null, clearTimeslot: true, locked: s.isLocked })
+      toast.success(`"${s.subjectName}" removed from its slot`)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to remove session from slot')
+    }
+  }
+
   const openCreateSession = (slot: Timeslot) => {
     setSlotContextMenu(null)
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
     setCreateSlot(slot)
     setCreateSubjectId(subjects[0]?.id ? String(subjects[0].id) : '')
     setCreateBatchId(viewMode === 'batch' && currentFilterId != null ? String(currentFilterId) : '')
@@ -505,6 +737,10 @@ export default function TimetableViewer() {
 
   const handleCreateSession = async () => {
     if (!createSlot) return
+    if (scheduleReadonly) {
+      setCreateError('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
     if (!createSubjectId) {
       setCreateError('Select a subject')
       return
@@ -543,12 +779,14 @@ export default function TimetableViewer() {
   }
 
   const refreshSessionsAndSchedule = () => {
-    Promise.all([scheduleApi.getById(scheduleId), scheduleApi.getSessions(scheduleId)])
+    Promise.allSettled([scheduleApi.getById(scheduleId), scheduleApi.getSessions(scheduleId)])
       .then(([sched, sess]) => {
-        setSchedule(sched)
-        setSessions(sess)
+        if (sched.status === 'fulfilled') setSchedule(sched.value)
+        if (sess.status === 'fulfilled') setSessions(sess.value)
+        if (sched.status === 'rejected' || sess.status === 'rejected') {
+          toast.error('Failed to reload schedule — showing the last known data')
+        }
       })
-      .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to reload schedule'))
     loadExplanations()
   }
 
@@ -563,6 +801,10 @@ export default function TimetableViewer() {
     const session = draggedSession
     setDraggedSession(null)
     setDragPreview(null)
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
     if (session.isLocked) {
       toast.error(`"${session.subjectName}" is locked — unlock it in the editor to move it`)
       return
@@ -585,6 +827,11 @@ export default function TimetableViewer() {
         locked: session.isLocked,
       })
       toast.success(`Moved "${session.subjectName}" to ${slot.day} ${slot.startTime}-${slot.endTime}`)
+      // Reveal the session: if the active view filter no longer matches the
+      // moved session, clear it so the placement is immediately visible.
+      if (viewMode === 'batch' && batchFilterId !== session.batchId) setBatchFilterId(undefined)
+      else if (viewMode === 'teacher' && teacherFilterId !== session.teacherId) setTeacherFilterId(undefined)
+      else if (viewMode === 'room' && roomFilterId !== session.roomId) setRoomFilterId(undefined)
       refreshSessionsAndSchedule()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : `Move failed — ${slot.day} ${slot.startTime}`)
@@ -634,10 +881,10 @@ export default function TimetableViewer() {
     viewMode === 'teacher' ? teacherFilterId :
     roomFilterId
 
-  const setCurrentFilterId = (nextId: number) => {
-    if (viewMode === 'batch') setBatchFilterId(nextId)
-    else if (viewMode === 'teacher') setTeacherFilterId(nextId)
-    else setRoomFilterId(nextId)
+  const setCurrentFilterId = (nextId: number | null) => {
+    if (viewMode === 'batch') setBatchFilterId(nextId ?? undefined)
+    else if (viewMode === 'teacher') setTeacherFilterId(nextId ?? undefined)
+    else setRoomFilterId(nextId ?? undefined)
   }
 
   const handleSaveView = () => {
@@ -663,21 +910,12 @@ export default function TimetableViewer() {
     }
   }
 
-  const teacherOptions = [
-    { value: '', label: '- Unassigned -' },
-    ...teachers.map((t) => ({ value: t.id, label: t.name })),
-  ]
+  const teacherOptions = teachers.map((t) => ({ value: t.id, label: t.name }))
   const subjectOptions = subjects.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))
-  const roomOptions = [
-    { value: '', label: '- Unassigned -' },
-    ...rooms.map((r) => ({ value: r.id, label: `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''}` })),
-  ]
-  const timeslotOptions = [
-    { value: '', label: '- Unassigned -' },
-    ...timeslots
-      .filter((ts) => ts.type === 'CLASS')
-      .map((ts) => ({ value: ts.id, label: `${ts.day} ${ts.startTime}-${ts.endTime}` })),
-  ]
+  const roomOptions = rooms.map((r) => ({ value: r.id, label: `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''}` }))
+  const timeslotOptions = timeslots
+    .filter((ts) => ts.type === 'CLASS')
+    .map((ts) => ({ value: ts.id, label: `${ts.day} ${ts.startTime}-${ts.endTime}` }))
 
   const disruptionEntityOptions = useMemo(() => {
     switch (disruptionType) {
@@ -712,6 +950,22 @@ export default function TimetableViewer() {
 
   if (loading) return <div className="animate-pulse h-96 bg-gray-100 rounded-lg" />
 
+  if (loadFailed || !schedule) {
+    return (
+      <div className="rounded-lg border border-rose-200 bg-rose-50 px-6 py-10 text-center">
+        <p className="text-sm font-medium text-rose-800">
+          {!Number.isFinite(scheduleId) ? 'Invalid schedule id in the URL' : 'Could not load this schedule'}
+        </p>
+        <p className="mt-1 text-sm text-rose-600">
+          It may have been deleted, or the link is broken.
+        </p>
+        <Button variant="secondary" className="mt-4" icon={<X size={14} />} onClick={() => navigate('/schedule/history')}>
+          Back to schedule history
+        </Button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <Card className="card-glass border-slate-200 text-slate-900">
@@ -725,6 +979,12 @@ export default function TimetableViewer() {
                   variant={STATUS_VARIANT[schedule.status] ?? 'gray'}
                   dot
                 />
+              )}
+              {scheduleReadonly && (
+                <span className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                  <Lock size={11} />
+                  Read-only — archived or infeasible schedules can't be edited
+                </span>
               )}
               {schedule?.score && (
                 <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">{schedule.score}</code>
@@ -742,6 +1002,12 @@ export default function TimetableViewer() {
                 <span className="flex items-center gap-1 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
                   <Lock size={11} />
                   {lockedCount} locked
+                </span>
+              )}
+              {preAllocatedSessionIds.size > 0 && (
+                <span className="flex items-center gap-1 text-xs text-cyan-700 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded">
+                  <Pin size={11} />
+                  {preAllocatedSessionIds.size} pre-assigned
                 </span>
               )}
               {(schedule?.blockedDays?.length ?? 0) > 0 && (
@@ -776,7 +1042,30 @@ export default function TimetableViewer() {
             <Button variant="secondary" size="sm" icon={<Download size={14} />} onClick={handleExportCsv}>
               Export CSV
             </Button>
-            <Button variant="secondary" size="sm" icon={<Zap size={14} />} onClick={() => { setShowDisruptionPanel(true); setDisruptionPreview(null) }}>
+            <Button variant="secondary" size="sm" icon={<FileText size={14} />} onClick={handleExportPdf} title="Download the current view as a PDF (all sessions if no filter is set)">
+              PDF
+            </Button>
+            <Button variant="secondary" size="sm" icon={<Sheet size={14} />} onClick={handleExportExcel} title="Download as Excel — one sheet per batch (all sessions if no filter is set)">
+              Excel
+            </Button>
+            {schedule?.status === 'DRAFT' && (
+              <Button variant="primary" size="sm" loading={publishing} icon={<CheckCircle2 size={14} />} onClick={handlePublish}>
+                Publish
+              </Button>
+            )}
+            {schedule && (schedule.status === 'ACTIVE' || schedule.status === 'PARTIAL') && (
+              <Button variant="secondary" size="sm" loading={archiving} icon={<Archive size={14} />} onClick={handleArchive}>
+                Archive
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Zap size={14} />}
+              disabled={scheduleReadonly}
+              title={scheduleReadonly ? 'Disruptions cannot be applied to archived or infeasible schedules' : undefined}
+              onClick={() => { setShowDisruptionPanel(true); setDisruptionPreview(null) }}
+            >
               Disruptions
             </Button>
             <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={load}>
@@ -796,10 +1085,11 @@ export default function TimetableViewer() {
                 options={viewOptions}
               />
               {entityOptions.length > 0 && (
-                <Select
-                  value={currentFilterId ?? ''}
-                  onChange={(e) => setCurrentFilterId(+e.target.value)}
+                <SearchableSelect
+                  value={currentFilterId ?? null}
+                  onChange={(v) => setCurrentFilterId(v == null ? null : +v)}
                   options={entityOptions}
+                  allowClear
                 />
               )}
               <div className="ml-auto text-xs text-slate-500 flex items-center gap-1.5">
@@ -826,8 +1116,9 @@ export default function TimetableViewer() {
                       key={s.id}
                       session={s}
                       onClick={openSessionDetail}
+                      onContextMenu={handleSessionContextMenu}
                       onDragStart={
-                        dropSaving
+                        dropSaving || scheduleReadonly
                           ? undefined
                           : (session) => {
                               setDraggedSession(session)
@@ -838,10 +1129,11 @@ export default function TimetableViewer() {
                         setDraggedSession(null)
                         setDragPreview(null)
                       }}
+                      preAllocated={preAllocatedSessionIds.has(s.id)}
                     />
                   ))}
                   {orphanedSessions.map((s) => (
-                    <SessionCell key={s.id} session={s} onClick={openSessionDetail} />
+                    <SessionCell key={s.id} session={s} onClick={openSessionDetail} onContextMenu={handleSessionContextMenu} />
                   ))}
                 </div>
               </div>
@@ -857,8 +1149,9 @@ export default function TimetableViewer() {
               heatmapEnabled={heatmapEnabled}
               heatBySessionId={heatBySessionId}
               highlightedSessionIds={highlightedSessionIds}
+              preAllocatedSessionIds={preAllocatedSessionIds}
               onSessionDragStart={
-                dropSaving
+                dropSaving || scheduleReadonly
                   ? undefined
                   : (session) => {
                       setDraggedSession(session)
@@ -869,9 +1162,14 @@ export default function TimetableViewer() {
                 setDraggedSession(null)
                 setDragPreview(null)
               }}
+              onSessionContextMenu={handleSessionContextMenu}
               onSlotDragHover={(slot) => setDragPreview(buildDragPreview(draggedSession, slot, sessions))}
               onSlotDrop={handleDropToSlot}
-              onCellContextMenu={(slot, x, y) => setSlotContextMenu({ slot, x, y })}
+              onCellContextMenu={(slot, x, y) => {
+                if (scheduleReadonly) return
+                setSlotContextMenu({ slot, x, y })
+              }}
+              onSlotAdd={(slot) => openCreateSession(slot)}
               dragPreview={dragPreview}
               blockedDays={schedule?.blockedDays ?? []}
               onOrphanSessionsCount={setOrphanCount}
@@ -935,12 +1233,12 @@ export default function TimetableViewer() {
             <Button variant="secondary" onClick={() => { setSelectedSession(null); setEditMode(false) }}>
               Close
             </Button>
-            {!editMode && (
+            {!editMode && !scheduleReadonly && (
               <Button onClick={() => setEditMode(true)}>
                 Edit Assignment
               </Button>
             )}
-            {!editMode && selectedSession && (
+            {!editMode && selectedSession && !scheduleReadonly && (
               <Button variant="secondary" icon={selectedSession.isLocked ? <Unlock size={14} /> : <Lock size={14} />} onClick={handleQuickLockToggle}>
                 {selectedSession.isLocked ? 'Unlock' : 'Lock'}
               </Button>
@@ -976,23 +1274,26 @@ export default function TimetableViewer() {
                     {editError}
                   </div>
                 )}
-                <Select
+                <SearchableSelect
                   label="Teacher"
-                  value={editTeacherId}
-                  onChange={(e) => setEditTeacherId(e.target.value)}
+                  value={editTeacherId ? +editTeacherId : null}
+                  onChange={(v) => setEditTeacherId(v == null ? '' : String(v))}
                   options={teacherOptions}
+                  allowClear
                 />
-                <Select
+                <SearchableSelect
                   label="Room"
-                  value={editRoomId}
-                  onChange={(e) => setEditRoomId(e.target.value)}
+                  value={editRoomId ? +editRoomId : null}
+                  onChange={(v) => setEditRoomId(v == null ? '' : String(v))}
                   options={roomOptions}
+                  allowClear
                 />
-                <Select
+                <SearchableSelect
                   label="Timeslot"
-                  value={editTimeslotId}
-                  onChange={(e) => setEditTimeslotId(e.target.value)}
+                  value={editTimeslotId ? +editTimeslotId : null}
+                  onChange={(v) => setEditTimeslotId(v == null ? '' : String(v))}
                   options={timeslotOptions}
+                  allowClear
                 />
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
@@ -1049,14 +1350,14 @@ export default function TimetableViewer() {
             </div>
           )}
           <div className="grid md:grid-cols-2 gap-4">
-            <Select label="Subject" value={createSubjectId} onChange={(e) => setCreateSubjectId(e.target.value)} options={subjectOptions} placeholder="Select subject" />
-            <Select label="Teacher" value={createTeacherId} onChange={(e) => setCreateTeacherId(e.target.value)} options={teacherOptions} />
-            <Select label="Room" value={createRoomId} onChange={(e) => setCreateRoomId(e.target.value)} options={roomOptions} />
+            <SearchableSelect label="Subject" value={createSubjectId ? +createSubjectId : null} onChange={(v) => setCreateSubjectId(v == null ? '' : String(v))} options={subjectOptions} placeholder="Select subject" />
+            <SearchableSelect label="Teacher" value={createTeacherId ? +createTeacherId : null} onChange={(v) => setCreateTeacherId(v == null ? '' : String(v))} options={teacherOptions} allowClear />
+            <SearchableSelect label="Room" value={createRoomId ? +createRoomId : null} onChange={(v) => setCreateRoomId(v == null ? '' : String(v))} options={roomOptions} allowClear />
             <Input label="Duration (hours)" type="number" min={1} max={4} value={createDuration} onChange={(e) => setCreateDuration(Math.max(1, +e.target.value || 1))} />
           </div>
           <div className="grid md:grid-cols-2 gap-4">
-            <Select label="Batch" value={createBatchId} onChange={(e) => { setCreateBatchId(e.target.value); setCreateSectionId('') }} options={createBatchOptions} placeholder="Select batch" helpText="Pick a batch or override it with a section." />
-            <Select label="Section" value={createSectionId} onChange={(e) => setCreateSectionId(e.target.value)} options={createSectionOptions} placeholder={createBatchId ? 'Optional section' : 'Select a batch first'} disabled={!createBatchId} helpText="Optional. If selected, it takes precedence over batch." />
+            <SearchableSelect label="Batch" value={createBatchId ? +createBatchId : null} onChange={(v) => { setCreateBatchId(v == null ? '' : String(v)); setCreateSectionId('') }} options={createBatchOptions} placeholder="Select batch" helpText="Pick a batch or override it with a section." allowClear />
+            <SearchableSelect label="Section" value={createSectionId ? +createSectionId : null} onChange={(v) => setCreateSectionId(v == null ? '' : String(v))} options={createSectionOptions} placeholder={createBatchId ? 'Optional section' : 'Select a batch first'} disabled={!createBatchId} helpText="Optional. If selected, it takes precedence over batch." allowClear />
           </div>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input type="checkbox" checked={createLocked} onChange={(e) => setCreateLocked(e.target.checked)} />
@@ -1081,6 +1382,30 @@ export default function TimetableViewer() {
           ]}
         />
       )}
+
+      {sessionContextMenu && (
+        <ContextMenu
+          x={sessionContextMenu.x}
+          y={sessionContextMenu.y}
+          onClose={() => setSessionContextMenu(null)}
+          items={buildSessionContextItems(sessionContextMenu.session)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={deleteSession !== null}
+        onCancel={() => setDeleteSession(null)}
+        onConfirm={handleDeleteSession}
+        title="Delete session"
+        message={
+          deleteSession
+            ? `This will permanently delete "${deleteSession.subjectName ?? `session #${deleteSession.id}`}"${deleteSession.batchLabel ? ` for ${deleteSession.batchLabel}` : ''}. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleteSaving}
+      />
 
       <Modal
         open={showDisruptionPanel}
@@ -1122,16 +1447,17 @@ export default function TimetableViewer() {
           />
 
           {disruptionType !== 'SPECIAL_EVENT' && (
-            <Select
+            <SearchableSelect
               label={
                 disruptionType === 'TEACHER_UNAVAILABLE' ? 'Affected Teacher' :
                 disruptionType === 'ROOM_UNAVAILABLE' ? 'Affected Room' :
                 disruptionType === 'TIMESLOT_BLOCKED' ? 'Blocked Timeslot' :
                 'Cancelled Session'
               }
-              value={disruptionEntityId}
-              onChange={(e) => { setDisruptionEntityId(e.target.value); setDisruptionPreview(null) }}
-              options={[{ value: '', label: '- Select -' }, ...disruptionEntityOptions]}
+              value={disruptionEntityId ? +disruptionEntityId : null}
+              onChange={(v) => { setDisruptionEntityId(v == null ? '' : String(v)); setDisruptionPreview(null) }}
+              options={disruptionEntityOptions}
+              allowClear
             />
           )}
 

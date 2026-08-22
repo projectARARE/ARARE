@@ -15,6 +15,8 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
 import lombok.*;
 
+import java.util.List;
+
 // The core planning entity for the timetable scheduler.
 // <p>Each ClassSession represents one teaching slot that the solver must
 // assign a {@link Teacher}, {@link Room}, and {@link Timeslot} to.</p>
@@ -103,6 +105,14 @@ public class ClassSession {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "timeslot_id")
     private Timeslot timeslot;
+
+    // Teacher term-allotment gate, populated by TimetableProblemBuilder from
+    // TeacherAssignment facts. null/empty = no allotment for this class, the
+    // solver may use any qualified teacher. Non-empty = the HARD
+    // teacherNotAssignedToClass constraint may only assign these teacher ids.
+    // Not persisted; it is derived per problem build, never stored on a row.
+    @Transient
+    private List<Long> allowedTeacherIds;
 
 
     // Returns the student count relevant for room capacity checking. 

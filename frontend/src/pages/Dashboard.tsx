@@ -1,16 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Users, BookOpen, CalendarDays, Zap, AlertTriangle } from 'lucide-react'
+import { Zap, CalendarDays, Settings, ArrowRight } from 'lucide-react'
 import { Card, Button, Badge } from '../components/ui'
-import { buildingApi, teacherApi, subjectApi, scheduleApi } from '../services/api'
+import { scheduleApi } from '../services/api'
+import { useToast } from '../contexts/ToastContext'
 import type { Schedule, ScheduleStatus } from '../types'
-
-interface Stat {
-  label: string
-  value: number | string
-  icon: React.ReactNode
-  color: string
-}
 
 const STATUS_VARIANT: Record<ScheduleStatus, 'gray' | 'green' | 'yellow' | 'red' | 'blue' | 'purple'> = {
   DRAFT: 'gray',
@@ -22,137 +16,91 @@ const STATUS_VARIANT: Record<ScheduleStatus, 'gray' | 'green' | 'yellow' | 'red'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const [stats, setStats] = useState<Stat[]>([])
+  const { toast } = useToast()
   const [recentSchedules, setRecentSchedules] = useState<Schedule[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([
-      buildingApi.getAll(),
-      teacherApi.getAll(),
-      subjectApi.getAll(),
-      scheduleApi.getAll(),
-    ])
-      .then(([buildings, teachers, subjects, schedules]) => {
-        setStats([
-          {
-            label: 'Buildings',
-            value: buildings.length,
-            icon: <Building2 size={20} />,
-            color: 'text-blue-600 bg-blue-50',
-          },
-          {
-            label: 'Teachers',
-            value: teachers.length,
-            icon: <Users size={20} />,
-            color: 'text-green-600 bg-green-50',
-          },
-          {
-            label: 'Subjects',
-            value: subjects.length,
-            icon: <BookOpen size={20} />,
-            color: 'text-purple-600 bg-purple-50',
-          },
-          {
-            label: 'Schedules',
-            value: schedules.length,
-            icon: <CalendarDays size={20} />,
-            color: 'text-orange-600 bg-orange-50',
-          },
-        ])
-        setRecentSchedules(schedules.slice(0, 5))
-      })
-      .catch(() => {})
+    scheduleApi
+      .getAll()
+      .then((schedules) => setRecentSchedules(schedules.slice(0, 5)))
+      .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to load schedules'))
       .finally(() => setLoading(false))
   }, [])
 
+  const openSettings = () => window.dispatchEvent(new Event('arare:open-settings'))
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-24 bg-gray-100 rounded-lg animate-pulse" />
-            ))
-          : stats.map((stat) => (
-              <div
-                key={stat.label}
-                className="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-4"
-              >
-                <div
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center ${stat.color}`}
-                >
-                  {stat.icon}
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                  <p className="text-sm text-gray-500">{stat.label}</p>
-                </div>
-              </div>
-            ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card title="Quick Actions">
-          <div className="space-y-3">
+      <Card className="border-gray-200 text-gray-900 bg-gradient-to-br from-primary-50 via-white to-white">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-[0.14em] text-primary-600 font-semibold">
+              Next step
+            </p>
+            <h2 className="text-xl font-semibold text-gray-900">Generate a new timetable</h2>
+            <p className="text-sm text-gray-500">
+              Build a schedule from your resources in a few clicks — or tweak the defaults first.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
             <Button
-              className="w-full justify-start"
-              icon={<Zap size={16} />}
+              size="lg"
+              icon={<Zap size={18} />}
               onClick={() => navigate('/schedule/generate')}
             >
-              Generate New Timetable
+              Generate Timetable
+              <ArrowRight size={16} />
             </Button>
-            <Button
-              variant="secondary"
-              className="w-full justify-start"
-              icon={<AlertTriangle size={16} />}
-              onClick={() => navigate('/events')}
-            >
-              Manage Events
-            </Button>
-            <Button
-              variant="secondary"
-              className="w-full justify-start"
-              icon={<CalendarDays size={16} />}
-              onClick={() => navigate('/schedule/history')}
-            >
-              View Schedule History
+            <Button variant="secondary" size="lg" icon={<Settings size={18} />} onClick={openSettings}>
+              Settings
             </Button>
           </div>
-        </Card>
+        </div>
+      </Card>
 
-        <Card
-          title="Recent Schedules"
-          actions={
-            <Button variant="ghost" size="sm" onClick={() => navigate('/schedule/history')}>
-              View all
-            </Button>
-          }
-        >
-          {recentSchedules.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">No schedules yet.</p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {recentSchedules.map((s) => (
-                <li
-                  key={s.id}
-                  className="flex items-center justify-between py-2 cursor-pointer hover:bg-gray-50 rounded px-1"
-                  onClick={() => navigate(`/schedule/view/${s.id}`)}
-                >
+      <Card
+        title="Recent Schedules"
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => navigate('/schedule/history')}>
+            View all
+          </Button>
+        }
+        className="border-gray-200 text-gray-900"
+      >
+        {loading ? (
+          <div className="h-24 bg-gray-100 rounded-lg animate-pulse" />
+        ) : recentSchedules.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            No schedules yet. Start with <span className="text-primary-600 font-medium">Generate Timetable</span>.
+          </p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {recentSchedules.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center justify-between py-2 cursor-pointer hover:bg-gray-50 rounded px-1"
+                onClick={() => navigate(`/schedule/view/${s.id}`)}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center">
+                    <CalendarDays size={15} />
+                  </span>
                   <div>
                     <p className="text-sm font-medium text-gray-900">{s.name}</p>
                     {s.score && <p className="text-xs text-gray-400">{s.score}</p>}
                   </div>
-                  <Badge
-                    label={s.status}
-                    variant={STATUS_VARIANT[s.status]}
-                    dot
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
+                </div>
+                <Badge
+                  label={s.status}
+                  variant={STATUS_VARIANT[s.status]}
+                  dot
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   )
 }

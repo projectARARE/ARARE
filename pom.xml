@@ -108,6 +108,20 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- ===== PDF Export (OpenPDF - maintained iText fork) ===== -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>2.0.3</version>
+        </dependency>
+
+        <!-- ===== Excel Export (Apache POI) ===== -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
         <dependency>
             <groupId>ai.timefold.solver</groupId>
             <artifactId>timefold-solver-test</artifactId>

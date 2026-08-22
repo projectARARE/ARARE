@@ -1,5 +1,5 @@
 import type { ClassSession } from '../../types'
-import { Lock } from 'lucide-react'
+import { Lock, Pin } from 'lucide-react'
 
 const COLORS = [
   'bg-blue-100 border-blue-300 text-blue-900',
@@ -26,6 +26,7 @@ interface SessionCellProps {
   highlighted?: boolean
   heatState?: 'none' | 'soft' | 'hard'
   inspectorNotes?: string[]
+  preAllocated?: boolean
 }
 
 export default function SessionCell({
@@ -38,6 +39,7 @@ export default function SessionCell({
   highlighted = false,
   heatState = 'none',
   inspectorNotes = [],
+  preAllocated = false,
 }: SessionCellProps) {
   const heatClass =
     heatState === 'hard'
@@ -50,6 +52,12 @@ export default function SessionCell({
     <span className="absolute right-1 top-1 inline-flex items-center gap-1 rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
       <Lock className="h-2.5 w-2.5" />
       Locked
+    </span>
+  ) : null
+
+  const preAllocatedBadge = preAllocated ? (
+    <span className="absolute left-1 top-1 inline-flex items-center gap-0.5 rounded-full bg-cyan-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm" title="Pre-assigned teacher">
+      <Pin className="h-2.5 w-2.5" />
     </span>
   ) : null
 
@@ -82,6 +90,7 @@ export default function SessionCell({
       `}
     >
       {lockedBadge}
+      {preAllocatedBadge}
       <p className="font-semibold truncate">{session.subjectName}</p>
       {session.teacherName && (
         <p className="truncate opacity-80">{session.teacherName}</p>

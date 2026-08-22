@@ -270,11 +270,30 @@ export default function CsvImport() {
     }
   }
 
+  const handleTemplateZip = async () => {
+    setExportLoading(true)
+    try {
+      const blob = await importApi.exportTemplateZip()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'arare_csv_templates.zip'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Template download failed')
+    } finally {
+      setExportLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card title="Import & Export" description="Use fixed sample CSV templates from the backend for single entities, or the full relational ZIP package for round-tripping all relationships.">
         <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
-          Template CSV downloads are backend-generated examples, not live database exports. They include complete columns and sample rows so you can edit them safely before importing.
+          Template CSV downloads are backend-generated examples, not live database exports. Every column holds a single value; multi-valued relationships (buildings, availability, working days) are expressed as one row per pairing in the relationship CSV files, matching the export format.
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <input
@@ -297,6 +316,9 @@ export default function CsvImport() {
           </label>
           <Button variant="secondary" onClick={handleExportZip} loading={exportLoading}>
             Export Full System Archive (ZIP)
+          </Button>
+          <Button variant="secondary" onClick={handleTemplateZip} loading={exportLoading}>
+            Download All Templates (ZIP)
           </Button>
         </div>
       </Card>

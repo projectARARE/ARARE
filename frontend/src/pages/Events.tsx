@@ -105,6 +105,7 @@ export default function Events() {
       load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed')
+      setConfirmId(null)
     } finally {
       setDeleting(false)
     }
@@ -116,9 +117,22 @@ export default function Events() {
     setApplyError(null)
     try {
       const job = await eventApi.applyToSchedule(applyTarget.eventId, +applyTarget.scheduleId)
-      await waitForJob(job)
+      const finished = await waitForJob(job)
+      if (finished.status === 'FAILED') {
+        setApplyError(finished.errorMessage || 'Re-optimization failed')
+        return
+      }
+      if (finished.status === 'CANCELLED') {
+        setApplyError('Re-optimization was cancelled')
+        return
+      }
+      const schedule = await scheduleApi.getById(+applyTarget.scheduleId)
       setApplyTarget({ eventId: 0, scheduleId: '' })
-      toast.success('Event applied to schedule')
+      if (schedule.status === 'INFEASIBLE') {
+        toast.warning('Event applied, but the schedule is now infeasible')
+      } else {
+        toast.success('Event applied to schedule')
+      }
       load()
     } catch (e) {
       setApplyError(e instanceof Error ? e.message : 'Failed to apply event')
@@ -141,7 +155,9 @@ export default function Events() {
     })
   }
 
-  const scheduleOptions = schedules.map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))
+  const scheduleOptions = schedules
+    .filter((s) => s.status === 'ACTIVE' || s.status === 'PARTIAL')
+    .map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))
   const typeOptions = EVENT_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))
 
   const getContextItems = (e: Event): ContextMenuItem[] => [
@@ -189,6 +205,7 @@ export default function Events() {
         <Table
           columns={columns} data={items} loading={loading} keyExtractor={(e) => e.id}
           searchable searchKeys={[(e) => e.title, (e) => e.type]}
+          exportable exportFilename="events"
           onRowContextMenu={getContextItems}
         />
       </Card>

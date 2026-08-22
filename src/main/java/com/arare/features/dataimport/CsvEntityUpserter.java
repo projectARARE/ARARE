@@ -10,6 +10,8 @@ import com.arare.features.building.Building;
 import com.arare.features.building.BuildingRepository;
 import com.arare.features.department.Department;
 import com.arare.features.department.DepartmentRepository;
+import com.arare.features.institute.Institute;
+import com.arare.features.institute.InstituteRepository;
 import com.arare.features.room.Room;
 import com.arare.features.room.RoomRepository;
 import com.arare.features.subject.Subject;
@@ -47,6 +49,7 @@ public class CsvEntityUpserter {
     private final TimeslotRepository timeslotRepository;
     private final BuildingRepository buildingRepository;
     private final DepartmentRepository departmentRepository;
+    private final InstituteRepository instituteRepository;
     private final RoomRepository roomRepository;
     private final SubjectRepository subjectRepository;
     private final TeacherRepository teacherRepository;
@@ -124,6 +127,15 @@ public class CsvEntityUpserter {
 
         entity.setCode(code);
         entity.setName(name);
+        // New departments need a home institute. The CSV has no institute
+        // column; default to the single/default institute (index 0 by name),
+        // which is correct for the common single-institute deployment.
+        if (entity.getInstitute() == null) {
+            Institute inst = instituteRepository.findAllByOrderByNameAsc().stream().findFirst().orElse(null);
+            if (inst != null) {
+                entity.setInstitute(inst);
+            }
+        }
 
         Set<String> buildingNames = CsvUtils.splitTokens(row.get("buildingnames"));
         if (!buildingNames.isEmpty()) {
@@ -275,7 +287,8 @@ public class CsvEntityUpserter {
             List<SchoolDay> workingDays = workingDaysRaw.stream()
                 .map(token -> CsvUtils.parseEnum(SchoolDay.class, token))
                 .toList();
-            entity.setWorkingDays(workingDays);
+            entity.getWorkingDays().clear();
+            entity.getWorkingDays().addAll(workingDays);
         }
 
         batchRepository.save(entity);

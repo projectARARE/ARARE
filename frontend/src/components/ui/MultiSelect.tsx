@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, Search, X } from 'lucide-react'
+import { Check, CheckSquare, ChevronDown, Search, X } from 'lucide-react'
 
 interface MultiSelectOption {
   value: number
   label: string
+  group?: string
 }
 
 interface MultiSelectProps {
@@ -14,6 +15,9 @@ interface MultiSelectProps {
   placeholder?: string
   searchable?: boolean
   maxHeight?: number
+  maxRendered?: number
+  /** Show a "Select all" toggle that acts on the current filter results. */
+  selectAll?: boolean
 }
 
 export default function MultiSelect({
@@ -24,10 +28,13 @@ export default function MultiSelect({
   placeholder = 'Select…',
   searchable = true,
   maxHeight = 240,
+  maxRendered = 40,
+  selectAll = true,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handle = (e: MouseEvent | KeyboardEvent) => {
@@ -57,6 +64,14 @@ export default function MultiSelect({
       : [...selected, value])
   }
 
+  const allVisibleSelected = filtered.length > 0 && filtered.every((o) => selected.includes(o.value))
+
+  const toggleVisible = () => {
+    const visibleValues = new Set(filtered.map((o) => o.value))
+    const retained = selected.filter((v) => !visibleValues.has(v))
+    onChange(allVisibleSelected ? retained : [...new Set([...selected, ...filtered.map((o) => o.value)])])
+  }
+
   const displayText =
     selected.length === 0
       ? placeholder
@@ -65,6 +80,8 @@ export default function MultiSelect({
         : selected.length === 1
           ? labelById.get(selected[0]) ?? placeholder
           : `${selected.length} selected`
+
+  const windowed = filtered.length > maxRendered ? filtered.slice(0, maxRendered) : filtered
 
   return (
     <div ref={rootRef} className="space-y-1">
@@ -97,11 +114,21 @@ export default function MultiSelect({
                 </div>
               </div>
             )}
-            <div className="overflow-y-auto py-1" style={{ maxHeight }}>
+            {selectAll && filtered.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleVisible}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-primary-700 hover:bg-primary-50 border-b border-gray-100"
+              >
+                <CheckSquare size={13} />
+                {allVisibleSelected ? 'Deselect all shown' : query.trim() ? `Select all ${filtered.length} shown` : `Select all (${options.length})`}
+              </button>
+            )}
+            <div ref={listRef} className="overflow-y-auto py-1" style={{ maxHeight }}>
               {filtered.length === 0 && (
                 <p className="px-3 py-2 text-sm text-gray-400">No options.</p>
               )}
-              {filtered.map((opt) => {
+              {windowed.map((opt) => {
                 const checked = selected.includes(opt.value)
                 return (
                   <label
@@ -120,6 +147,11 @@ export default function MultiSelect({
                   </label>
                 )
               })}
+              {filtered.length > maxRendered && (
+                <p className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                  {filtered.length - maxRendered} more match — refine your search
+                </p>
+              )}
             </div>
             {selected.length > 0 && (
               <div className="flex justify-end border-t border-gray-100 px-2 py-1">

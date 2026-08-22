@@ -36,22 +36,59 @@ import type {
   ImportOrderStep,
   SessionCreateRequest,
   SolveJobResponse,
+  PreAllocation,
+  PreAllocationRequest,
+  TeacherAssignment,
+  TeacherAssignmentRequest,
+  Institute,
+  InstituteRequest,
+  SubjectOffering,
+  SubjectOfferingRequest,
 } from '../types'
 
 const api = axios.create({ baseURL: '/api/v1', timeout: 20000 })
+
+function toMessage(value: unknown): string | null {
+  if (value == null) return null
+  if (typeof value === 'string') return value.trim() || null
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((v) => {
+        if (v == null) return null
+        if (typeof v === 'string') return v
+        if (typeof v === 'object') {
+          const o = v as { message?: unknown; detail?: unknown; msg?: unknown; error?: unknown }
+          const inner = o.message ?? o.detail ?? o.msg ?? o.error
+          return inner != null && typeof inner === 'string' ? inner : null
+        }
+        return String(v)
+      })
+      .filter((v): v is string => !!v)
+    return parts.length > 0 ? parts.join('; ') : null
+  }
+  if (typeof value === 'object') {
+    const o = value as { message?: unknown; detail?: unknown; msg?: unknown; error?: unknown }
+    const inner = o.message ?? o.detail ?? o.msg ?? o.error
+    return toMessage(inner)
+  }
+  return String(value)
+}
 
 async function extractErrorMessage(err: unknown): Promise<string> {
   const data: unknown = (err as { response?: { data?: unknown } } | undefined)?.response?.data
   if (data instanceof Blob) {
     try {
-      const parsed = JSON.parse(await data.text()) as { detail?: string; message?: string }
-      return parsed.detail ?? parsed.message ?? (err as Error).message
+      const parsed = JSON.parse(await data.text()) as { detail?: unknown; message?: unknown }
+      return toMessage(parsed.detail) ?? toMessage(parsed.message) ?? (err as Error).message
     } catch {
       // Non-JSON error body (e.g. a proxy error page) — fall back to axios message.
     }
   }
-  const obj = data as { detail?: string; message?: string } | undefined
-  return obj?.detail ?? obj?.message ?? (err as Error).message ?? 'Request failed'
+  if (typeof data === 'string' && data.trim()) {
+    return data.trim()
+  }
+  const obj = data as { detail?: unknown; message?: unknown } | undefined
+  return toMessage(obj?.detail) ?? toMessage(obj?.message) ?? (err as Error).message ?? 'Request failed'
 }
 
 api.interceptors.response.use(
@@ -81,6 +118,16 @@ export const departmentApi = {
   update: (id: number, data: DepartmentRequest) =>
     api.put<Department>(`/departments/${id}`, data).then((r) => r.data),
   delete: (id: number) => api.delete(`/departments/${id}`),
+}
+
+// Institutes (constituent colleges within the university)
+export const instituteApi = {
+  getAll: () => api.get<Institute[]>('/institutes').then((r) => r.data),
+  getById: (id: number) => api.get<Institute>(`/institutes/${id}`).then((r) => r.data),
+  create: (data: InstituteRequest) => api.post<Institute>('/institutes', data).then((r) => r.data),
+  update: (id: number, data: InstituteRequest) =>
+    api.put<Institute>(`/institutes/${id}`, data).then((r) => r.data),
+  delete: (id: number) => api.delete(`/institutes/${id}`),
 }
 
 // Rooms
@@ -131,9 +178,47 @@ export const classSectionApi = {
   getById: (id: number) => api.get<ClassSection>(`/class-sections/${id}`).then((r) => r.data),
   create: (data: ClassSectionRequest) =>
     api.post<ClassSection>('/class-sections', data).then((r) => r.data),
+  createMany: (data: { batchId: number; prefix: string; count: number; size: number }) =>
+    api.post<ClassSection[]>('/class-sections/bulk', data).then((r) => r.data),
   update: (id: number, data: ClassSectionRequest) =>
     api.put<ClassSection>(`/class-sections/${id}`, data).then((r) => r.data),
   delete: (id: number) => api.delete(`/class-sections/${id}`),
+}
+
+// Teacher Assignments (term teaching allotment)
+export const teacherAssignmentApi = {
+  getAll: () => api.get<TeacherAssignment[]>('/teacher-assignments').then((r) => r.data),
+  getById: (id: number) =>
+    api.get<TeacherAssignment>(`/teacher-assignments/${id}`).then((r) => r.data),
+  getByTeacher: (teacherId: number) =>
+    api.get<TeacherAssignment[]>(`/teacher-assignments/teacher/${teacherId}`).then((r) => r.data),
+  getByBatch: (batchId: number) =>
+    api.get<TeacherAssignment[]>(`/teacher-assignments/batch/${batchId}`).then((r) => r.data),
+  getBySubject: (subjectId: number) =>
+    api.get<TeacherAssignment[]>(`/teacher-assignments/subject/${subjectId}`).then((r) => r.data),
+  create: (data: TeacherAssignmentRequest) =>
+    api.post<TeacherAssignment>('/teacher-assignments', data).then((r) => r.data),
+  update: (id: number, data: TeacherAssignmentRequest) =>
+    api.put<TeacherAssignment>(`/teacher-assignments/${id}`, data).then((r) => r.data),
+  delete: (id: number) => api.delete(`/teacher-assignments/${id}`),
+}
+
+// Subject offerings (what is taught to which batch/section this term)
+export const subjectOfferingApi = {
+  getAll: () => api.get<SubjectOffering[]>('/subject-offerings').then((r) => r.data),
+  getById: (id: number) =>
+    api.get<SubjectOffering>(`/subject-offerings/${id}`).then((r) => r.data),
+  getByBatch: (batchId: number) =>
+    api.get<SubjectOffering[]>(`/subject-offerings/batch/${batchId}`).then((r) => r.data),
+  getBySection: (sectionId: number) =>
+    api.get<SubjectOffering[]>(`/subject-offerings/section/${sectionId}`).then((r) => r.data),
+  getBySubject: (subjectId: number) =>
+    api.get<SubjectOffering[]>(`/subject-offerings/subject/${subjectId}`).then((r) => r.data),
+  create: (data: SubjectOfferingRequest) =>
+    api.post<SubjectOffering>('/subject-offerings', data).then((r) => r.data),
+  update: (id: number, data: SubjectOfferingRequest) =>
+    api.put<SubjectOffering>(`/subject-offerings/${id}`, data).then((r) => r.data),
+  delete: (id: number) => api.delete(`/subject-offerings/${id}`),
 }
 
 // Timeslots
@@ -177,6 +262,8 @@ export const scheduleApi = {
     api.get<string>(`/schedules/${id}/explanation`).then((r) => r.data),
   getSessions: (id: number) =>
     api.get<ClassSession[]>(`/sessions/schedule/${id}`).then((r) => r.data),
+  activate: (id: number) => api.post<Schedule>(`/schedules/${id}/activate`).then((r) => r.data),
+  archive: (id: number) => api.post<Schedule>(`/schedules/${id}/archive`).then((r) => r.data),
   delete: (id: number) => api.delete(`/schedules/${id}`),
   previewDisruption: (id: number, data: DisruptionRequest) =>
     api.post<DisruptionResponse>(`/schedules/${id}/disruption/preview`, data).then((r) => r.data),
@@ -184,8 +271,20 @@ export const scheduleApi = {
     api.post<SolveJobResponse>(`/schedules/${id}/disruption/apply`, data).then((r) => r.data),
   exportCsv: (id: number) =>
     api.get(`/schedules/${id}/export/csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  exportPdf: (id: number, view: 'ALL' | 'TEACHER' | 'BATCH' | 'ROOM', entityId?: number) =>
+    api.get(`/schedules/${id}/export/pdf`, {
+      responseType: 'blob',
+      params: { view, ...(entityId ? { entityId } : {}) },
+    }).then((r) => r.data as Blob),
+  exportExcel: (id: number, view: 'ALL' | 'TEACHER' | 'BATCH' | 'ROOM', entityId?: number) =>
+    api.get(`/schedules/${id}/export/excel`, {
+      responseType: 'blob',
+      params: { view, ...(entityId ? { entityId } : {}) },
+    }).then((r) => r.data as Blob),
   checkFeasibility: (req: Partial<ScheduleRequest>) =>
     api.post<FeasibilityCheckResult>('/schedules/feasibility-check', req).then((r) => r.data),
+  exportRowsExcel: (sheetName: string, headers: string[], rows: (string | number | null | undefined)[][]) =>
+    api.post('/export/excel', { sheetName, headers, rows }, { responseType: 'blob' }).then((r) => r.data as Blob),
   getConflictSuggestions: (scheduleId: number, sessionId: number, limit = 4) =>
     api
       .get<ConflictSuggestion[]>(`/schedules/${scheduleId}/sessions/${sessionId}/suggestions`, {
@@ -210,6 +309,19 @@ export const sessionApi = {
     api.patch<ClassSession>(`/sessions/${id}`, data).then((r) => r.data),
   create: (data: SessionCreateRequest) =>
     api.post<ClassSession>('/sessions', data).then((r) => r.data),
+  delete: (id: number) => api.delete(`/sessions/${id}`),
+  getBySchedule: (scheduleId: number) =>
+    api.get<ClassSession[]>(`/sessions/schedule/${scheduleId}`).then((r) => r.data),
+}
+
+// Pre-Allocations (pre-assigned teachers/rooms for a schedule)
+export const preAllocationApi = {
+  create: (data: PreAllocationRequest) =>
+    api.post<PreAllocation>('/pre-allocations', data).then((r) => r.data),
+  getById: (id: number) => api.get<PreAllocation>(`/pre-allocations/${id}`).then((r) => r.data),
+  getBySchedule: (scheduleId: number) =>
+    api.get<PreAllocation[]>(`/pre-allocations/schedule/${scheduleId}`).then((r) => r.data),
+  delete: (id: number) => api.delete(`/pre-allocations/${id}`),
 }
 
 // Events
@@ -253,5 +365,7 @@ export const importApi = {
     api.get(`/import/export/csv/${entityType}`, { responseType: 'blob' }).then((r) => r.data as Blob),
   exportTemplateCsv: (entityType: string) =>
     api.get(`/import/template/csv/${entityType}`, { responseType: 'blob' }).then((r) => r.data as Blob),
+  exportTemplateZip: () =>
+    api.get('/import/template/zip', { responseType: 'blob' }).then((r) => r.data as Blob),
 }
 

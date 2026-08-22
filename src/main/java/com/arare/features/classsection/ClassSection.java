@@ -2,12 +2,16 @@ package com.arare.features.classsection;
 
 import com.arare.common.BaseEntity;
 import com.arare.features.batch.Batch;
+import com.arare.features.subject.Subject;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
+
+import java.util.ArrayList;
+import java.util.List;
 
 // A sub-division of a {@link Batch} for labs where room capacity is smaller
 // than the full batch size.
@@ -48,6 +52,18 @@ public class ClassSection extends BaseEntity {
     @Min(1)
     @Column(nullable = false)
     private int size;
+
+    // Per-section curriculum (used for lab splits): the subjects this section
+    // takes as a split lab. Empty = inherit the batch/department curriculum
+    // (backward compatible).
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "class_section_subjects",
+        joinColumns = @JoinColumn(name = "section_id"),
+        inverseJoinColumns = @JoinColumn(name = "subject_id")
+    )
+    @Builder.Default
+    private List<Subject> subjects = new ArrayList<>();
 
     @PrePersist
     @PreUpdate

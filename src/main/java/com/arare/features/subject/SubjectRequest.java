@@ -10,7 +10,7 @@ import jakarta.validation.constraints.NotNull;
 public record SubjectRequest(
     @NotBlank String name,
     @NotBlank String code,
-    @NotNull Long departmentId,
+    Long departmentId,
     @Min(1) int weeklyHours,
     @Min(1) int chunkHours,
     @NotNull RoomType roomTypeRequired,

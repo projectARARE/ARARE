@@ -12,6 +12,11 @@ import java.util.List;
 @Repository
 public interface EventRepository extends JpaRepository<Event, Long> {
 
+    // affectedRooms/Teachers/Timeslots carry @Fetch(SUBSELECT): flat fetch
+    // cost (1 + 3 queries) without Hibernate's MultipleBagFetchException.
+    @Query("SELECT e FROM Event e")
+    List<Event> findAllWithDetails();
+
     List<Event> findByType(EventType type);
 
     // Find active events overlapping with a given date. 

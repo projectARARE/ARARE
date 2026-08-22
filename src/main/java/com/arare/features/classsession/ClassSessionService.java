@@ -11,4 +11,6 @@ public interface ClassSessionService {
     // Manually create a brand-new session (subject + batch/section + optional
     // assignment) and persist it against a schedule.
     ClassSessionResponse create(SessionCreateRequest req);
+    // Remove a single session from its schedule.
+    void delete(Long sessionId);
 }

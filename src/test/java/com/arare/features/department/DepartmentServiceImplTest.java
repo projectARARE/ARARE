@@ -6,6 +6,8 @@ import com.arare.features.building.BuildingRepository;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsection.ClassSectionRepository;
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.institute.Institute;
+import com.arare.features.institute.InstituteRepository;
 import com.arare.features.subject.SubjectRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +29,7 @@ import static org.mockito.Mockito.when;
 class DepartmentServiceImplTest {
 
     @Mock private DepartmentRepository repo;
+    @Mock private InstituteRepository instituteRepo;
     @Mock private BuildingRepository buildingRepo;
     @Mock private ClassSessionRepository sessionRepo;
     @Mock private ClassSectionRepository sectionRepo;
@@ -43,13 +46,17 @@ class DepartmentServiceImplTest {
         existing.setId(1L);
         List<Building> current = new ArrayList<>(List.of(existing));
 
+        Institute inst = new Institute();
+        inst.setId(5L);
+
         Department dept = Department.builder()
-            .name("CSE").code("CS").buildingsAllowed(current).build();
+            .name("CSE").code("CS").institute(inst).buildingsAllowed(current).build();
         dept.setId(7L);
         when(repo.findById(7L)).thenReturn(Optional.of(dept));
+        when(instituteRepo.findById(5L)).thenReturn(Optional.of(inst));
         when(repo.save(dept)).thenReturn(dept);
 
-        service.update(7L, new DepartmentRequest("CSE", "CS", null));
+        service.update(7L, new DepartmentRequest("CSE", "CS", 5L, null));
 
         assertSame(current, dept.getBuildingsAllowed());
         verify(buildingRepo, never()).findAllById(org.mockito.ArgumentMatchers.anyList());
@@ -63,13 +70,17 @@ class DepartmentServiceImplTest {
         // findAllById must return the same count as ids requested so the size check passes.
         List<Building> resolved = List.of(newBuilding);
 
-        Department dept = Department.builder().name("CSE").code("CS").build();
+        Institute inst = new Institute();
+        inst.setId(5L);
+
+        Department dept = Department.builder().name("CSE").code("CS").institute(inst).build();
         dept.setId(7L);
         when(repo.findById(7L)).thenReturn(Optional.of(dept));
+        when(instituteRepo.findById(5L)).thenReturn(Optional.of(inst));
         when(buildingRepo.findAllById(List.of(2L))).thenReturn(resolved);
         when(repo.save(dept)).thenReturn(dept);
 
-        service.update(7L, new DepartmentRequest("CSE", "CS", List.of(2L)));
+        service.update(7L, new DepartmentRequest("CSE", "CS", 5L, List.of(2L)));
 
         assertSame(resolved, dept.getBuildingsAllowed());
     }
@@ -78,15 +89,19 @@ class DepartmentServiceImplTest {
     // consistent with TeacherServiceImpl.resolveAll(). Previously it silently dropped the unknown ID.
     @Test
     void updateThrows400WhenBuildingIdDoesNotExist() {
-        Department dept = Department.builder().name("CSE").code("CS").build();
+        Institute inst = new Institute();
+        inst.setId(5L);
+
+        Department dept = Department.builder().name("CSE").code("CS").institute(inst).build();
         dept.setId(7L);
         when(repo.findById(7L)).thenReturn(Optional.of(dept));
+        when(instituteRepo.findById(5L)).thenReturn(Optional.of(inst));
         // findAllById returns 0 records but 1 was requested → unknown ID.
         when(buildingRepo.findAllById(List.of(99L))).thenReturn(List.of());
 
         assertThrows(
             IllegalArgumentException.class,
-            () -> service.update(7L, new DepartmentRequest("CSE", "CS", List.of(99L)))
+            () -> service.update(7L, new DepartmentRequest("CSE", "CS", 5L, List.of(99L)))
         );
     }
 

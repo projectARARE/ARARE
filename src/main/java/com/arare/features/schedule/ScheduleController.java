@@ -22,6 +22,8 @@ public class ScheduleController {
     private final ScheduleService          service;
     private final DisruptionService        disruptionService;
     private final TimetableExportService   exportService;
+    private final PdfExportService         pdfExportService;
+    private final ExcelExportService       excelExportService;
     private final FeasibilityCheckService  feasibilityCheckService;
 
     @PostMapping("/generate")
@@ -37,6 +39,16 @@ public class ScheduleController {
     @GetMapping
     public ResponseEntity<List<ScheduleResponse>> findAll() {
         return ResponseEntity.ok(service.findAll());
+    }
+
+    @PostMapping("/{id}/activate")
+    public ResponseEntity<ScheduleResponse> activate(@PathVariable Long id) {
+        return ResponseEntity.ok(service.activate(id));
+    }
+
+    @PostMapping("/{id}/archive")
+    public ResponseEntity<ScheduleResponse> archive(@PathVariable Long id) {
+        return ResponseEntity.ok(service.archive(id));
     }
 
     @PostMapping("/{id}/partial-resolve")
@@ -98,6 +110,31 @@ public class ScheduleController {
         return ResponseEntity.ok()
             .header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".csv\"")
             .body(csv);
+    }
+
+    @GetMapping("/{id}/export/pdf")
+    public ResponseEntity<byte[]> exportPdf(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "ALL") PdfExportService.View view,
+            @RequestParam(required = false) Long entityId) {
+        byte[] pdf = pdfExportService.exportPdf(id, view, entityId);
+        return ResponseEntity.ok()
+            .header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".pdf\"")
+            .contentType(org.springframework.http.MediaType.APPLICATION_PDF)
+            .body(pdf);
+    }
+
+    @GetMapping("/{id}/export/excel")
+    public ResponseEntity<byte[]> exportExcel(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "ALL") ExcelExportService.View view,
+            @RequestParam(required = false) Long entityId) {
+        byte[] excel = excelExportService.exportExcel(id, view, entityId);
+        return ResponseEntity.ok()
+            .header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".xlsx\"")
+            .contentType(org.springframework.http.MediaType
+                .parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .body(excel);
     }
 
     @PostMapping("/feasibility-check")

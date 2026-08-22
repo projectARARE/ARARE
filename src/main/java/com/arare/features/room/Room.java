@@ -80,8 +80,13 @@ public class Room extends BaseEntity {
         if (roomNumber != null) {
             roomNumber = roomNumber.trim().toUpperCase();
         }
+        // In-place dedupe: replacing the collection reference (rather than
+        // clear+addAll) makes Hibernate lose the ManyToMany join-table dirty
+        // tracking, so room_availability changes silently vanish on update.
         if (availableTimeslots != null && !availableTimeslots.isEmpty()) {
-            availableTimeslots = new ArrayList<>(new LinkedHashSet<>(availableTimeslots));
+            List<Timeslot> unique = new ArrayList<>(new LinkedHashSet<>(availableTimeslots));
+            availableTimeslots.clear();
+            availableTimeslots.addAll(unique);
         }
 
         if (type == RoomType.LAB && labSubtype == null) {
