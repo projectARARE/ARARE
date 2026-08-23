@@ -1,5 +1,6 @@
 package com.arare.features.teacher;
 
+import com.arare.features.timeslot.Timeslot;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -25,4 +26,8 @@ public interface TeacherRepository extends JpaRepository<Teacher, Long> {
 
     // Natural-key lookup used by the CSV import service.
     java.util.Optional<Teacher> findByEmployeeId(String employeeId);
+
+    // Delete from teacher_availability join table where timeslot_id = :timeslotId
+    @Query("DELETE FROM Teacher t JOIN t.availableTimeslots ts WHERE ts.id = :timeslotId")
+    void deleteTeacherAvailabilityByTimeslotId(@Param("timeslotId") Long timeslotId);
 }

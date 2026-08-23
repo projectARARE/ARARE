@@ -8,6 +8,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.*;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,6 +51,7 @@ public class Department extends BaseEntity {
         joinColumns = @JoinColumn(name = "department_id"),
         inverseJoinColumns = @JoinColumn(name = "building_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Building> buildingsAllowed = new ArrayList<>();
 

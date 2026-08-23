@@ -14,7 +14,9 @@ import java.time.LocalDateTime;
 // Extend this class in every @Entity to avoid boilerplate.
 // <p>equals/hashCode based on database ID so that Timefold Constraint Stream
 // joiners (which use Objects.equals) correctly match entities that may be
-// different Java instances (e.g. Hibernate proxies vs eager-loaded objects).</p>
+// different Java instances (e.g. Hibernate proxies vs eager-loaded objects).
+// The ID is used for equality even when null (pre-persistence), which is safe
+// because Objects.equals handles null comparands consistently.</p>
 @Getter
 @Setter
 @EqualsAndHashCode(of = "id")

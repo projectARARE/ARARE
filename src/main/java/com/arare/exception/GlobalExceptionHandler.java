@@ -1,5 +1,6 @@
 package com.arare.exception;
 
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,12 +72,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ProblemDetail handleConstraintViolation(ConstraintViolationException ex) {
-        ProblemDetail detail = ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST,
-            "The submitted data is invalid. Please review your input and try again."
-        );
-        detail.setType(URI.create("/errors/validation"));
-        return detail;
+        String detail = ex.getConstraintViolations().stream()
+            .map(cv -> cv.getPropertyPath() + ": " + cv.getMessage())
+            .collect(Collectors.joining("; "));
+        if (detail.isEmpty()) {
+            detail = "The submitted data is invalid. Please review your input and try again.";
+        }
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail);
+        pd.setType(URI.create("/errors/validation"));
+        return pd;
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

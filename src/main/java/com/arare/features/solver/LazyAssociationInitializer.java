@@ -9,9 +9,21 @@ import com.arare.features.teacher.Teacher;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
+//noinspection UnusedSince
 @Component
 public class LazyAssociationInitializer {
 
+    /**
+     * Force-load lazy associations before constraint traversal in the solver.
+     * <p>
+     * This is needed because some @ManyToMany collections use @Fetch(Lazy) instead
+     * of @Fetch(SUBSELECT), which can cause LazyInitializationException during
+     * constraint evaluation if the Hibernate session closes prematurely.
+     * <p>
+     * TODO: Once fetch strategies are standardized across all entities (using
+     * @Fetch(SUBSELECT) on all ManyToMany collections), this class can be removed
+     * and the @Fetch annotations can be left in place.
+     */
     public void initialize(
         List<ClassSession> sessions,
         List<Teacher> teachers,

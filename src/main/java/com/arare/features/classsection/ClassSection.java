@@ -9,6 +9,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,6 +64,7 @@ public class ClassSection extends BaseEntity {
         joinColumns = @JoinColumn(name = "section_id"),
         inverseJoinColumns = @JoinColumn(name = "subject_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Subject> subjects = new ArrayList<>();
 

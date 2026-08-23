@@ -1,39 +1,44 @@
 package com.arare.features.cascadedeletion;
 
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.event.EventRepository;
 import com.arare.features.preallocation.PreAllocationRepository;
+import com.arare.features.room.RoomRepository;
 import com.arare.features.schedule.Schedule;
 import com.arare.features.schedule.ScheduleRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
+import com.arare.features.teacher.TeacherRepository;
+import com.arare.features.timeslot.TimeslotRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class CascadeDeletionServiceTest {
 
-    @Mock
-    private PreAllocationRepository preAllocationRepo;
-
-    @Mock
     private ClassSessionRepository sessionRepo;
-
-    @Mock
     private ScheduleRepository scheduleRepo;
-
-    @Mock
-    private EntityManager entityManager;
-
-    @InjectMocks
+    private PreAllocationRepository preAllocationRepo;
+    private TeacherRepository teacherRepo;
+    private RoomRepository roomRepo;
+    private TimeslotRepository timeslotRepo;
+    private EventRepository eventRepo;
     private CascadeDeletionService service;
+
+    @BeforeEach
+    void setUp() {
+        sessionRepo = mock(ClassSessionRepository.class);
+        scheduleRepo = mock(ScheduleRepository.class);
+        preAllocationRepo = mock(PreAllocationRepository.class);
+        teacherRepo = mock(TeacherRepository.class);
+        roomRepo = mock(RoomRepository.class);
+        timeslotRepo = mock(TimeslotRepository.class);
+        eventRepo = mock(EventRepository.class);
+        service = new CascadeDeletionService(preAllocationRepo, sessionRepo, scheduleRepo, teacherRepo, roomRepo, timeslotRepo, eventRepo);
+    }
 
     @Test
     void purgeScheduleTreePurgesDescendantsAndSelf() {
@@ -79,36 +84,19 @@ class CascadeDeletionServiceTest {
 
     @Test
     void detachTimeslotRemovesAvailabilityAndEventJoinRows() {
-        Query q1 = org.mockito.Mockito.mock(Query.class);
-        Query q2 = org.mockito.Mockito.mock(Query.class);
-        Query q3 = org.mockito.Mockito.mock(Query.class);
-        when(entityManager.createNativeQuery("DELETE FROM teacher_availability WHERE timeslot_id = :id")).thenReturn(q1);
-        when(entityManager.createNativeQuery("DELETE FROM room_availability WHERE timeslot_id = :id")).thenReturn(q2);
-        when(entityManager.createNativeQuery("DELETE FROM event_affected_timeslots WHERE timeslot_id = :id")).thenReturn(q3);
-        when(q1.setParameter("id", 7L)).thenReturn(q1);
-        when(q2.setParameter("id", 7L)).thenReturn(q2);
-        when(q3.setParameter("id", 7L)).thenReturn(q3);
-
         service.detachTimeslot(7L);
 
-        verify(q1).executeUpdate();
-        verify(q2).executeUpdate();
-        verify(q3).executeUpdate();
+        verify(teacherRepo).deleteTeacherAvailabilityByTimeslotId(7L);
+        verify(roomRepo).deleteRoomAvailabilityByTimeslotId(7L);
+        verify(eventRepo).deleteEventAffectedTimeslotsByTimeslotId(7L);
     }
 
     @Test
     void detachRoomAndTeacherFromEvents() {
-        Query qRoom = org.mockito.Mockito.mock(Query.class);
-        Query qTeacher = org.mockito.Mockito.mock(Query.class);
-        when(entityManager.createNativeQuery("DELETE FROM event_affected_rooms WHERE room_id = :id")).thenReturn(qRoom);
-        when(entityManager.createNativeQuery("DELETE FROM event_affected_teachers WHERE teacher_id = :id")).thenReturn(qTeacher);
-        when(qRoom.setParameter("id", 5L)).thenReturn(qRoom);
-        when(qTeacher.setParameter("id", 6L)).thenReturn(qTeacher);
-
         service.detachRoomFromEvents(5L);
-        service.detachTeacherFromEvents(6L);
+        verify(eventRepo).deleteEventAffectedRoomsByRoomId(5L);
 
-        verify(qRoom).executeUpdate();
-        verify(qTeacher).executeUpdate();
+        service.detachTeacherFromEvents(6L);
+        verify(eventRepo).deleteEventAffectedTeachersByTeacherId(6L);
     }
 }

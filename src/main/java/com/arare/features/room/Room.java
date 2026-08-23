@@ -11,6 +11,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -63,14 +65,15 @@ public class Room extends BaseEntity {
     private int capacity;
 
 // Timeslots during which this room is available.
-// If empty, the room is assumed available for all CLASS-type timeslots.
-// Hard constraint: room must not be scheduled in an unavailable timeslot.
+    // If empty, the room is assumed available for all CLASS-type timeslots.
+    // Hard constraint: room must not be scheduled in an unavailable timeslot.
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "room_availability",
         joinColumns = @JoinColumn(name = "room_id"),
         inverseJoinColumns = @JoinColumn(name = "timeslot_id")
     )
+    @Fetch(FetchMode.SUBSELECT)
     @Builder.Default
     private List<Timeslot> availableTimeslots = new ArrayList<>();
 

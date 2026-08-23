@@ -1,6 +1,7 @@
 package com.arare.features.room;
 
 import com.arare.common.enums.RoomType;
+import com.arare.features.timeslot.Timeslot;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -33,4 +34,8 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     @Transactional @Modifying
     @Query("DELETE FROM Room r WHERE r.building.id = :buildingId")
     void deleteByBuildingId(@Param("buildingId") Long buildingId);
+
+    // Delete from room_availability join table where timeslot_id = :timeslotId
+    @Query("DELETE FROM Room r JOIN r.availableTimeslots ts WHERE ts.id = :timeslotId")
+    void deleteRoomAvailabilityByTimeslotId(@Param("timeslotId") Long timeslotId);
 }

@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -153,8 +154,8 @@ class SolveJobServiceTest {
         assertNull(response.id());
         assertEquals(5L, response.scheduleId());
         assertEquals(SolveJobStatus.SUCCEEDED, response.status());
-        verify(jobRepo, never()).save(any());
-        verify(runner, never()).run(any());
+        verify(jobRepo, never()).save(any(SolveJob.class));
+        verify(runner, never()).run(any(Long.class));
     }
 
     @Test
@@ -165,7 +166,7 @@ class SolveJobServiceTest {
             .status(SolveJobStatus.QUEUED)
             .build();
         job.setId(3L);
-        when(jobRepo.transitionTerminal(eq(3L), any(), eq(SolveJobStatus.CANCELLED), any(), any(), any(), any()))
+        when(jobRepo.transitionTerminal(eq(3L), anyCollection(), eq(SolveJobStatus.CANCELLED), any(), any(), any(), any()))
             .thenReturn(1);
         SolveJob cancelled = SolveJob.builder()
             .jobType(SolveJobType.GENERATE)
@@ -173,12 +174,12 @@ class SolveJobServiceTest {
             .status(SolveJobStatus.CANCELLED)
             .build();
         cancelled.setId(3L);
-        when(jobRepo.findById(3L)).thenReturn(java.util.Optional.of(job), java.util.Optional.of(cancelled));
+        when(jobRepo.findById(3L)).thenReturn(java.util.Optional.of(job)).thenReturn(java.util.Optional.of(cancelled));
 
         SolveJobResponse response = service.cancel(3L);
 
         assertEquals(SolveJobStatus.CANCELLED, response.status());
-        verify(runner, never()).run(any());
+        verify(runner, never()).run(any(Long.class));
     }
 
     @Test
@@ -190,7 +191,7 @@ class SolveJobServiceTest {
             .build();
         job.setId(3L);
         when(jobRepo.findById(3L)).thenReturn(java.util.Optional.of(job));
-        when(jobRepo.transitionTerminal(eq(3L), any(), eq(SolveJobStatus.CANCELLED), any(), any(), any(), any()))
+        when(jobRepo.transitionTerminal(eq(3L), anyCollection(), eq(SolveJobStatus.CANCELLED), any(), any(), any(), any()))
             .thenReturn(0);
 
         assertThrows(com.arare.exception.ResourceConflictException.class, () -> service.cancel(3L));

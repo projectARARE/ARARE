@@ -4,8 +4,6 @@ Adaptive Real-Time Analysis and Re-evaluation Engine for university timetable sc
 
 ARARE is a full-stack scheduling platform built with Spring Boot, Timefold, and React. It manages academic master data, generates optimized schedules, analyzes disruptions, and supports export/import workflows.
 
-This document is the primary technical guide for the repository. It is based on the source code and avoids unsupported assumptions.
-
 ## 1. Introduction
 
 ARARE solves a constrained timetable optimization problem for universities.
@@ -112,7 +110,7 @@ Default backend DB config is in src/main/resources/application.properties and ca
 
 ### Authentication scope
 
-Authentication and authorization are currently out of scope for ARARE. The REST API is unauthenticated and relies on the network layer (or an external gateway) to control who can reach it. Do not expose the backend directly to the public internet in this state. A future release may add an identity provider and role-based access control on top of the existing domain model.
+Authentication and authorization are currently out of scope for ARARE. The REST API is unauthenticated and relies on the network layer (or an external gateway) to control who can reach it. Do not expose the backend directly to the public internet in this state.
 
 ## 7. Configuration and Persistence
 
@@ -369,25 +367,18 @@ To add a new disruption type:
 
 Verified fixes applied during remediation (all items below were confirmed in source):
 
-- SolutionPersister null-score path is null-safe: `scoreText` is computed before the guard,
-  so the exception message never dereferences a null score.
-- GlobalExceptionHandler covers ObjectOptimisticLockingFailureException (409) and
-  HttpMessageNotReadableException (400) in addition to the standard 404/400/409/422/500 cases.
+- SolutionPersister null-score path is null-safe: `scoreText` is computed before the guard, so the exception message never dereferences a null score.
+- GlobalExceptionHandler covers ObjectOptimisticLockingFailureException (409) and HttpMessageNotReadableException (400) in addition to the standard 404/400/409/422/500 cases.
 - AcademicTerm @PrePersist guards for null startDate/endDate before calling isBefore().
 - Subject @PrePersist guards for chunkHours <= 0 before the modulo check.
-- DependencyGraphBuilder edges are day-scoped (not resource-id-only), so a Monday
-  disruption does not flood the full week during BFS.
-- ScheduleGenerator UI uses a real elapsed-time counter with no fabricated score or
-  insight strings.
-- Constraint tuning sliders have been removed; the UI only exposes behavior the solver
-  actually honors (scope, resources, solving time).
+- DependencyGraphBuilder edges are day-scoped (not resource-id-only), so a Monday disruption does not flood the full week during BFS.
+- ScheduleGenerator UI uses a real elapsed-time counter with no fabricated score or insight strings.
+- Constraint tuning sliders have been removed; the UI only exposes behavior the solver actually honors (scope, resources, solving time).
 
 Remaining realistic risks:
 
-- Pairwise constraint joins are O(n²) in the worst case per resource group; for very
-  large schedules (hundreds of sessions per day) this may become a solve-time bottleneck.
-- Weight tuning is static in code; runtime constraint weight configuration would require
-  a ConstraintWeights problem fact and a differential test before it can be trusted.
+- Pairwise constraint joins are O(n^2) in the worst case per resource group; for very large schedules (hundreds of sessions per day) this may become a solve-time bottleneck.
+- Weight tuning is static in code; runtime constraint weight configuration would require a ConstraintWeights problem fact and a differential test before it can be trusted.
 
 ## 21. Glossary
 

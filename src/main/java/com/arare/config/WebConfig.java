@@ -15,7 +15,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("${arare.cors.allowed-origins:*}")
+    @Value("${arare.cors.allowed-origins:http://localhost:5173}")
     private String[] allowedOrigins;
 
     @Override

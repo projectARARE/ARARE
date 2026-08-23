@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,7 +48,7 @@ class SolveJobRecoverySweeperTest {
             running.getErrorMessage());
         assertEquals("Interrupted by a restart — the job was in QUEUED when the application shut down",
             queued.getErrorMessage());
-        verify(jobRepo).saveAll(any());
+        verify(jobRepo).saveAll(anyIterable());
     }
 
     @Test
@@ -57,6 +58,6 @@ class SolveJobRecoverySweeperTest {
 
         sweeper.sweepStaleJobsOnStartup();
 
-        verify(jobRepo, never()).saveAll(any());
+        verify(jobRepo, never()).saveAll(anyIterable());
     }
 }
