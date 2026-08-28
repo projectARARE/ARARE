@@ -1,6 +1,7 @@
 package com.arare.features.solver;
 
 import ai.timefold.solver.test.api.score.stream.ConstraintVerifier;
+import com.arare.features.solver.RoomBusyInterval;
 import com.arare.common.enums.LabSubtype;
 import com.arare.common.enums.RoomType;
 import com.arare.common.enums.SchoolDay;
@@ -476,6 +477,56 @@ class TimetableConstraintProviderTest {
         constraintVerifier.verifyThat(TimetableConstraintProvider::disruptionViolation)
             .given(fact, mondaySession, tuesdaySession)
             .penalizesBy(1);
+    }
+
+    @Test
+    void roomBusyCrossSchedulePenalizesHard() {
+        Teacher teacher = Teacher.builder().build();
+        teacher.setId(1L);
+        Room room = Room.builder().build();
+        room.setId(5L);
+        Timeslot ts = buildTimeslot(10L, SchoolDay.MONDAY, 8, 9, 1);
+
+        ClassSession s = ClassSession.builder()
+                .teacher(teacher)
+                .room(room)
+                .timeslot(ts)
+                .duration(1)
+                .build();
+        s.setId(1L);
+
+        // Same room, same day, overlapping slot in another active schedule.
+        RoomBusyInterval busy = new RoomBusyInterval(
+                5L, SchoolDay.MONDAY, 1, 2, LocalTime.of(8, 0), LocalTime.of(9, 0));
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::roomBusyCrossSchedule)
+                .given(busy, s)
+                .penalizesBy(1);
+    }
+
+    @Test
+    void roomBusyCrossScheduleIgnoresUnrelatedRoom() {
+        Teacher teacher = Teacher.builder().build();
+        teacher.setId(1L);
+        Room room = Room.builder().build();
+        room.setId(5L);
+        Timeslot ts = buildTimeslot(10L, SchoolDay.MONDAY, 8, 9, 1);
+
+        ClassSession s = ClassSession.builder()
+                .teacher(teacher)
+                .room(room)
+                .timeslot(ts)
+                .duration(1)
+                .build();
+        s.setId(1L);
+
+        // Busy interval is for a different room (7) -- no penalty.
+        RoomBusyInterval busy = new RoomBusyInterval(
+                7L, SchoolDay.MONDAY, 1, 2, LocalTime.of(8, 0), LocalTime.of(9, 0));
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::roomBusyCrossSchedule)
+                .given(busy, s)
+                .penalizesBy(0);
     }
 
     private Timeslot buildTimeslot(Long id, SchoolDay day, int startHour, int endHour, int slotNumber) {

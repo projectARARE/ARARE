@@ -96,8 +96,8 @@ class SameDayDensityTest {
 
         TimetableSolution solution = new TimetableSolution(
             List.of(ts1, ts2), List.of(), List.of(), List.of(subject),
-            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of(s1, s2), null);
+            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(s1, s2), null);
 
         SolverConfig config = new SolverConfig()
             .withSolutionClass(TimetableSolution.class)

@@ -91,6 +91,10 @@ public class TimetableSolution {
     @ProblemFactCollectionProperty
     private List<TeacherBusyInterval> teacherBusyIntervals;
 
+    // (room, day, slot-range) already booked in other ACTIVE schedules.
+    @ProblemFactCollectionProperty
+    private List<RoomBusyInterval> roomBusyIntervals;
+
     // Assignments from a parent schedule, used to minimise disruption on
     // regenerate.
     @ProblemFactCollectionProperty

@@ -95,6 +95,11 @@ public class TimetableProblemBuilder {
             request.schedule().getInstituteId(),
             facts.teachers().stream().map(t -> t.getId()).toList()
         ));
+        problem.setRoomBusyIntervals(dataGateway.findRoomBusyIntervals(
+            request.schedule().getId(),
+            request.schedule().getInstituteId(),
+            facts.rooms().stream().map(r -> r.getId()).toList()
+        ));
         problem.setPreviousAssignments(
             request.schedule().getParentSchedule() != null
                 ? dataGateway.findPreviousAssignments(request.schedule().getParentSchedule().getId())

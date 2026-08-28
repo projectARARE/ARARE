@@ -168,6 +168,28 @@ public class JpaProblemDataGateway implements ProblemDataGateway {
     }
 
     @Override
+    public List<RoomBusyInterval> findRoomBusyIntervals(Long scheduleId, Long instituteId, List<Long> roomIds) {
+        if (roomIds == null || roomIds.isEmpty()) {
+            return List.of();
+        }
+        List<RoomBusyInterval> busy = new ArrayList<>();
+        for (Object[] row : sessionRepo.findActiveCrossScheduleRoomBusyIntervals(scheduleId, roomIds, instituteId)) {
+            Number durationNum = (Number) row[5];
+            Integer startSlot = (Integer) row[2];
+            Integer endExclusive = (startSlot != null && durationNum != null)
+                ? startSlot + durationNum.intValue() : null;
+            busy.add(new RoomBusyInterval(
+                (Long) row[0],
+                (SchoolDay) row[1],
+                startSlot,
+                endExclusive,
+                (LocalTime) row[3],
+                (LocalTime) row[4]));
+        }
+        return busy;
+    }
+
+    @Override
     public List<PreviousAssignment> findPreviousAssignments(Long parentScheduleId) {
         return sessionRepo.findByScheduleId(parentScheduleId).stream()
             .filter(cs -> cs.getSubject() != null

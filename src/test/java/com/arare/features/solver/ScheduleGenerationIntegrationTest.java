@@ -135,6 +135,7 @@ class ScheduleGenerationIntegrationTest {
             List.of(),                // universityConfigs
             List.of(),                // preAllocationFacts
             List.of(),                // teacherBusyIntervals
+            List.of(),                // roomBusyIntervals
             List.of(),                // previousAssignments
             List.of(),                // disruptionFacts
             List.of(s1, s2),          // sessions (planning entities)

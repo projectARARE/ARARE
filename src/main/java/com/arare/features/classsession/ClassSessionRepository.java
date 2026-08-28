@@ -83,6 +83,33 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
         @Param("teacherIds") java.util.Collection<Long> teacherIds,
         @Param("instituteId") Long instituteId);
 
+    @Query("SELECT cs.room.id, ts.day, ts.slotNumber, ts.startTime, ts.endTime, cs.duration " +
+           "FROM ClassSession cs JOIN cs.timeslot ts JOIN cs.schedule sch " +
+           "WHERE cs.room.id IN :roomIds " +
+           "AND sch.id <> :scheduleId " +
+           "AND sch.status = 'ACTIVE' " +
+           "AND (:instituteId IS NULL " +
+           "     OR cs.batch.department.institute.id = :instituteId " +
+           "     OR cs.section.batch.department.institute.id = :instituteId) " +
+           "AND cs.timeslot IS NOT NULL AND cs.room IS NOT NULL")
+    List<Object[]> findActiveCrossScheduleRoomBusyIntervals(
+        @Param("scheduleId") Long scheduleId,
+        @Param("roomIds") java.util.Collection<Long> roomIds,
+        @Param("instituteId") Long instituteId);
+
+    @Query("SELECT cs FROM ClassSession cs JOIN cs.schedule sch " +
+           "WHERE cs.room.id = :roomId " +
+           "AND sch.id <> :excludeScheduleId " +
+           "AND sch.status = 'ACTIVE' " +
+           "AND (:instituteId IS NULL " +
+           "     OR cs.batch.department.institute.id = :instituteId " +
+           "     OR cs.section.batch.department.institute.id = :instituteId) " +
+           "AND cs.timeslot IS NOT NULL AND cs.room IS NOT NULL")
+    List<ClassSession> findActiveCrossScheduleSessionsByRoom(
+        @Param("roomId") Long roomId,
+        @Param("excludeScheduleId") Long excludeScheduleId,
+        @Param("instituteId") Long instituteId);
+
     @Query("SELECT cs FROM ClassSession cs WHERE cs.schedule.id = :scheduleId " +
            "AND cs.room.id = :roomId AND cs.isLocked = false")
     List<ClassSession> findUnlockedByScheduleIdAndRoomId(

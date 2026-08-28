@@ -381,6 +381,21 @@ public class FeasibilityCheckService {
                         spec.teacherId(), teacher.getName()));
                 }
             }
+            // Cross-schedule gate for rooms: the room must not be booked in
+            // another ACTIVE timetable at the pre-assigned slot (mirrors the
+            // teacher gate above).
+            if (spec.roomId() != null) {
+                for (ClassSession busy : sessionRepo.findActiveCrossScheduleSessionsByRoom(spec.roomId(), -1L, req.instituteId())) {
+                    if (busy.getTimeslot() != null
+                        && busy.getTimeslot().getDay() == slot.getDay()
+                        && overlaps(slot, duration, busy.getTimeslot(), busy.getDuration())) {
+                        issues.add(error("PRE-ALLOCATION",
+                            "Room is already booked in another active timetable at "
+                                + slot.getDay() + " " + slot.getStartTime() + "-" + slot.getEndTime() + ".",
+                            spec.roomId(), null));
+                    }
+                }
+            }
         }
     }
 

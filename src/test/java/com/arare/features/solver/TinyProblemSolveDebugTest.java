@@ -98,7 +98,7 @@ class TinyProblemSolveDebugTest {
 
         TimetableSolution problem = new TimetableSolution(
             slots, List.of(room), List.of(nidhi, anand), List.of(array, project),
-            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
             List.of(
                 session(1L, array, batch, anand, null),
                 session(2L, array, batch, anand, null),
@@ -138,7 +138,7 @@ SolverConfig config = new SolverConfig()
         // Full constraint breakdown of the stuck solution.
         TimetableSolution stuck = new TimetableSolution(
             slots, List.of(room), List.of(nidhi, anand), List.of(array, project),
-            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
             List.of(
                 session(1L, array, batch, anand, slots.get(0)),
                 session(2L, array, batch, anand, slots.get(1)),
@@ -157,7 +157,7 @@ SolverConfig config = new SolverConfig()
         // Array:Mon#2 <-> Project:Wed#1
         TimetableSolution swapped = new TimetableSolution(
             slots, List.of(room), List.of(nidhi, anand), List.of(array, project),
-            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
             List.of(
                 session(1L, array, batch, anand, slots.get(0)),
                 session(2L, array, batch, anand, slots.get(4)),
@@ -199,7 +199,7 @@ SolverConfig config = new SolverConfig()
 
         TimetableSolution ideal = new TimetableSolution(
             slots, List.of(room), List.of(nidhi, anand), List.of(array, project),
-            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(batch), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
             List.of(
                 session(1L, array, batch, anand, slots.get(0)),
                 session(2L, array, batch, anand, slots.get(4)),
@@ -258,6 +258,7 @@ SolverConfig config = new SolverConfig()
             List.of(nidhi, anand),
             List.of(array, project),
             List.of(batch),
+            List.of(),
             List.of(),
             List.of(),
             List.of(),

@@ -26,6 +26,11 @@ public interface ProblemDataGateway {
     // institute; null scans university-wide for shared teachers.
     List<TeacherBusyInterval> findTeacherBusyIntervals(Long scheduleId, Long instituteId, List<Long> teacherIds);
 
+    // Room equivalents of the teacher busy-interval scan: the same (room, day,
+    // slot) combination already used in another ACTIVE schedule. instituteId
+    // scopes the scan exactly like the teacher query.
+    List<RoomBusyInterval> findRoomBusyIntervals(Long scheduleId, Long instituteId, List<Long> roomIds);
+
     // Assignments from a parent schedule, keyed by PreviousAssignment.keyFor,
     // used by the soft minimizeMovedSessions constraint on regenerate.
     List<PreviousAssignment> findPreviousAssignments(Long parentScheduleId);

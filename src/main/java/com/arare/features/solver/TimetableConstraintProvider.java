@@ -45,6 +45,7 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             singleTeacherPerSubjectSection(factory),
             preAllocationViolation(factory),
             teacherBusyCrossSchedule(factory),
+            roomBusyCrossSchedule(factory),
             homeRoomViolation(factory),
             disruptionViolation(factory),
 
@@ -558,6 +559,17 @@ public class TimetableConstraintProvider implements ConstraintProvider {
         return t.getStartTime().isBefore(busy.endTime()) && busy.startTime().isBefore(t.getEndTime());
     }
 
+    static boolean overlapsBusyInterval(ClassSession s, RoomBusyInterval busy) {
+        Timeslot t = s.getTimeslot();
+        Integer aStart = t.getSlotNumber();
+        Integer bStart = busy.startSlot();
+        if (aStart != null && bStart != null) {
+            int aEnd = aStart + s.getDuration();
+            return aStart < busy.endSlotExclusive() && bStart < aEnd;
+        }
+        return t.getStartTime().isBefore(busy.endTime()) && busy.startTime().isBefore(t.getEndTime());
+    }
+
     Constraint preAllocationViolation(ConstraintFactory factory) {
         // Teacher/room pins from pre-allocations that did NOT fix a timeslot.
         // The pinned session must keep the pre-assigned teacher and room while
@@ -588,6 +600,22 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                     && overlapsBusyInterval(s, busy)))
             .penalize(HardMediumSoftScore.ONE_HARD)
             .asConstraint("Teacher already teaching in another active schedule");
+    }
+
+    Constraint roomBusyCrossSchedule(ConstraintFactory factory) {
+        // A room already in use in another ACTIVE schedule must never be
+        // double-booked here. Mirrors teacherBusyCrossSchedule but for the
+        // physical room resource.
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .filter(s -> s.getRoom() != null
+                && s.getTimeslot() != null
+                && s.getRoom().getId() != null)
+            .join(RoomBusyInterval.class,
+                Joiners.filtering((s, busy) -> busy.sameRoom(s.getRoom().getId())
+                    && busy.sameDay(s.getTimeslot().getDay())
+                    && overlapsBusyInterval(s, busy)))
+            .penalize(HardMediumSoftScore.ONE_HARD)
+            .asConstraint("Room already booked in another active schedule");
     }
 
     Constraint homeRoomViolation(ConstraintFactory factory) {

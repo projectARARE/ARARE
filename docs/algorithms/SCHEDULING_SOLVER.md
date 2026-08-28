@@ -88,6 +88,7 @@ comparison when `slotNumber` is null). Most binary clash constraints use
 | `homeRoomViolation` | Non-lab, non-LAB-room sessions must use the batch's `homeRoom`. |
 | `preAllocationViolation` | A `PreAllocationConstraintFact` pin (teacher/room) not honoured. |
 | `teacherBusyCrossSchedule` | Teacher already teaching in another ACTIVE schedule. |
+| `roomBusyCrossSchedule` | Room already booked in another ACTIVE schedule (physical double-booking across timetables). |
 | `disruptionViolation` | Sessions still on a blocked teacher/room/timeslot/day from a disruption. |
 
 ### MEDIUM constraints (should not break)
@@ -164,8 +165,10 @@ Pipeline producing a `TimetableSolution`:
 7. `LazyAssociationInitializer.initialize` force-loads lazy collections.
 8. `applyTeacherAllotments` derives `allowedTeacherIds` from `TeacherAssignment`.
 9. Assemble the solution: `teacherBusyIntervals` from
-   `findTeacherBusyIntervals`, `previousAssignments` from the parent schedule or
-   a freshly built churn baseline, and `disruptionFacts` from the request.
+   `findTeacherBusyIntervals` and `roomBusyIntervals` from
+   `findRoomBusyIntervals` (both scoped by `instituteId`, mirroring each other),
+   `previousAssignments` from the parent schedule or a freshly built churn
+   baseline, and `disruptionFacts` from the request.
 
 ### `JpaProblemDataGateway.loadFacts` (`solver/JpaProblemDataGateway.java`)
 
