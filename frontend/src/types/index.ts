@@ -12,7 +12,7 @@ export type LabSubtype =
   | 'NETWORK_LAB'
   | 'GENERAL_LAB'
 export type TimeslotType = 'CLASS' | 'BREAK' | 'BLOCKED'
-export type ScheduleScope = 'DEPARTMENT' | 'COLLEGE' | 'UNIVERSITY'
+export type ScheduleScope = 'DEPARTMENT' | 'INSTITUTE' | 'UNIVERSITY'
 export type ScheduleStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED' | 'PARTIAL' | 'INFEASIBLE'
 export type EventType =
   | 'EXAM'
@@ -38,7 +38,7 @@ export interface BuildingRequest {
   location?: string
 }
 
-// ─── Institute (constituent college within the university) ───────────────────
+// ─── Institute (constituent unit within the university) ──────────────────────
 
 export interface Institute {
   id: number
@@ -257,7 +257,6 @@ export interface UniversityConfig {
   workingDays: SchoolDay[]
 }
 export interface UniversityConfigRequest {
-  active?: boolean
   daysPerWeek: number
   timeslotsPerDay: number
   maxClassesPerDay: number
@@ -497,20 +496,6 @@ export interface ImportOrderStep {
   displayName: string
   fileName: string
   dependencies: string[]
-}
-
-// ─── University Config Entry (key-value) ─────────────────────────────────────
-
-export interface UniversityConfigEntry {
-  id: number
-  key: string
-  value: string
-  description?: string
-}
-export interface UniversityConfigEntryRequest {
-  key: string
-  value: string
-  description?: string
 }
 
 // ─── Session Assignment (manual edit) ────────────────────────────────────────

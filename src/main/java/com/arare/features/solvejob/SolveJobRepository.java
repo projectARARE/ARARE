@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.UUID;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,7 +49,8 @@ public interface SolveJobRepository extends JpaRepository<SolveJob, Long> {
             j.score = :score,
             j.elapsedMillis = :elapsedMillis,
             j.finishedAt = :finishedAt,
-            j.errorMessage = :errorMessage
+            j.errorMessage = :errorMessage,
+            j.problemId = :problemId
         WHERE j.id = :id AND j.status IN :fromStatuses
         """)
     int transitionTerminal(@Param("id") Long id,
@@ -57,7 +59,8 @@ public interface SolveJobRepository extends JpaRepository<SolveJob, Long> {
         @Param("score") String score,
         @Param("elapsedMillis") Long elapsedMillis,
         @Param("finishedAt") LocalDateTime finishedAt,
-        @Param("errorMessage") String errorMessage);
+        @Param("errorMessage") String errorMessage,
+        @Param("problemId") UUID problemId);
 
     /**
      * Best-score telemetry update that only applies while the job is still

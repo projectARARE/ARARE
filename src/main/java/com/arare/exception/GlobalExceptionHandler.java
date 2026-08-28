@@ -1,6 +1,5 @@
 package com.arare.exception;
 
-import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,10 +89,18 @@ public class GlobalExceptionHandler {
         return detail;
     }
 
-    @ExceptionHandler(IllegalStateException.class)
-    public ProblemDetail handleIllegalState(IllegalStateException ex) {
+    @ExceptionHandler(InfeasibleScheduleException.class)
+    public ProblemDetail handleInfeasible(InfeasibleScheduleException ex) {
         ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         detail.setType(URI.create("/errors/infeasible"));
+        return detail;
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ProblemDetail handleIllegalState(IllegalStateException ex) {
+        log.error("Unexpected IllegalStateException", ex);
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+        detail.setType(URI.create("/errors/internal"));
         return detail;
     }
 
@@ -174,7 +181,7 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         ProblemDetail detail = ProblemDetail.forStatusAndDetail(
             HttpStatus.BAD_REQUEST,
-            "Invalid value for parameter '" + ex.getName() + "'. Expected a number."
+            "Invalid value for parameter '" + ex.getName() + "'."
         );
         detail.setType(URI.create("/errors/validation"));
         return detail;

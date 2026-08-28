@@ -18,6 +18,7 @@ import type {
   TimeslotRequest,
   UniversityConfig,
   UniversityConfigRequest,
+  UniversityConfigDiagnostics,
   Schedule,
   ScheduleRequest,
   ScoreExplanation,
@@ -37,7 +38,6 @@ import type {
   SessionCreateRequest,
   SolveJobResponse,
   PreAllocation,
-  PreAllocationRequest,
   TeacherAssignment,
   TeacherAssignmentRequest,
   Institute,
@@ -120,7 +120,7 @@ export const departmentApi = {
   delete: (id: number) => api.delete(`/departments/${id}`),
 }
 
-// Institutes (constituent colleges within the university)
+// Institutes (constituent units within the university)
 export const instituteApi = {
   getAll: () => api.get<Institute[]>('/institutes').then((r) => r.data),
   getById: (id: number) => api.get<Institute>(`/institutes/${id}`).then((r) => r.data),
@@ -235,17 +235,14 @@ export const timeslotApi = {
 export const universityConfigApi = {
   get: () => api.get<UniversityConfig>('/university-config').then((r) => r.data),
   save: (data: UniversityConfigRequest) =>
-    api.post<UniversityConfig>('/university-config', data).then((r) => r.data),
-  diagnostics: () => api.get('/university-config/diagnostics').then((r) => r.data as {
-    valid: boolean
-    summary: string
-    daysPerWeek: number | null
-    timeslotsPerDay: number | null
-    maxClassesPerDay: number | null
-    workingDays: string[]
-    classSlotsPerDay: Record<string, number>
-    issues: string[]
-  }),
+    api.post<UniversityConfig>('/university-config', {
+      daysPerWeek: data.daysPerWeek,
+      timeslotsPerDay: data.timeslotsPerDay,
+      maxClassesPerDay: data.maxClassesPerDay,
+      breakSlotIndices: data.breakSlotIndices,
+      workingDays: data.workingDays,
+    }).then((r) => r.data),
+  diagnostics: () => api.get<UniversityConfigDiagnostics>('/university-config/diagnostics').then((r) => r.data),
 }
 
 // Schedules
@@ -254,8 +251,6 @@ export const scheduleApi = {
   getById: (id: number) => api.get<Schedule>(`/schedules/${id}`).then((r) => r.data),
   generate: (data: ScheduleRequest) =>
     api.post<SolveJobResponse>('/schedules/generate', data).then((r) => r.data),
-  partialResolve: (id: number, impactedSessionIds: number[]) =>
-    api.post<SolveJobResponse>(`/schedules/${id}/partial-resolve`, { impactedSessionIds }).then((r) => r.data),
   getScoreExplanation: (id: number) =>
     api.get<ScoreExplanation>(`/schedules/${id}/score-explanation`).then((r) => r.data),
   getExplanation: (id: number) =>
@@ -283,7 +278,7 @@ export const scheduleApi = {
     }).then((r) => r.data as Blob),
   checkFeasibility: (req: Partial<ScheduleRequest>) =>
     api.post<FeasibilityCheckResult>('/schedules/feasibility-check', req).then((r) => r.data),
-  exportRowsExcel: (sheetName: string, headers: string[], rows: (string | number | null | undefined)[][]) =>
+  exportRowsExcel: (sheetName: string, headers: string[], rows: string[][]) =>
     api.post('/export/excel', { sheetName, headers, rows }, { responseType: 'blob' }).then((r) => r.data as Blob),
   getConflictSuggestions: (scheduleId: number, sessionId: number, limit = 4) =>
     api
@@ -310,15 +305,10 @@ export const sessionApi = {
   create: (data: SessionCreateRequest) =>
     api.post<ClassSession>('/sessions', data).then((r) => r.data),
   delete: (id: number) => api.delete(`/sessions/${id}`),
-  getBySchedule: (scheduleId: number) =>
-    api.get<ClassSession[]>(`/sessions/schedule/${scheduleId}`).then((r) => r.data),
 }
 
 // Pre-Allocations (pre-assigned teachers/rooms for a schedule)
 export const preAllocationApi = {
-  create: (data: PreAllocationRequest) =>
-    api.post<PreAllocation>('/pre-allocations', data).then((r) => r.data),
-  getById: (id: number) => api.get<PreAllocation>(`/pre-allocations/${id}`).then((r) => r.data),
   getBySchedule: (scheduleId: number) =>
     api.get<PreAllocation[]>(`/pre-allocations/schedule/${scheduleId}`).then((r) => r.data),
   delete: (id: number) => api.delete(`/pre-allocations/${id}`),

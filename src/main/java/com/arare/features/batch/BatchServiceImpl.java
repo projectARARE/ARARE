@@ -1,5 +1,6 @@
 package com.arare.features.batch;
 
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsection.ClassSectionRepository;
@@ -35,6 +36,12 @@ public class BatchServiceImpl implements BatchService {
     public BatchResponse create(BatchRequest req) {
         Department dept = departmentRepo.findById(req.departmentId())
             .orElseThrow(() -> new ResourceNotFoundException("Department", req.departmentId()));
+
+        if (repo.existsByDepartmentIdAndYearAndSection(dept.getId(), req.year(), req.section())) {
+            throw new DuplicateResourceException(
+                "Batch for department '" + dept.getName() + "' year " + req.year() + " section '"
+                    + req.section() + "' already exists");
+        }
 
         Batch b = Batch.builder()
             .department(dept)

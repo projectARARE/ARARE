@@ -27,6 +27,8 @@ interface SessionCellProps {
   heatState?: 'none' | 'soft' | 'hard'
   inspectorNotes?: string[]
   preAllocated?: boolean
+  density?: 'compact' | 'comfortable'
+  dragging?: boolean
 }
 
 export default function SessionCell({
@@ -40,6 +42,8 @@ export default function SessionCell({
   heatState = 'none',
   inspectorNotes = [],
   preAllocated = false,
+  density = 'comfortable',
+  dragging = false,
 }: SessionCellProps) {
   const heatClass =
     heatState === 'hard'
@@ -47,6 +51,20 @@ export default function SessionCell({
       : heatState === 'soft'
         ? 'ring-1 ring-amber-400'
         : ''
+
+  const compact = density === 'compact'
+  const denseText = compact ? 'text-[10px] leading-tight' : 'text-xs leading-tight'
+
+  // Full details live in the native tooltip so cells stay small (especially in
+  // compact density) while the operator can still read teacher/room on hover.
+  const tooltip = [
+    session.subjectName ?? 'Session',
+    session.teacherName ? `Teacher: ${session.teacherName}` : '',
+    session.roomNumber ? `Room: ${session.roomNumber}${session.buildingName ? ` (${session.buildingName})` : ''}` : '',
+    session.batchLabel ? `Batch: ${session.batchLabel}` : '',
+    session.isLocked ? 'Locked — drag disabled' : '',
+    ...inspectorNotes,
+  ].filter(Boolean).join('  •  ')
 
   const lockedBadge = session.isLocked ? (
     <span className="absolute right-1 top-1 inline-flex items-center gap-1 rounded-full bg-amber-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
@@ -77,28 +95,29 @@ export default function SessionCell({
       onMouseLeave={() => onHover?.(null)}
       onDragStart={() => !session.isLocked && onDragStart?.(session)}
       onDragEnd={() => onDragEnd?.()}
-      title={[session.isLocked ? 'Locked - drag disabled' : '', ...inspectorNotes].filter(Boolean).join(' | ')}
+      title={tooltip}
       className={`
-        relative rounded-md border p-1.5 text-xs leading-tight
+        relative rounded-md border ${compact ? 'p-1' : 'p-1.5'} ${denseText}
         transition-shadow hover:shadow-md select-none
         ${colorForSubject(session.subjectId ?? session.id)}
         ${heatClass}
         ${highlighted ? 'outline outline-2 outline-offset-1 outline-cyan-400' : ''}
+        ${dragging ? 'opacity-60 ring-2 ring-primary-400 shadow-lg' : ''}
         ${session.isLocked ? 'ring-2 ring-offset-1 ring-amber-500 bg-amber-50/70 opacity-95' : ''}
-        ${(onClick || onDragStart) && !session.isLocked ? 'cursor-pointer' : ''}
+        ${(onClick || onDragStart) && !session.isLocked ? 'cursor-grab active:cursor-grabbing' : ''}
         ${session.isLocked && onDragStart ? 'cursor-not-allowed' : ''}
       `}
     >
       {lockedBadge}
       {preAllocatedBadge}
       <p className="font-semibold truncate">{session.subjectName}</p>
-      {session.teacherName && (
+      {!compact && session.teacherName && (
         <p className="truncate opacity-80">{session.teacherName}</p>
       )}
-      {session.roomNumber && (
+      {!compact && session.roomNumber && (
         <p className="truncate opacity-70">{session.roomNumber}</p>
       )}
-      {session.batchLabel && (
+      {!compact && session.batchLabel && (
         <p className="truncate opacity-70">{session.batchLabel}</p>
       )}
       {session.isLocked && (

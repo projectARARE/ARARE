@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Card, Button, Input, AvailabilityPainter } from '../components/ui'
 import { universityConfigApi, timeslotApi } from '../services/api'
-import type { UniversityConfig, SchoolDay } from '../types'
+import type { UniversityConfig, UniversityConfigDiagnostics, SchoolDay } from '../types'
 import type { Timeslot } from '../types'
 
 const ALL_DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
@@ -30,7 +30,7 @@ export default function UniversityConfigPage() {
   const [timeslots, setTimeslots] = useState<Timeslot[]>([])
   const [missingConfig, setMissingConfig] = useState(false)
   const [paintedAvailableTimeslotIds, setPaintedAvailableTimeslotIds] = useState<number[]>([])
-  const [diagnostics, setDiagnostics] = useState<any>(null)
+  const [diagnostics, setDiagnostics] = useState<UniversityConfigDiagnostics | null>(null)
 
   const painterTimeslots = useMemo<Timeslot[]>(() => {
     const days = form.workingDays.length > 0 ? form.workingDays : ALL_DAYS.slice(0, Math.max(1, Math.min(7, form.daysPerWeek)))
@@ -107,7 +107,13 @@ export default function UniversityConfigPage() {
     setError(null)
     setSaved(false)
     try {
-      await universityConfigApi.save(form)
+      await universityConfigApi.save({
+        daysPerWeek: form.daysPerWeek,
+        timeslotsPerDay: form.timeslotsPerDay,
+        maxClassesPerDay: form.maxClassesPerDay,
+        breakSlotIndices: form.breakSlotIndices,
+        workingDays: form.workingDays,
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
       loadData()

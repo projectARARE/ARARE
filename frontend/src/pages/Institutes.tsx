@@ -117,7 +117,7 @@ export default function Institutes() {
     <>
       <Card
         title="Institutes"
-        description="Constituent colleges/institutes within the university"
+        description="Constituent institutes within the university"
         actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Institute</Button>}
       >
         <Table

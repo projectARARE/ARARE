@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.time.LocalTime;
 import java.util.Optional;
 import java.util.Set;
 
@@ -257,7 +258,17 @@ public final class CsvUtils {
 
     /** Timeslot natural key = DAY|HH:MM|HH:MM (mirrors UNIQUE(day, start_time, end_time)). */
     public static String timeslotKey(String day, String start, String end) {
-        return key(day) + "|" + start.trim() + "|" + end.trim();
+        return key(day) + "|" + normalizeTime(start) + "|" + normalizeTime(end);
+    }
+
+    /** Normalizes a time to {@code HH:mm} via {@link LocalTime} so CSV "9:00" matches stored "09:00". */
+    private static String normalizeTime(String time) {
+        if (time == null) return "";
+        try {
+            return LocalTime.parse(time.trim()).toString();
+        } catch (Exception ex) {
+            return time.trim();
+        }
     }
 
     /** Room natural key = BUILDING|ROOMNUMBER (mirrors UNIQUE(building_id, room_number)). */

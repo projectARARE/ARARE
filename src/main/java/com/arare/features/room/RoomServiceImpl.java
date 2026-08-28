@@ -1,8 +1,10 @@
 package com.arare.features.room;
 
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.building.Building;
 import com.arare.features.building.BuildingRepository;
+import com.arare.features.batch.BatchRepository;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.timeslot.Timeslot;
@@ -22,6 +24,7 @@ public class RoomServiceImpl implements RoomService {
     private final BuildingRepository buildingRepo;
     private final TimeslotRepository timeslotRepo;
     private final ClassSessionRepository sessionRepo;
+    private final BatchRepository batchRepo;
     private final CascadeDeletionService cascadeDeletionService;
 
     @Override
@@ -29,6 +32,11 @@ public class RoomServiceImpl implements RoomService {
     public RoomResponse create(RoomRequest req) {
         Building building = buildingRepo.findById(req.buildingId())
             .orElseThrow(() -> new ResourceNotFoundException("Building", req.buildingId()));
+
+        if (repo.existsByBuildingIdAndRoomNumber(building.getId(), req.roomNumber())) {
+            throw new DuplicateResourceException(
+                "Room '" + req.roomNumber() + "' already exists in building '" + building.getName() + "'");
+        }
 
         List<Timeslot> slots = req.availableTimeslotIds() == null
             ? List.of()
@@ -86,6 +94,7 @@ public class RoomServiceImpl implements RoomService {
         sessionRepo.clearRoomById(id);   // Unassign room from sessions, keep sessions
         cascadeDeletionService.purgePreAllocationsForRoom(id);
         cascadeDeletionService.detachRoomFromEvents(id);
+        batchRepo.clearHomeRoomByRoomId(id);   // Null Batch.homeRoom FK before deleting
         repo.deleteById(id);
     }
 
@@ -99,7 +108,7 @@ public class RoomServiceImpl implements RoomService {
         if (ids == null) return List.of();
         List<T> found = repo.findAllById(ids);
         if (found.size() != new java.util.HashSet<>(ids).size()) {
-            throw new IllegalArgumentException("One or more " + type + " ids do not exist: " + ids);
+            throw new ResourceNotFoundException("One or more " + type + " ids do not exist: " + ids);
         }
         return found;
     }

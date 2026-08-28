@@ -24,9 +24,9 @@ import java.io.ByteArrayOutputStream;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 // Renders a solved schedule as a printable PDF grid. The layout mirrors the
 // on-screen timetable: rows are time slots, columns are days of the week.
@@ -35,6 +35,8 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class PdfExportService {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PdfExportService.class);
 
     private static final Font TITLE = new Font(Font.HELVETICA, 16, Font.BOLD, new Color(30, 41, 59));
     private static final Font SUB   = new Font(Font.HELVETICA, 9, Font.NORMAL, new Color(100, 116, 139));
@@ -73,7 +75,16 @@ public class PdfExportService {
 
         List<SchoolDay> days = dayColumns(classSlots);
 
-        List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId).stream()
+        List<ClassSession> allSessions = sessionRepo.findByScheduleId(scheduleId);
+        long excludedNonClass = allSessions.stream()
+                .filter(s -> s.getTimeslot() != null
+                        && s.getTimeslot().getType() != com.arare.common.enums.TimeslotType.CLASS)
+                .count();
+        if (excludedNonClass > 0) {
+            log.info("PDF export for schedule {} omitted {} session(s) whose timeslot is not CLASS.",
+                    scheduleId, excludedNonClass);
+        }
+        List<ClassSession> sessions = allSessions.stream()
                 .filter(s -> s.getTimeslot() != null)
                 .filter(s -> matches(s, view, entityId))
                 .toList();
@@ -168,9 +179,11 @@ public class PdfExportService {
     }
 
     private List<SchoolDay> dayColumns(List<Timeslot> slots) {
-        java.util.LinkedHashSet<SchoolDay> days = new java.util.LinkedHashSet<>();
-        for (Timeslot t : slots) days.add(t.getDay());
-        return new ArrayList<>(days);
+        return slots.stream()
+                .map(Timeslot::getDay)
+                .distinct()
+                .sorted(Comparator.comparingInt(SchoolDay::ordinal))
+                .collect(Collectors.toList());
     }
 
     private PdfPCell headerCell(String text) {

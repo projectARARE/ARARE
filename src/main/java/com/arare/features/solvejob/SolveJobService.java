@@ -125,6 +125,7 @@ public class SolveJobService {
                 null,
                 null,
                 java.time.LocalDateTime.now(),
+                null,
                 null);
             if (updated == 0) {
                 // The job left QUEUED/RUNNING between our read and the update

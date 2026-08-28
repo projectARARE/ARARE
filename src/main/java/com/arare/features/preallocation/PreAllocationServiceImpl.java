@@ -1,10 +1,13 @@
 package com.arare.features.preallocation;
 
 import com.arare.common.enums.TimeslotType;
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceConflictException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
 import com.arare.features.batch.BatchRepository;
+import com.arare.features.classsection.ClassSection;
+import com.arare.features.classsection.ClassSectionRepository;
 import com.arare.features.classsession.ClassSession;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.room.Room;
@@ -38,6 +41,7 @@ public class PreAllocationServiceImpl implements PreAllocationService {
     private final TeacherRepository teacherRepo;
     private final RoomRepository roomRepo;
     private final TimeslotRepository timeslotRepo;
+    private final ClassSectionRepository classSectionRepo;
     private final ClassSessionRepository sessionRepo;
 
     @Override
@@ -62,12 +66,17 @@ public class PreAllocationServiceImpl implements PreAllocationService {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
 
+        // Load existing pre-allocations ONCE so createAll is O(N) and can catch
+        // intra-payload conflicts (two specs in the same request that collide).
+        List<PreAllocation> existing = repo.findByScheduleId(scheduleId);
+
         // Deterministic insert order so identical wizard payloads produce the
         // same rows (mirrors the solver's REPRODUCIBLE environment mode).
         List<PreAllocationResponse> created = new ArrayList<>();
         for (PreAllocationSpec spec : specs) {
             PreAllocation pa = buildFromSpec(schedule, spec, true);
-            PreAllocation saved = repo.save(validateWithinSchedule(pa, null));
+            PreAllocation saved = repo.save(validateWithinSchedule(pa, null, existing));
+            existing.add(saved);
             created.add(toResponse(saved));
         }
         return created;
@@ -181,17 +190,42 @@ public class PreAllocationServiceImpl implements PreAllocationService {
      * Returns the candidate so callers can chain {@code repo.save}.
      */
     private PreAllocation validateWithinSchedule(PreAllocation candidate, Long excludedId) {
+        return validateWithinSchedule(candidate, excludedId, null);
+    }
+
+    /**
+     * Validates this {@code candidate} against the pre-allocations already in
+     * {@code existing} (for the same schedule). When {@code existing} is
+     * {@code null} it is loaded from the database (used by the single-create
+     * path). {@code excludedId} lets a future update path skip the candidate's
+     * own id.
+     */
+    private PreAllocation validateWithinSchedule(PreAllocation candidate, Long excludedId, List<PreAllocation> existing) {
+        if (existing == null) {
+            existing = repo.findByScheduleId(candidate.getSchedule().getId());
+        }
         Long batchId = candidate.getBatch().getId();
         Long subjectId = candidate.getSubject().getId();
         Long teacherId = candidate.getTeacher() != null ? candidate.getTeacher().getId() : null;
+        Long timeslotId = candidate.getTimeslot() != null ? candidate.getTimeslot().getId() : null;
 
-        for (PreAllocation other : repo.findByScheduleId(candidate.getSchedule().getId())) {
+        for (PreAllocation other : existing) {
             if (excludedId != null && excludedId.equals(other.getId())) {
                 continue;
             }
-            boolean sameSubjectBatch = other.getBatch().getId().equals(batchId)
+            boolean sameBatchSubject = other.getBatch().getId().equals(batchId)
                 && other.getSubject().getId().equals(subjectId);
-            if (sameSubjectBatch
+            // Identical (schedule, batch, subject, timeslot) is the unique key
+            // and must be rejected regardless of which teacher is assigned.
+            boolean sameTimeslot = (timeslotId == null && other.getTimeslot() == null)
+                || (timeslotId != null && other.getTimeslot() != null
+                    && other.getTimeslot().getId().equals(timeslotId));
+            if (sameBatchSubject && sameTimeslot) {
+                throw new DuplicateResourceException(
+                    "A pre-allocation for subject '" + candidate.getSubject().getName()
+                        + "' already exists for this batch and timeslot.");
+            }
+            if (sameBatchSubject
                 && teacherId != null
                 && other.getTeacher() != null
                 && !other.getTeacher().getId().equals(teacherId)) {
@@ -230,7 +264,15 @@ public class PreAllocationServiceImpl implements PreAllocationService {
         }
     }
 
-    private static int sectionSizeOf(Batch batch, Subject subject) {
+    private int sectionSizeOf(Batch batch, Subject subject) {
+        // Lab subjects are taught per ClassSection, so a room must fit a single
+        // section's size rather than the full batch.
+        if (subject.isLab()) {
+            List<ClassSection> sections = classSectionRepo.findByBatchId(batch.getId());
+            if (!sections.isEmpty()) {
+                return sections.stream().mapToInt(ClassSection::getSize).max().orElse(batch.getStudentCount());
+            }
+        }
         return batch.getStudentCount();
     }
 

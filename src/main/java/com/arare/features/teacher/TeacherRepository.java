@@ -1,6 +1,5 @@
 package com.arare.features.teacher;
 
-import com.arare.features.timeslot.Timeslot;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

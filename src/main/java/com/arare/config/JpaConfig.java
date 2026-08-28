@@ -35,6 +35,9 @@ public class JpaConfig {
     @Value("${spring.flyway.target:}")
     private String flywayTarget;
 
+    @Value("${arare.flyway.auto-create-db:false}")
+    private boolean autoCreateDb;
+
     // Custom Flyway bean that ensures the target database exists before migrating.
     // Connects to the default 'postgres' database first to CREATE DATABASE IF NOT EXISTS.
     @Bean
@@ -56,10 +59,21 @@ public class JpaConfig {
     }
 
     private void ensureDatabaseExists() {
+        if (!autoCreateDb) {
+            // Creating the DB is opt-in. By default the database must already
+            // exist (see docs); if it does not, Flyway's connect will surface a
+            // clear error below.
+            return;
+        }
         if (datasourceUrl != null && datasourceUrl.startsWith("jdbc:h2:")) {
             return;
         }
         String targetDb = extractDatabaseName(datasourceUrl);
+        // Validate the extracted name to avoid injection-shaped concatenation.
+        if (targetDb == null || !targetDb.matches("[A-Za-z0-9_]+")) {
+            log.warn("Skipping auto-create-db: extracted database name '{}' is not valid.", targetDb);
+            return;
+        }
         String adminUrl = datasourceUrl.replace("/" + targetDb, "/postgres");
 
         try (Connection conn = DriverManager.getConnection(adminUrl, datasourceUsername, datasourcePassword);
@@ -68,10 +82,12 @@ public class JpaConfig {
         } catch (Exception e) {
             // Database likely already exists; ignore and let Flyway handle the rest.
             if (!e.getMessage().contains("already exists") && !e.getMessage().contains("duplicate")) {
-                throw new IllegalStateException("Failed to ensure database exists: " + e.getMessage(), e);
+                log.warn("Could not ensure database exists (continuing): {}", e.getMessage());
             }
         }
     }
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(JpaConfig.class);
 
     private String extractDatabaseName(String url) {
         int lastSlash = url.lastIndexOf('/');

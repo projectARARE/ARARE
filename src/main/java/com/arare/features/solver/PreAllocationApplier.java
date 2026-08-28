@@ -43,8 +43,7 @@ public class PreAllocationApplier {
                     && s.getSubject().getId().equals(pa.getSubject().getId())
                     && s.getEffectiveBatch() != null
                     && s.getEffectiveBatch().getId().equals(pa.getBatch().getId()))
-                .findFirst()
-                .ifPresent(s -> {
+                .forEach(s -> {
                     if (impactedSessionIds.contains(s.getId())) {
                         return;
                     }

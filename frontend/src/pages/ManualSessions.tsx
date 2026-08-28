@@ -76,7 +76,7 @@ export default function ManualSessions() {
   useEffect(() => {
     if (!scheduleId) return
     setLoadingSessions(true)
-    sessionApi.getBySchedule(scheduleId)
+    scheduleApi.getSessions(scheduleId)
       .then(setSessions)
       .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to load sessions'))
       .finally(() => setLoadingSessions(false))
@@ -168,7 +168,7 @@ export default function ManualSessions() {
 
   const reloadSessions = () => {
     if (!scheduleId) return
-    sessionApi.getBySchedule(scheduleId)
+    scheduleApi.getSessions(scheduleId)
       .then(setSessions)
       .catch((e) => toast.error(e instanceof Error ? e.message : 'Failed to reload sessions'))
   }

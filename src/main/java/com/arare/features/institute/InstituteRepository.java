@@ -14,4 +14,8 @@ public interface InstituteRepository extends JpaRepository<Institute, Long> {
 
     // Find all institutes ordered by name for stable dropdowns/lists.
     List<Institute> findAllByOrderByNameAsc();
+
+    boolean existsByName(String name);
+
+    boolean existsByCode(String code);
 }

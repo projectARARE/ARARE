@@ -9,7 +9,6 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 @Entity
@@ -35,7 +34,7 @@ public class Schedule extends BaseEntity {
     @Builder.Default
     private ScheduleStatus status = ScheduleStatus.DRAFT;
 
-    // Home institute for an institute-scoped (COLLEGE) schedule. Null for a
+    // Home institute for an institute-scoped (INSTITUTE) schedule. Null for a
     // university-wide schedule; drives cross-schedule teacher-conflict scoping.
     @Column
     private Long instituteId;

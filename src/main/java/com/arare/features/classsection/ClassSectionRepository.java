@@ -24,6 +24,8 @@ public interface ClassSectionRepository extends JpaRepository<ClassSection, Long
     List<ClassSection> findByBatchId(Long batchId);
     List<ClassSection> findByBatchIdIn(List<Long> batchIds);
 
+    boolean existsByBatchIdAndLabel(Long batchId, String label);
+
     @Transactional @Modifying
     @Query("DELETE FROM ClassSection cs WHERE cs.batch.id = :batchId")
     void deleteByBatchId(@Param("batchId") Long batchId);

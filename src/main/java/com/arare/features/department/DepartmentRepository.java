@@ -13,6 +13,10 @@ public interface DepartmentRepository extends JpaRepository<Department, Long> {
 
     Optional<Department> findByCode(String code);
 
+    boolean existsByName(String name);
+
+    boolean existsByCode(String code);
+
     long countByInstituteId(Long instituteId);
 
     @Query("SELECT d.institute.id, COUNT(d) FROM Department d GROUP BY d.institute.id")

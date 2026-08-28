@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, Pencil, Trash2, Zap } from 'lucide-react'
 import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog } from '../components/ui'
 import type { Column, ContextMenuItem } from '../components/ui'
@@ -26,6 +26,12 @@ const typeVariant = (t: EventType): 'red' | 'green' | 'yellow' | 'blue' => {
 
 export default function Events() {
   const { toast } = useToast()
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    abortRef.current = controller
+    return () => controller.abort()
+  }, [])
   const [items, setItems] = useState<Event[]>([])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
@@ -117,7 +123,7 @@ export default function Events() {
     setApplyError(null)
     try {
       const job = await eventApi.applyToSchedule(applyTarget.eventId, +applyTarget.scheduleId)
-      const finished = await waitForJob(job)
+      const finished = await waitForJob(job, abortRef.current?.signal)
       if (finished.status === 'FAILED') {
         setApplyError(finished.errorMessage || 'Re-optimization failed')
         return

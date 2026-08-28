@@ -73,4 +73,25 @@ class GlobalExceptionHandlerTest {
         assertEquals(HttpStatus.METHOD_NOT_ALLOWED.value(), detail.getStatus());
         assertFalse(detail.getDetail().contains("PATCH"));
     }
+
+    @Test
+    void infeasibleScheduleReturns422() {
+        InfeasibleScheduleException ex =
+            new InfeasibleScheduleException("Schedule request is infeasible: no qualified teacher");
+
+        ProblemDetail detail = handler.handleInfeasible(ex);
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY.value(), detail.getStatus());
+        assertEquals("/errors/infeasible", detail.getType().toString());
+    }
+
+    @Test
+    void illegalStateExceptionReturns500AndNotInfeasible() {
+        IllegalStateException ex = new IllegalStateException("unexpected internal state");
+
+        ProblemDetail detail = handler.handleIllegalState(ex);
+
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR.value(), detail.getStatus());
+        assertEquals("/errors/internal", detail.getType().toString());
+    }
 }

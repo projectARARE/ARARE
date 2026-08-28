@@ -42,6 +42,10 @@ public class TimetableSolverService {
         // be re-scored without its disruption constraints and reported feasible.
         List<DisruptionConstraintFact> disruptionFacts = latestPartialResolveFacts(scheduleId);
 
+        // Read-only explain path: do NOT generate/persist sessions for a schedule
+        // that has none yet, otherwise this write would fail on a read-only
+        // transaction. Passing generateIfMissing=false analyses the existing
+        // facts (an empty session set) without writing.
         TimetableSolution solution = problemBuilder.build(new ProblemBuildRequest(
             schedule,
             null,
@@ -51,7 +55,7 @@ public class TimetableSolverService {
             null,
             null,
             disruptionFacts
-        ));
+        ), false);
 
         var explanation = solutionManager.explain(solution);
         HardMediumSoftScore score = explanation.getScore();

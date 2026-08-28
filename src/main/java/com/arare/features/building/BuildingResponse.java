@@ -6,7 +6,4 @@ public record BuildingResponse(
     String name,
     String location
 ) {
-    public static BuildingResponse from(Building b) {
-        return new BuildingResponse(b.getId(), b.getName(), b.getLocation());
-    }
 }

@@ -19,4 +19,6 @@ public interface BuildingRepository extends JpaRepository<Building, Long> {
     @Transactional @Modifying
     @Query(nativeQuery = true, value = "DELETE FROM teacher_preferred_buildings WHERE building_id = :id")
     void removeTeacherAssociations(@Param("id") Long id);
+
+    boolean existsByName(String name);
 }

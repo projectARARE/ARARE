@@ -34,7 +34,19 @@ public interface BatchRepository extends JpaRepository<Batch, Long> {
 
     List<Batch> findByDepartmentIdAndYear(Long departmentId, int year);
 
+    boolean existsByDepartmentIdAndYearAndSection(Long departmentId, int year, String section);
+
     @Transactional @Modifying
     @Query("DELETE FROM Batch b WHERE b.department.id = :departmentId")
     void deleteByDepartmentId(@Param("departmentId") Long departmentId);
+
+    // Null out Batch.homeRoom before a Room (or its Building) is deleted, since
+    // Batch.homeRoom is a plain @ManyToOne with no cascade/@OnDelete.
+    @Transactional @Modifying
+    @Query("UPDATE Batch b SET b.homeRoom = null WHERE b.homeRoom.id = :roomId")
+    void clearHomeRoomByRoomId(@Param("roomId") Long roomId);
+
+    @Transactional @Modifying
+    @Query("UPDATE Batch b SET b.homeRoom = null WHERE b.homeRoom IS NOT NULL AND b.homeRoom.building.id = :buildingId")
+    void clearHomeRoomByBuildingId(@Param("buildingId") Long buildingId);
 }

@@ -11,6 +11,7 @@ import com.arare.features.teacher.TeacherRepository;
 import com.arare.features.timeslot.Timeslot;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
+import java.util.stream.Collectors;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
@@ -22,9 +23,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 // Exports a solved schedule as an Excel workbook. The default ALL view emits one
 // sheet per batch (lab sections grouped under their batch) so a class's full week
@@ -34,6 +35,8 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class ExcelExportService {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ExcelExportService.class);
 
     private final ScheduleRepository     scheduleRepo;
     private final ClassSessionRepository sessionRepo;
@@ -58,7 +61,16 @@ public class ExcelExportService {
 
         List<SchoolDay> days = dayColumns(classSlots);
 
-        List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId).stream()
+        List<ClassSession> allSessions = sessionRepo.findByScheduleId(scheduleId);
+        long excludedNonClass = allSessions.stream()
+                .filter(s -> s.getTimeslot() != null
+                        && s.getTimeslot().getType() != com.arare.common.enums.TimeslotType.CLASS)
+                .count();
+        if (excludedNonClass > 0) {
+            log.info("Excel export for schedule {} omitted {} session(s) whose timeslot is not CLASS.",
+                    scheduleId, excludedNonClass);
+        }
+        List<ClassSession> sessions = allSessions.stream()
                 .filter(s -> s.getTimeslot() != null)
                 .filter(s -> matches(s, view, entityId))
                 .toList();
@@ -74,8 +86,9 @@ public class ExcelExportService {
                     Sheet sheet = wb.createSheet("Timetable");
                     renderGrid(sheet, wb, styles, schedule, entityLabel(view, entityId), classSlots, days, sessions, view);
                 } else {
+                    Set<String> usedSheetNames = new java.util.HashSet<>();
                     byBatch.forEach((label, batchSessions) ->
-                            renderGrid(wb.createSheet(safeSheetName(label)), wb, styles, schedule,
+                            renderGrid(wb.createSheet(uniqueSheetName(usedSheetNames, label)), wb, styles, schedule,
                                     label, classSlots, days, batchSessions, view));
                 }
             } else {
@@ -235,6 +248,20 @@ public class ExcelExportService {
         return cleaned.length() > 31 ? cleaned.substring(0, 31) : cleaned;
     }
 
+    // Ensures every created sheet name is unique (case-insensitive collisions can
+    // occur after safeSheetName truncation) by appending -2, -3, ... on conflict.
+    private String uniqueSheetName(Set<String> used, String label) {
+        String base = safeSheetName(label);
+        if (base.length() > 26) base = base.substring(0, 26); // leave room for "-NN"
+        String candidate = base;
+        int i = 2;
+        while (!used.add(candidate)) {
+            candidate = base + "-" + i;
+            i++;
+        }
+        return candidate;
+    }
+
     private boolean matches(ClassSession s, View view, Long entityId) {
         if (entityId == null) return true;
         return switch (view) {
@@ -276,9 +303,11 @@ public class ExcelExportService {
     }
 
     private List<SchoolDay> dayColumns(List<Timeslot> slots) {
-        LinkedHashSet<SchoolDay> days = new LinkedHashSet<>();
-        for (Timeslot t : slots) days.add(t.getDay());
-        return new ArrayList<>(days);
+        return slots.stream()
+                .map(Timeslot::getDay)
+                .distinct()
+                .sorted(Comparator.comparingInt(SchoolDay::ordinal))
+                .collect(Collectors.toList());
     }
 
     private String batchLabel(ClassSession s) {

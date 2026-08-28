@@ -629,10 +629,9 @@ public class TimetableConstraintProvider implements ConstraintProvider {
                 && (fact.day() == null || matchesDay(s, fact.day()));
             case TIMESLOT_BLOCKED -> s.getTimeslot() != null
                 && s.getTimeslot().getId().equals(fact.affectedEntityId());
-            case SESSION_CANCELLED -> s.getId().equals(fact.affectedEntityId())
-                && s.getTimeslot() != null;
             case SPECIAL_EVENT -> s.getTimeslot() != null
                 && matchesDay(s, fact.day());
+            default -> false;
         };
     }
 

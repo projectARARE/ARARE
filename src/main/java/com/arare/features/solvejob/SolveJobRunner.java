@@ -63,13 +63,28 @@ public class SolveJobRunner {
         }
 
         long startedMillis = System.currentTimeMillis();
-        job.setStatus(SolveJobStatus.RUNNING);
-        job.setStartedAt(LocalDateTime.now());
-        job = jobRepo.save(job);
-
         UUID problemId = UUID.randomUUID();
-        job.setProblemId(problemId);
-        final SolveJob workJob = jobRepo.save(job);
+        // Guarded transition: only flips QUEUED -> RUNNING (writing problemId)
+        // and wins if the job is still QUEUED. A concurrent cancel() issues a
+        // guarded terminal UPDATE that leaves the row no longer QUEUED, so this
+        // UPDATE matches 0 rows and we bail — the job is never resurrected to
+        // RUNNING, and no results are persisted for a job the user cancelled.
+        int updated = jobRepo.transitionTerminal(
+            jobId,
+            List.of(SolveJobStatus.QUEUED),
+            SolveJobStatus.RUNNING,
+            null,
+            null,
+            LocalDateTime.now(),
+            null,
+            problemId);
+        if (updated == 0) {
+            return; // cancelled/changed before we started
+        }
+        final SolveJob workJob = jobRepo.findById(jobId).orElse(null);
+        if (workJob == null) {
+            return;
+        }
 
         try {
             TimetableSolution problem = transactionTemplate.execute(status -> buildProblem(workJob));
@@ -113,15 +128,16 @@ public class SolveJobRunner {
             // loses (0 rows), so we must not persist — the schedule data would
             // otherwise be written for a job the user just cancelled.
             boolean committed = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
-                int updated = jobRepo.transitionTerminal(
+                int persisted = jobRepo.transitionTerminal(
                     jobId,
                     List.of(SolveJobStatus.QUEUED, SolveJobStatus.RUNNING),
                     SolveJobStatus.SUCCEEDED,
                     solution.getScore() != null ? solution.getScore().toString() : null,
                     elapsedMillis,
                     LocalDateTime.now(),
-                    null);
-                if (updated == 0) {
+                    null,
+                    workJob.getProblemId());
+                if (persisted == 0) {
                     log.info("Solve job {} finished but was cancelled concurrently; result not persisted", jobId);
                     return false;
                 }
@@ -149,7 +165,8 @@ public class SolveJobRunner {
             null,
             elapsedMillis,
             LocalDateTime.now(),
-            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
+            null);
         if (updated == 0) {
             SolveJob fresh = jobRepo.findById(job.getId()).orElse(job);
             if (fresh.getStatus() == SolveJobStatus.CANCELLED) {

@@ -1,6 +1,7 @@
 package com.arare.features.schedule;
 
 import com.arare.common.enums.ScheduleScope;
+import com.arare.exception.InfeasibleScheduleException;
 import com.arare.exception.ResourceBusyException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.classsession.ClassSessionRepository;
@@ -114,7 +115,7 @@ class ScheduleServiceImplTest {
             List.of(new FeasibilityIssue(FeasibilityIssue.Severity.ERROR, "BATCH",
                 "No batches found for the selected scope.", null, null))));
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> service.generate(req));
+        InfeasibleScheduleException ex = assertThrows(InfeasibleScheduleException.class, () -> service.generate(req));
 
         assertEquals(true, ex.getMessage().contains("infeasible"));
         verify(repo, never()).save(any());

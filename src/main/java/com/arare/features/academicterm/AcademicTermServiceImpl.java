@@ -1,5 +1,6 @@
 package com.arare.features.academicterm;
 
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,9 @@ public class AcademicTermServiceImpl implements AcademicTermService {
     @Override
     @Transactional
     public AcademicTermResponse create(AcademicTermRequest req) {
+        if (repo.existsByName(req.name())) {
+            throw new DuplicateResourceException("Academic term '" + req.name() + "' already exists");
+        }
         AcademicTerm term = AcademicTerm.builder()
                 .name(req.name())
                 .academicYear(req.academicYear())

@@ -19,10 +19,21 @@ public class TimetableProblemBuilder {
     private final LazyAssociationInitializer lazyAssociationInitializer;
 
     public TimetableSolution build(ProblemBuildRequest request) {
+        return build(request, true);
+    }
+
+    /**
+     * Builds the solver problem. When {@code generateIfMissing} is false (the
+     * read-only explain path), no sessions are generated nor persisted: a
+     * schedule that has no sessions yet simply yields an empty session set for
+     * analysis, so {@code explainSchedule} never issues a write inside its
+     * read-only transaction.
+     */
+    public TimetableSolution build(ProblemBuildRequest request, boolean generateIfMissing) {
         ProblemFacts facts = dataGateway.loadFacts(request);
         topologyValidator.validate(facts.timeslots(), facts.configs());
 
-        List<ClassSession> sessions = getOrGenerateSessions(request, facts);
+        List<ClassSession> sessions = getOrGenerateSessions(request, facts, generateIfMissing);
 
         if (request.schedule().getParentSchedule() != null) {
             List<ClassSession> parentLocked = dataGateway.findLockedParentSessions(
@@ -93,10 +104,14 @@ public class TimetableProblemBuilder {
         return problem;
     }
 
-    private List<ClassSession> getOrGenerateSessions(ProblemBuildRequest request, ProblemFacts facts) {
+    private List<ClassSession> getOrGenerateSessions(ProblemBuildRequest request, ProblemFacts facts, boolean generateIfMissing) {
         List<ClassSession> existing = dataGateway.findSessionsByScheduleId(request.schedule().getId());
         if (!existing.isEmpty()) {
             return existing;
+        }
+        if (!generateIfMissing) {
+            // Read-only explain path: never persist generated sessions.
+            return List.of();
         }
 
         List<ClassSession> generated = sessionGenerator.generate(
@@ -151,16 +166,6 @@ public class TimetableProblemBuilder {
         if (assignments.isEmpty()) {
             return;
         }
-        assignments.forEach(a -> {
-            a.getTeacher().getId();
-            a.getSubject().getId();
-            if (a.getBatch() != null) {
-                a.getBatch().getId();
-            }
-            if (a.getSection() != null) {
-                a.getSection().getId();
-            }
-        });
 
         for (ClassSession session : sessions) {
             session.setAllowedTeacherIds(resolveAllowedTeacherIds(session, assignments));

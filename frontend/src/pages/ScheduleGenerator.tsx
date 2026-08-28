@@ -8,7 +8,7 @@ import type { ScheduleRequest, ScheduleScope, Department, Batch, Teacher, Room, 
 
 const SCOPE_OPTIONS: { value: ScheduleScope; label: string }[] = [
   { value: 'DEPARTMENT', label: 'Department' },
-  { value: 'COLLEGE', label: 'College' },
+  { value: 'INSTITUTE', label: 'Institute' },
   { value: 'UNIVERSITY', label: 'University' },
 ]
 
@@ -106,12 +106,12 @@ export default function ScheduleGenerator() {
 
   const visibleBatches = form.scope === 'DEPARTMENT' && form.departmentId
     ? allBatches.filter((b) => b.departmentId === form.departmentId)
-    : form.scope === 'COLLEGE' && form.instituteId
+    : form.scope === 'INSTITUTE' && form.instituteId
       ? allBatches.filter((b) => b.instituteId === form.instituteId)
       : allBatches
   const visibleSubjects = form.scope === 'DEPARTMENT' && form.departmentId
     ? allSubjects.filter((s) => !s.departmentId || s.departmentId === form.departmentId)
-    : form.scope === 'COLLEGE' && form.instituteId
+    : form.scope === 'INSTITUTE' && form.instituteId
       ? allSubjects.filter((s) => !s.departmentId || s.instituteId === form.instituteId)
       : allSubjects
   const preAllocBatches = builderMode && selectedBatchIds.length > 0
@@ -151,6 +151,9 @@ export default function ScheduleGenerator() {
     if (!form.name.trim()) { setError('Schedule name is required'); return }
     if (form.scope === 'DEPARTMENT' && !form.departmentId) {
       setError('Please select a department for department-scoped scheduling'); return
+    }
+    if (form.scope === 'INSTITUTE' && institutes.length > 1 && !form.instituteId) {
+      setError('Please select an institute for institute-scoped scheduling'); return
     }
     if (builderMode && selectedBatchIds.length === 0) {
       setError('Builder mode: please select at least one batch'); return
@@ -320,7 +323,14 @@ export default function ScheduleGenerator() {
                 label="Scope"
                 value={form.scope}
                 onChange={(e) => {
-                  setForm({ ...form, scope: e.target.value as ScheduleScope, departmentId: undefined })
+                  const nextScope = e.target.value as ScheduleScope
+                  const next: ScheduleRequest = {
+                    ...form,
+                    scope: nextScope,
+                    departmentId: undefined,
+                    instituteId: nextScope === 'INSTITUTE' && institutes.length === 1 ? institutes[0].id : undefined,
+                  }
+                  setForm(next)
                   setSelectedBatchIds([])
                 }}
                 options={SCOPE_OPTIONS}
@@ -329,16 +339,18 @@ export default function ScheduleGenerator() {
                 <Select
                   label="Department"
                   value={form.departmentId ?? ''}
-                  onChange={(e) => {
-                    setForm({ ...form, departmentId: +e.target.value || undefined })
-                    setSelectedBatchIds([])
-                  }}
+                    onChange={(e) => {
+                      const deptId = +e.target.value || undefined
+                      const dept = departments.find((d) => d.id === deptId)
+                      setForm({ ...form, departmentId: deptId, instituteId: dept?.instituteId })
+                      setSelectedBatchIds([])
+                    }}
                   options={deptOptions}
                   placeholder="Select department"
                   helpText="Only batches and subjects from this department will be scheduled"
                 />
               )}
-              {form.scope === 'COLLEGE' && institutes.length > 1 && (
+              {form.scope === 'INSTITUTE' && institutes.length > 1 && (
                 <Select
                   label="Institute"
                   value={form.instituteId ?? ''}

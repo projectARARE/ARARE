@@ -441,7 +441,10 @@ class TimetableConstraintProviderTest {
     }
 
     @Test
-    void disruptionSessionCancelledPenalizesPlacedSession() {
+    void disruptionSessionCancelledIsNotPenalizedBySolver() {
+        // SESSION_CANCELLED is applied directly by DisruptionServiceImpl.cancelSession
+        // (it clears the session's timeslot) and is never fed to the solver as a
+        // PARTIAL_RESOLVE disruption fact, so the constraint provider must not penalize it.
         Teacher teacher = Teacher.builder().build();
         teacher.setId(1L);
         Timeslot slot = buildTimeslot(10L, SchoolDay.MONDAY, 8, 9, 1);
@@ -454,7 +457,7 @@ class TimetableConstraintProviderTest {
 
         constraintVerifier.verifyThat(TimetableConstraintProvider::disruptionViolation)
             .given(fact, cancelledPlaced, cancelledUnplaced)
-            .penalizesBy(1);
+            .penalizesBy(0);
     }
 
     @Test

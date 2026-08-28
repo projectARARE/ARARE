@@ -41,8 +41,18 @@ public class DisruptionServiceImpl implements DisruptionService {
         validateRequest(request);
         List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId);
 
-        DependencyGraph graph = graphBuilder.build(sessions);
-        Set<Long> impactedIds = impactAnalyzer.analyze(request, graph, sessions);
+        // For SESSION_CANCELLED, applyDisruption only cancels the directly
+        // targeted session (a single-session no-op); it does NOT run the BFS
+        // expansion. Keep the preview consistent with that actual behaviour.
+        Set<Long> impactedIds;
+        if (request.type() == DisruptionType.SESSION_CANCELLED) {
+            impactedIds = request.affectedEntityId() != null
+                ? Set.of(request.affectedEntityId())
+                : Set.of();
+        } else {
+            DependencyGraph graph = graphBuilder.build(sessions);
+            impactedIds = impactAnalyzer.analyze(request, graph, sessions);
+        }
 
         String entityName = resolveEntityName(request, sessions);
         List<DisruptionResponse.ImpactedSession> summaries = sessions.stream()
@@ -137,7 +147,6 @@ public class DisruptionServiceImpl implements DisruptionService {
             : null;
         switch (request.type()) {
             case TIMESLOT_BLOCKED:
-            case SESSION_CANCELLED:
                 return List.of(new DisruptionConstraintFact(
                     request.type(), request.affectedEntityId(), null));
             case SPECIAL_EVENT:

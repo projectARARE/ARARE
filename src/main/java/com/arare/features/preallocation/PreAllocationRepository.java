@@ -1,5 +1,6 @@
 package com.arare.features.preallocation;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,8 @@ import java.util.List;
 @Repository
 public interface PreAllocationRepository extends JpaRepository<PreAllocation, Long> {
 
+    // Eagerly fetch every association touched by toResponse to avoid N+1.
+    @EntityGraph(attributePaths = {"batch", "batch.department", "subject", "teacher", "room", "timeslot"})
     List<PreAllocation> findByScheduleId(Long scheduleId);
 
     List<PreAllocation> findByScheduleIdAndLocked(Long scheduleId, boolean locked);

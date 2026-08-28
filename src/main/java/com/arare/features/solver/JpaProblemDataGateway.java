@@ -154,7 +154,8 @@ public class JpaProblemDataGateway implements ProblemDataGateway {
         for (Object[] row : sessionRepo.findActiveCrossScheduleBusyIntervals(scheduleId, teacherIds, instituteId)) {
             Number durationNum = (Number) row[5];
             Integer startSlot = (Integer) row[2];
-            Integer endExclusive = startSlot != null ? startSlot + durationNum.intValue() : null;
+            Integer endExclusive = (startSlot != null && durationNum != null)
+                ? startSlot + durationNum.intValue() : null;
             busy.add(new TeacherBusyInterval(
                 (Long) row[0],
                 (SchoolDay) row[1],

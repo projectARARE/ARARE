@@ -166,7 +166,7 @@ class SolveJobServiceTest {
             .status(SolveJobStatus.QUEUED)
             .build();
         job.setId(3L);
-        when(jobRepo.transitionTerminal(eq(3L), anyCollection(), eq(SolveJobStatus.CANCELLED), any(), any(), any(), any()))
+        when(jobRepo.transitionTerminal(eq(3L), anyCollection(), eq(SolveJobStatus.CANCELLED), any(), any(), any(), any(), any()))
             .thenReturn(1);
         SolveJob cancelled = SolveJob.builder()
             .jobType(SolveJobType.GENERATE)
@@ -191,7 +191,7 @@ class SolveJobServiceTest {
             .build();
         job.setId(3L);
         when(jobRepo.findById(3L)).thenReturn(java.util.Optional.of(job));
-        when(jobRepo.transitionTerminal(eq(3L), anyCollection(), eq(SolveJobStatus.CANCELLED), any(), any(), any(), any()))
+        when(jobRepo.transitionTerminal(eq(3L), anyCollection(), eq(SolveJobStatus.CANCELLED), any(), any(), any(), any(), any()))
             .thenReturn(0);
 
         assertThrows(com.arare.exception.ResourceConflictException.class, () -> service.cancel(3L));

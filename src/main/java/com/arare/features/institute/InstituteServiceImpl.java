@@ -1,5 +1,6 @@
 package com.arare.features.institute;
 
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceConflictException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.department.DepartmentRepository;
@@ -22,6 +23,12 @@ public class InstituteServiceImpl implements InstituteService {
     @Override
     @Transactional
     public InstituteResponse create(InstituteRequest req) {
+        if (repo.existsByName(req.name())) {
+            throw new DuplicateResourceException("Institute '" + req.name() + "' already exists");
+        }
+        if (repo.existsByCode(req.code())) {
+            throw new DuplicateResourceException("Institute with code '" + req.code() + "' already exists");
+        }
         Institute i = Institute.builder()
             .name(req.name())
             .code(req.code())

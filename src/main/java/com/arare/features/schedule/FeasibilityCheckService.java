@@ -148,11 +148,24 @@ public class FeasibilityCheckService {
             }
 
             int maxConsecutive = longestConsecutiveClassRun(classTimeslots);
-            if (maxConsecutive < maxChunkUnits) {
+
+            // chunkHours (maxChunkUnits) is a duration in HOURS, but
+            // longestConsecutiveClassRun is a SLOT COUNT. Convert the slot run to
+            // hours using the per-slot length. Use the MAX slot length so we don't
+            // under-report capacity when slots have variable durations. A single
+            // slot shorter than 1h is treated as 1h to stay conservative.
+            long hoursPerSlot = classTimeslots.stream()
+                .mapToLong(t -> java.time.Duration.between(t.getStartTime(), t.getEndTime()).toHours())
+                .max()
+                .orElse(1L);
+            if (hoursPerSlot < 1L) hoursPerSlot = 1L;
+            long maxConsecutiveHours = (long) maxConsecutive * hoursPerSlot;
+
+            if (maxConsecutiveHours < maxChunkUnits) {
                 issues.add(error("TIMESLOT",
-                    "Largest contiguous CLASS slot run is " + maxConsecutive
-                        + ", but a subject requires chunk size " + maxChunkUnits
-                        + ". Add contiguous slots or reduce chunk size.",
+                    "Largest contiguous CLASS slot run covers " + maxConsecutiveHours
+                        + "h, but a subject requires chunk size " + maxChunkUnits
+                        + "h. Add contiguous slots or reduce chunk size.",
                     null, null));
             }
         }
@@ -204,14 +217,36 @@ public class FeasibilityCheckService {
         }
 
         //  6. Subjects with more required sessions than available timeslots 
-        for (Subject s : subjects) {
-            int sessionsPerBatch = s.getWeeklyHours() / s.getChunkHours();
-            if (sessionsPerBatch > classTimeslotCount) {
-                issues.add(error("TIMESLOT",
-                        String.format("Subject '%s' needs %d sessions per week but only %d timeslots exist. " +
-                                "This is infeasible.",
-                                label(s), sessionsPerBatch, classTimeslotCount),
-                        s.getId(), s.getName()));
+        //  A LAB subject is generated once PER SECTION, so its required session
+        //  count must be multiplied by the number of sections in the batch before
+        //  comparing against the available timeslots (otherwise a lab needing more
+        //  per-week sessions than section-level timeslots passes incorrectly).
+        Map<Long, Long> sectionsByBatch = sections.stream()
+                .collect(Collectors.groupingBy(
+                        sec -> sec.getBatch().getId(),
+                        Collectors.counting()));
+        for (Batch batch : batches) {
+            for (Subject s : subjects) {
+                if (s.getDepartment() != null
+                        && !s.getDepartment().getId().equals(batch.getDepartment().getId())) {
+                    // Institute-wide subjects (null department) are eligible for
+                    // every batch; only skip subjects owned by a different dept.
+                    continue;
+                }
+                int sessionsPerBatch = s.getWeeklyHours() / s.getChunkHours();
+                if (s.isLab()) {
+                    long sectionCount = sectionsByBatch.getOrDefault(batch.getId(), 0L);
+                    if (sectionCount > 0) {
+                        sessionsPerBatch *= (int) sectionCount;
+                    }
+                }
+                if (sessionsPerBatch > classTimeslotCount) {
+                    issues.add(error("TIMESLOT",
+                            String.format("Subject '%s' needs %d sessions per week (batch %s) but only %d timeslots exist. " +
+                                    "This is infeasible.",
+                                    label(s), sessionsPerBatch, batchLabel(batch), classTimeslotCount),
+                            s.getId(), s.getName()));
+                }
             }
         }
 

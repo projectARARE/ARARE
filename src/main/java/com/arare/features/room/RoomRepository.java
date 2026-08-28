@@ -1,7 +1,6 @@
 package com.arare.features.room;
 
 import com.arare.common.enums.RoomType;
-import com.arare.features.timeslot.Timeslot;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -30,6 +29,8 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     List<Room> findByCapacityGreaterThanEqual(int studentCount);
 
     List<Room> findByTypeAndCapacityGreaterThanEqual(RoomType type, int minCapacity);
+
+    boolean existsByBuildingIdAndRoomNumber(Long buildingId, String roomNumber);
 
     @Transactional @Modifying
     @Query("DELETE FROM Room r WHERE r.building.id = :buildingId")

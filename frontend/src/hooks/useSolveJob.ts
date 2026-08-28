@@ -90,14 +90,24 @@ const WAIT_TIMEOUT_MS = 20 * 60 * 1000
  * no id (synchronous no-op responses) resolve immediately. Rejects after a
  * generous timeout so callers can never hang forever on a wedged backend.
  */
-export async function waitForJob(job: SolveJobResponse, timeoutMs: number = WAIT_TIMEOUT_MS): Promise<SolveJobResponse> {
+export async function waitForJob(
+  job: SolveJobResponse,
+  signal?: AbortSignal,
+  timeoutMs: number = WAIT_TIMEOUT_MS,
+): Promise<SolveJobResponse> {
   if (alreadyDone(job)) return job
   const deadline = Date.now() + timeoutMs
   for (;;) {
+    if (signal?.aborted) {
+      throw new Error('Cancelled')
+    }
     if (Date.now() > deadline) {
       throw new Error('The solve job did not finish in time. Check the backend and try again.')
     }
     await new Promise((resolve) => window.setTimeout(resolve, POLL_INTERVAL_MS))
+    if (signal?.aborted) {
+      throw new Error('Cancelled')
+    }
     const fresh = await solveJobApi.getById(job.id as number)
     if (isSolveJobTerminal(fresh)) return fresh
   }

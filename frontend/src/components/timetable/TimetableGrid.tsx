@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import type { ClassSession, Timeslot, SchoolDay } from '../../types'
 import SessionCell from './SessionCell'
@@ -17,10 +17,13 @@ const DAY_LABELS: Record<SchoolDay, string> = {
   SUNDAY: 'Sun',
 }
 
+type Density = 'compact' | 'comfortable'
+
 interface TimetableGridProps {
   sessions: ClassSession[]
   timeslots: Timeslot[]
   activeDays?: SchoolDay[]
+  density?: Density
   onSessionClick?: (session: ClassSession) => void
   onSessionHover?: (session: ClassSession | null) => void
   onSessionDragStart?: (session: ClassSession) => void
@@ -31,9 +34,9 @@ interface TimetableGridProps {
   onCellContextMenu?: (slot: Timeslot, x: number, y: number) => void
   /** Quick-add affordance: show a "+" on empty cells and fire this on click */
   onSlotAdd?: (slot: Timeslot) => void
-  filterBatchId?: number
-  filterTeacherId?: number
-  filterRoomId?: number
+  filterBatchIds?: number[]
+  filterTeacherIds?: number[]
+  filterRoomIds?: number[]
   heatmapEnabled?: boolean
   heatBySessionId?: Record<number, { hard: number; soft: number; notes: string[] }>
   highlightedSessionIds?: Set<number>
@@ -45,12 +48,19 @@ interface TimetableGridProps {
   } | null
   onOrphanSessionsCount?: (count: number) => void
   blockedDays?: SchoolDay[]
+  /** Id of the session currently grabbed for a drag — used to outline it. */
+  draggedSessionId?: number | null
+  /** When true, non-conflicting (no heat) placed sessions are dimmed. */
+  highlightConflictsOnly?: boolean
+  /** When true, render only unplaced sessions as a compact list. */
+  showUnplacedOnly?: boolean
 }
 
 export default function TimetableGrid({
   sessions,
   timeslots,
   activeDays,
+  density = 'comfortable',
   onSessionClick,
   onSessionHover,
   onSessionDragStart,
@@ -60,9 +70,9 @@ export default function TimetableGrid({
   onSlotDrop,
   onCellContextMenu,
   onSlotAdd,
-  filterBatchId,
-  filterTeacherId,
-  filterRoomId,
+  filterBatchIds,
+  filterTeacherIds,
+  filterRoomIds,
   heatmapEnabled = false,
   heatBySessionId = {},
   highlightedSessionIds,
@@ -70,6 +80,9 @@ export default function TimetableGrid({
   dragPreview,
   onOrphanSessionsCount,
   blockedDays = [],
+  draggedSessionId = null,
+  highlightConflictsOnly = false,
+  showUnplacedOnly = false,
 }: TimetableGridProps) {
   // Determine which days to show. The canonical order is Mon→Sun, but a day
   // is only rendered if the calendar actually has timeslots on it — so a
@@ -100,42 +113,48 @@ export default function TimetableGrid({
   // Filtered sessions
   const filteredSessions = useMemo(() => {
     return sessions.filter((s) => {
-      if (filterBatchId !== undefined && s.batchId !== filterBatchId) return false
-      if (filterTeacherId !== undefined && s.teacherId !== filterTeacherId) return false
-      if (filterRoomId !== undefined && s.roomId !== filterRoomId) return false
+      if (filterBatchIds?.length && (!s.batchId || !filterBatchIds.includes(s.batchId))) return false
+      if (filterTeacherIds?.length && (!s.teacherId || !filterTeacherIds.includes(s.teacherId))) return false
+      if (filterRoomIds?.length && (!s.roomId || !filterRoomIds.includes(s.roomId))) return false
       return true
     })
-  }, [sessions, filterBatchId, filterTeacherId, filterRoomId])
+  }, [sessions, filterBatchIds, filterTeacherIds, filterRoomIds])
 
-  // Index sessions by day + timeslotId for fast lookup. Sessions whose
-  // day/timeslotId is missing OR whose timeslot is not present in the loaded
-  // timeslot set are "orphans" — they cannot be rendered into a cell, so they
-  // are reported to the caller via onOrphanSessionsCount instead of being
-  // silently dropped (the previous behavior hid real data from the operator).
+  // Count sessions that cannot be rendered into a cell (missing day/timeslot
+  // or whose timeslot is absent from the loaded set). Reported to the caller
+  // via onOrphanSessionsCount from an effect below — never during render.
+  const orphanCount = useMemo(() => {
+    const timeslotIds = new Set(timeslots.map((t) => t.id))
+    let count = 0
+    for (const s of filteredSessions) {
+      if (!s.day || !s.timeslotId || !timeslotIds.has(s.timeslotId)) {
+        count += 1
+      }
+    }
+    return count
+  }, [filteredSessions, timeslots])
+
+  useEffect(() => {
+    // Only report once the timeslot set is loaded; otherwise every session
+    // would look orphaned purely because timeslots are empty.
+    if (timeslots.length > 0) {
+      onOrphanSessionsCount?.(orphanCount)
+    }
+  }, [timeslots, orphanCount, onOrphanSessionsCount])
+
   const sessionIndex = useMemo(() => {
     const index: Record<string, ClassSession[]> = {}
     const timeslotIds = new Set(timeslots.map((t) => t.id))
-    const orphans: ClassSession[] = []
     for (const s of filteredSessions) {
-      if (!s.day || !s.timeslotId) {
-        orphans.push(s)
-        continue
-      }
-      if (!timeslotIds.has(s.timeslotId)) {
-        orphans.push(s)
+      if (!s.day || !s.timeslotId || !timeslotIds.has(s.timeslotId)) {
         continue
       }
       const key = `${s.day}:${s.timeslotId}`
       if (!index[key]) index[key] = []
       index[key].push(s)
     }
-    // Only report an orphan count once the timeslot set is loaded; otherwise
-    // every session would look orphaned purely because timeslots are empty.
-    if (timeslots.length > 0) {
-      onOrphanSessionsCount?.(orphans.length)
-    }
     return index
-  }, [filteredSessions, timeslots, onOrphanSessionsCount])
+  }, [filteredSessions, timeslots])
 
   // All unique timeslot times across all days for the time column
   const allSlotTimes = useMemo(() => {
@@ -213,18 +232,60 @@ export default function TimetableGrid({
     )
   }
 
+  // "Show only unplaced" — render the unplaced sessions as a compact,
+  // scrollable list instead of the day/time matrix so the operator can focus
+  // purely on what still needs to be scheduled.
+  if (showUnplacedOnly) {
+    const unplaced = sessions.filter((s) => !s.timeslotId)
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+        <p className="text-xs font-medium text-amber-800 mb-2 flex items-center gap-1.5">
+          {unplaced.length} unplaced session{unplaced.length !== 1 ? 's' : ''}
+          {filterBatchIds?.length || filterTeacherIds?.length || filterRoomIds?.length
+            ? ' (after current filters)'
+            : ''}
+        </p>
+        {unplaced.length === 0 ? (
+          <p className="text-xs text-amber-700/80">Nothing left to place — every filtered session has a slot.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2 max-h-[60vh] overflow-auto">
+            {unplaced.map((s) => (
+              <SessionCell
+                key={s.id}
+                session={s}
+                density={density}
+                onClick={onSessionClick}
+                onHover={onSessionHover}
+                onDragStart={onSessionDragStart}
+                onDragEnd={onSessionDragEnd}
+                onContextMenu={onSessionContextMenu}
+                heatState="none"
+                highlighted={highlightedSessionIds?.has(s.id) ?? false}
+                preAllocated={preAllocatedSessionIds?.has(s.id) ?? false}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const cellPad = density === 'compact' ? 'px-1.5 py-1' : 'px-2.5 py-2'
+  const cellMinH = density === 'compact' ? 'min-h-[44px]' : 'min-h-[64px]'
+  const isDragging = draggedSessionId != null
+
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-auto rounded-lg border border-gray-200" style={{ maxHeight: 'calc(100vh - 320px)' }}>
       <table className="min-w-full border-collapse text-sm">
         <thead>
-          <tr className="bg-gray-50">
-            <th className="border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-500 w-28">
+          <tr className="bg-slate-100">
+            <th className="sticky left-0 top-0 z-30 border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-500 bg-slate-100 w-28">
               Time
             </th>
             {days.map((day) => (
               <th
                 key={day}
-                className="border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-gray-700 min-w-[140px]"
+                className="sticky top-0 z-20 border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-gray-700 min-w-[140px] bg-slate-100"
               >
                 {DAY_LABELS[day]}
                 {blockedDays.includes(day) && (
@@ -239,7 +300,7 @@ export default function TimetableGrid({
         <tbody>
           {allSlotTimes.map(({ startTime, endTime }, rowIndex) => (
             <tr key={`${startTime}-${endTime}`} className="hover:bg-gray-50/40">
-              <td className="border border-gray-200 px-3 py-2 text-xs text-gray-500 whitespace-nowrap bg-gray-50">
+              <td className={`sticky left-0 z-10 border border-gray-200 px-3 py-2 text-xs text-gray-500 whitespace-nowrap bg-slate-50 ${cellPad}`}>
                 <div className="font-medium">{startTime}</div>
                 <div className="opacity-70">– {endTime}</div>
               </td>
@@ -258,14 +319,15 @@ export default function TimetableGrid({
                 const rowSpan = spanMeta.rowSpanByCell.get(cellKey) ?? 1
                 const activePreview = dragPreview?.slotId === slot?.id ? dragPreview : null
                 const isBlockedDay = blockedDays.includes(day)
+                const isDropTarget = isDragging && slot && !isBlockedDay
 
                 return (
                   <td
                     key={day}
                     rowSpan={rowSpan}
-                    className={`group border border-gray-200 px-2 py-2 align-top min-h-[60px] ${
+                    className={`group border border-gray-200 ${cellPad} align-top ${cellMinH} ${
                       isBlockedDay ? 'bg-slate-200/50' : ''
-                    }`}
+                    } ${isDropTarget ? 'outline-dashed outline-2 outline-emerald-400 bg-emerald-50/40' : ''}`}
                     title={isBlockedDay ? `${DAY_LABELS[day]} is blocked for this schedule` : undefined}
                     onDragOver={(e) => {
                       if (!slot || isBlockedDay) return
@@ -305,20 +367,24 @@ export default function TimetableGrid({
                             : heat.soft > 0
                               ? 'soft'
                               : 'none'
+                        const dimmed = highlightConflictsOnly && heatState === 'none'
                         return (
-                          <SessionCell
-                            key={s.id}
-                            session={s}
-                            onClick={onSessionClick}
-                            onHover={onSessionHover}
-                            onDragStart={onSessionDragStart}
-                            onDragEnd={onSessionDragEnd}
-                            onContextMenu={onSessionContextMenu}
-                            heatState={heatState}
-                            inspectorNotes={heat.notes}
-                            highlighted={highlightedSessionIds?.has(s.id) ?? false}
-                            preAllocated={preAllocatedSessionIds?.has(s.id) ?? false}
-                          />
+                          <div key={s.id} className={dimmed ? 'opacity-25 transition-opacity' : ''}>
+                            <SessionCell
+                              session={s}
+                              density={density}
+                              onClick={onSessionClick}
+                              onHover={onSessionHover}
+                              onDragStart={onSessionDragStart}
+                              onDragEnd={onSessionDragEnd}
+                              onContextMenu={onSessionContextMenu}
+                              heatState={heatState}
+                              inspectorNotes={heat.notes}
+                              highlighted={highlightedSessionIds?.has(s.id) ?? false}
+                              preAllocated={preAllocatedSessionIds?.has(s.id) ?? false}
+                              dragging={draggedSessionId === s.id}
+                            />
+                          </div>
                         )
                       })}
                       {!isBlockedDay && slot && cellSessions.length === 0 && !activePreview && onSlotAdd && (

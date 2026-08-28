@@ -2,6 +2,7 @@ package com.arare.features.schedule;
 
 import com.arare.common.enums.ScheduleScope;
 import com.arare.common.enums.ScheduleStatus;
+import com.arare.exception.InfeasibleScheduleException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
@@ -9,6 +10,8 @@ import com.arare.features.preallocation.PreAllocationService;
 import com.arare.features.classsession.ClassSession;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.classsession.ClassSessionResponse;
+import com.arare.features.department.Department;
+import com.arare.features.department.DepartmentRepository;
 import com.arare.features.solver.ScoreExplanationResponse;
 import com.arare.features.solver.TimetableSolverService;
 import com.arare.features.solvejob.SolveJobResponse;
@@ -35,11 +38,13 @@ public class ScheduleServiceImpl implements ScheduleService {
     private final CascadeDeletionService cascadeDeletionService;
     private final TimetableSolverService solverService;
     private final PreAllocationService preAllocationService;
+    private final DepartmentRepository departmentRepo;
 
     @Override
     @Transactional
     public SolveJobResponse generate(ScheduleRequest req) {
-        FeasibilityCheckResult feasibility = feasibilityCheckService.check(req);
+        ScheduleRequest r = withResolvedInstitute(req);
+        FeasibilityCheckResult feasibility = feasibilityCheckService.check(r);
         if (!feasibility.feasible()) {
             String detail = feasibility.issues().stream()
                 .filter(i -> i.severity() == FeasibilityIssue.Severity.ERROR)
@@ -47,7 +52,7 @@ public class ScheduleServiceImpl implements ScheduleService {
                 .limit(3)
                 .reduce((a, b) -> a + " | " + b)
                 .orElse("Resolve feasibility errors before generating a schedule.");
-            throw new IllegalStateException("Schedule request is infeasible: " + detail);
+            throw new InfeasibleScheduleException("Schedule request is infeasible: " + detail);
         }
 
         Schedule parent = req.parentScheduleId() != null
@@ -60,10 +65,14 @@ public class ScheduleServiceImpl implements ScheduleService {
             .scope(req.scope() != null ? req.scope() : ScheduleScope.DEPARTMENT)
             .status(ScheduleStatus.DRAFT)
             .parentSchedule(parent)
-            .instituteId(req.instituteId())
+            .instituteId(r.instituteId())
             .blockedDays(req.blockedDays() != null ? req.blockedDays() : List.of())
             .build();
         schedule = repo.save(schedule);
+
+        // Prevent two concurrent GENERATEs from clobbering each other before
+        // the solve job is persisted.
+        solveJobService.ensureNoActiveJobForSchedule(schedule.getId());
 
         // Wizard pre-assignments are persisted here, BEFORE the solve job runs,
         // so the solver reads them as locked/partial pre-allocations.
@@ -71,7 +80,27 @@ public class ScheduleServiceImpl implements ScheduleService {
             preAllocationService.createAll(schedule.getId(), req.preAllocations());
         }
 
-        return solveJobService.submitGenerate(schedule.getId(), req);
+        return solveJobService.submitGenerate(schedule.getId(), r);
+    }
+
+    // Department-scoped requests always carry departmentId but historically not
+    // instituteId. The cross-schedule teacher-conflict scan treats a null
+    // instituteId as "university-wide", so derive it from the department to keep
+    // scope isolation correct regardless of what the caller sends.
+    private ScheduleRequest withResolvedInstitute(ScheduleRequest req) {
+        if (req.instituteId() != null || req.departmentId() == null) {
+            return req;
+        }
+        Long instituteId = departmentRepo.findById(req.departmentId())
+            .map(d -> d.getInstitute() != null ? d.getInstitute().getId() : null)
+            .orElse(null);
+        if (instituteId == null) {
+            return req;
+        }
+        return new ScheduleRequest(
+            req.name(), req.scope(), req.parentScheduleId(), req.departmentId(),
+            instituteId, req.batchIds(), req.teacherIds(), req.roomIds(),
+            req.solvingTimeSeconds(), req.blockedDays(), req.preAllocations());
     }
 
     @Override

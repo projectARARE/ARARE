@@ -1,6 +1,8 @@
 package com.arare.features.building;
 
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.batch.BatchRepository;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.room.Room;
@@ -19,11 +21,15 @@ public class BuildingServiceImpl implements BuildingService {
     private final BuildingRepository repo;
     private final RoomRepository roomRepo;
     private final ClassSessionRepository sessionRepo;
+    private final BatchRepository batchRepo;
     private final CascadeDeletionService cascadeDeletionService;
 
     @Override
     @Transactional
     public BuildingResponse create(BuildingRequest req) {
+        if (repo.existsByName(req.name())) {
+            throw new DuplicateResourceException("Building '" + req.name() + "' already exists");
+        }
         Building b = Building.builder()
             .name(req.name())
             .location(req.location())
@@ -54,6 +60,9 @@ public class BuildingServiceImpl implements BuildingService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
+        // 0. Null out Batch.homeRoom FKs that point at this building's rooms
+        //    (plain @ManyToOne with no cascade/@OnDelete) before deleting rooms.
+        batchRepo.clearHomeRoomByBuildingId(id);
         // 1. Unassign any rooms in this building from scheduled sessions
         sessionRepo.clearRoomsByBuildingId(id);
         // 2. Purge pre-allocations and event rows referencing rooms in this building,

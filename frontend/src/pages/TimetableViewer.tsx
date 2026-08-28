@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus, Pin, CheckCircle2, Archive, FileText, Sheet, Pencil, Trash2, Copy, X } from 'lucide-react'
-import { Card, Button, Select, Badge, Modal, ContextMenu, Input, ConfirmDialog, SearchableSelect } from '../components/ui'
+import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus, Pin, CheckCircle2, Archive, FileText, Sheet, Pencil, Trash2, Copy, X, BarChart3, AlertTriangle, Filter, Rows3, Columns3 } from 'lucide-react'
+import { Card, Button, Select, Badge, Modal, ContextMenu, Input, ConfirmDialog, SearchableSelect, MultiSelect, Toggle } from '../components/ui'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import TimetableGrid from '../components/timetable/TimetableGrid'
 import SessionCell from '../components/timetable/SessionCell'
@@ -118,7 +118,9 @@ function computeHeatMap(sessions: ClassSession[]): Record<number, HeatEntry> {
 interface SavedView {
   name: string
   mode: ViewMode
-  filterId?: number
+  batchIds?: number[]
+  teacherIds?: number[]
+  roomIds?: number[]
 }
 
 type SlotContextMenuState = {
@@ -196,6 +198,13 @@ export default function TimetableViewer() {
   const scheduleId = Number.isFinite(parsedId) && parsedId > 0 ? parsedId : NaN
   const { toast } = useToast()
 
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    abortRef.current = controller
+    return () => controller.abort()
+  }, [])
+
   const [schedule, setSchedule] = useState<Schedule | null>(null)
   const [sessions, setSessions] = useState<ClassSession[]>([])
   const [timeslots, setTimeslots] = useState<Timeslot[]>([])
@@ -208,9 +217,20 @@ export default function TimetableViewer() {
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('batch')
-  const [batchFilterId, setBatchFilterId] = useState<number | undefined>()
-  const [teacherFilterId, setTeacherFilterId] = useState<number | undefined>()
-  const [roomFilterId, setRoomFilterId] = useState<number | undefined>()
+  const [filterBatchIds, setFilterBatchIds] = useState<number[]>([])
+  const [filterTeacherIds, setFilterTeacherIds] = useState<number[]>([])
+  const [filterRoomIds, setFilterRoomIds] = useState<number[]>([])
+  const [filterDepartmentIds, setFilterDepartmentIds] = useState<number[]>([])
+  const [density, setDensity] = useState<'compact' | 'comfortable'>('comfortable')
+  const [showConflictsOnly, setShowConflictsOnly] = useState(false)
+  const [showUnplacedOnly, setShowUnplacedOnly] = useState(false)
+  const [filterBarOpen, setFilterBarOpen] = useState(true)
+  const [showScorePanel, setShowScorePanel] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
+  )
+  const [showConflictsPanel, setShowConflictsPanel] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1280 : true,
+  )
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [editTeacherId, setEditTeacherId] = useState<string>('')
@@ -327,6 +347,12 @@ export default function TimetableViewer() {
       .then(setBackendSuggestions)
       .catch(() => setBackendSuggestions(null))
   }, [conflictSession, scheduleId])
+
+  // Selecting a conflicting session makes the conflict solver side panel
+  // discoverable by auto-opening it (the operator can still collapse it).
+  useEffect(() => {
+    if (conflictSession) setShowConflictsPanel(true)
+  }, [conflictSession])
 
   const loadExplanations = () => {
     Promise.all([
@@ -517,7 +543,7 @@ export default function TimetableViewer() {
     setDisruptionApplying(true)
     try {
       const job = await scheduleApi.applyDisruption(scheduleId, buildDisruptionRequest())
-      const finished = await waitForJob(job)
+      const finished = await waitForJob(job, abortRef.current?.signal)
       if (finished.status === 'FAILED') {
         toast.error(finished.errorMessage || 'Re-solving after disruption failed')
         return
@@ -725,10 +751,10 @@ export default function TimetableViewer() {
     }
     setCreateSlot(slot)
     setCreateSubjectId(subjects[0]?.id ? String(subjects[0].id) : '')
-    setCreateBatchId(viewMode === 'batch' && currentFilterId != null ? String(currentFilterId) : '')
+    setCreateBatchId(viewMode === 'batch' && filterBatchIds.length === 1 ? String(filterBatchIds[0]) : '')
     setCreateSectionId('')
-    setCreateTeacherId(viewMode === 'teacher' && currentFilterId != null ? String(currentFilterId) : '')
-    setCreateRoomId(viewMode === 'room' && currentFilterId != null ? String(currentFilterId) : '')
+    setCreateTeacherId(viewMode === 'teacher' && filterTeacherIds.length === 1 ? String(filterTeacherIds[0]) : '')
+    setCreateRoomId(viewMode === 'room' && filterRoomIds.length === 1 ? String(filterRoomIds[0]) : '')
     setCreateDuration(1)
     setCreateLocked(false)
     setCreateError(null)
@@ -828,10 +854,14 @@ export default function TimetableViewer() {
       })
       toast.success(`Moved "${session.subjectName}" to ${slot.day} ${slot.startTime}-${slot.endTime}`)
       // Reveal the session: if the active view filter no longer matches the
-      // moved session, clear it so the placement is immediately visible.
-      if (viewMode === 'batch' && batchFilterId !== session.batchId) setBatchFilterId(undefined)
-      else if (viewMode === 'teacher' && teacherFilterId !== session.teacherId) setTeacherFilterId(undefined)
-      else if (viewMode === 'room' && roomFilterId !== session.roomId) setRoomFilterId(undefined)
+      // moved session, clear that filter so the placement is immediately visible.
+      if (viewMode === 'batch' && filterBatchIds.length > 0 && (!session.batchId || !filterBatchIds.includes(session.batchId))) {
+        setFilterBatchIds([])
+      } else if (viewMode === 'teacher' && filterTeacherIds.length > 0 && (!session.teacherId || !filterTeacherIds.includes(session.teacherId))) {
+        setFilterTeacherIds([])
+      } else if (viewMode === 'room' && filterRoomIds.length > 0 && (!session.roomId || !filterRoomIds.includes(session.roomId))) {
+        setFilterRoomIds([])
+      }
       refreshSessionsAndSchedule()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : `Move failed — ${slot.day} ${slot.startTime}`)
@@ -869,30 +899,46 @@ export default function TimetableViewer() {
     { value: 'room', label: 'By Room' },
   ]
 
-  const entityOptions: { value: number; label: string }[] =
-    viewMode === 'batch'
-      ? batches.map((b) => ({ value: b.id, label: `Yr ${b.year} - ${b.section}` }))
-      : viewMode === 'teacher'
-        ? teachers.map((t) => ({ value: t.id, label: t.name }))
-        : rooms.map((r) => ({ value: r.id, label: `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''} [${r.type}]` }))
+  // Department selection expands into the set of batch ids in those departments.
+  const effectiveBatchIds = useMemo(() => {
+    if (filterDepartmentIds.length === 0) return filterBatchIds
+    const fromDept = batches
+      .filter((b) => b.departmentId != null && filterDepartmentIds.includes(b.departmentId))
+      .map((b) => b.id)
+    return Array.from(new Set([...filterBatchIds, ...fromDept]))
+  }, [filterBatchIds, filterDepartmentIds, batches])
 
+  const departmentOptions = useMemo(() => {
+    const seen = new Set<number>()
+    const opts: { value: number; label: string }[] = []
+    for (const b of batches) {
+      if (b.departmentId == null || b.departmentName == null || seen.has(b.departmentId)) continue
+      seen.add(b.departmentId)
+      opts.push({ value: b.departmentId, label: b.departmentName })
+    }
+    return opts.sort((a, b) => a.label.localeCompare(b.label))
+  }, [batches])
+
+  // Used for exports. With multiselect we fall back to the first selected id in
+  // the active view dimension (or ALL when several/none are chosen).
   const currentFilterId =
-    viewMode === 'batch' ? batchFilterId :
-    viewMode === 'teacher' ? teacherFilterId :
-    roomFilterId
-
-  const setCurrentFilterId = (nextId: number | null) => {
-    if (viewMode === 'batch') setBatchFilterId(nextId ?? undefined)
-    else if (viewMode === 'teacher') setTeacherFilterId(nextId ?? undefined)
-    else setRoomFilterId(nextId ?? undefined)
-  }
+    viewMode === 'batch' && filterBatchIds.length === 1 ? filterBatchIds[0]
+    : viewMode === 'teacher' && filterTeacherIds.length === 1 ? filterTeacherIds[0]
+    : viewMode === 'room' && filterRoomIds.length === 1 ? filterRoomIds[0]
+    : undefined
 
   const handleSaveView = () => {
     const name = window.prompt('Name this view:')
     if (!name?.trim()) return
     const next = [
       ...savedViews.filter((v) => v.name !== name.trim()),
-      { name: name.trim(), mode: viewMode, filterId: currentFilterId },
+      {
+        name: name.trim(),
+        mode: viewMode,
+        batchIds: filterBatchIds,
+        teacherIds: filterTeacherIds,
+        roomIds: filterRoomIds,
+      },
     ].slice(-MAX_SAVED_VIEWS)
     setSavedViews(next)
     window.localStorage.setItem(savedViewsKey(scheduleId), JSON.stringify(next))
@@ -903,11 +949,10 @@ export default function TimetableViewer() {
     const view = savedViews.find((v) => v.name === name)
     if (!view) return
     setViewMode(view.mode)
-    if (view.filterId != null) {
-      setBatchFilterId(view.mode === 'batch' ? view.filterId : undefined)
-      setTeacherFilterId(view.mode === 'teacher' ? view.filterId : undefined)
-      setRoomFilterId(view.mode === 'room' ? view.filterId : undefined)
-    }
+    setFilterBatchIds(view.batchIds ?? [])
+    setFilterTeacherIds(view.teacherIds ?? [])
+    setFilterRoomIds(view.roomIds ?? [])
+    setFilterDepartmentIds([])
   }
 
   const teacherOptions = teachers.map((t) => ({ value: t.id, label: t.name }))
@@ -1068,6 +1113,24 @@ export default function TimetableViewer() {
             >
               Disruptions
             </Button>
+            <Button
+              variant={showScorePanel ? 'primary' : 'secondary'}
+              size="sm"
+              icon={<BarChart3 size={14} />}
+              onClick={() => setShowScorePanel((v) => !v)}
+              title="Toggle the score breakdown side panel"
+            >
+              Score
+            </Button>
+            <Button
+              variant={showConflictsPanel ? 'primary' : 'secondary'}
+              size="sm"
+              icon={<AlertTriangle size={14} />}
+              onClick={() => setShowConflictsPanel((v) => !v)}
+              title="Toggle the conflict solver side panel"
+            >
+              Conflicts
+            </Button>
             <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={load}>
               Refresh
             </Button>
@@ -1075,29 +1138,57 @@ export default function TimetableViewer() {
         </div>
       </Card>
 
-      <div className="grid xl:grid-cols-[minmax(0,1fr)_340px] gap-4">
+      <div className={`grid gap-4 ${showScorePanel || showConflictsPanel ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : 'grid-cols-1'}`}>
         <div className="space-y-4">
           <Card>
-            <div className="flex items-center gap-4 mb-4 flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap mb-3">
               <Select
                 value={viewMode}
                 onChange={(e) => { setViewMode(e.target.value as ViewMode) }}
                 options={viewOptions}
               />
-              {entityOptions.length > 0 && (
-                <SearchableSelect
-                  value={currentFilterId ?? null}
-                  onChange={(v) => setCurrentFilterId(v == null ? null : +v)}
-                  options={entityOptions}
-                  allowClear
-                />
-              )}
+              <div className="flex items-center rounded-md border border-gray-300 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setDensity('compact')}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium ${density === 'compact' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  aria-pressed={density === 'compact'}
+                >
+                  <Rows3 size={13} /> Compact
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDensity('comfortable')}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border-l border-gray-300 ${density === 'comfortable' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  aria-pressed={density === 'comfortable'}
+                >
+                  <Columns3 size={13} /> Comfortable
+                </button>
+              </div>
+              <Toggle label="Conflicts only" checked={showConflictsOnly} onChange={setShowConflictsOnly} />
+              <Toggle label="Unplaced only" checked={showUnplacedOnly} onChange={setShowUnplacedOnly} />
+              <Button
+                variant={filterBarOpen ? 'primary' : 'secondary'}
+                size="sm"
+                icon={<Filter size={14} />}
+                onClick={() => setFilterBarOpen((v) => !v)}
+              >
+                Filters
+              </Button>
               <div className="ml-auto text-xs text-slate-500 flex items-center gap-1.5">
                 <Move size={13} />
-                {dropSaving ? 'Saving move…' : 'Drag any session to a slot — safe drops apply instantly, conflicts open the editor'}
+                {dropSaving ? 'Saving move…' : 'Drag a session to a slot — safe drops apply instantly; conflicts open the editor'}
               </div>
             </div>
-            {unassignedSessions.length + orphanedSessions.length > 0 && (
+            {filterBarOpen && (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 border-t border-slate-100 pt-3 mb-3">
+                <MultiSelect label="Departments" options={departmentOptions} selected={filterDepartmentIds} onChange={setFilterDepartmentIds} />
+                <MultiSelect label="Batches" options={createBatchOptions} selected={filterBatchIds} onChange={setFilterBatchIds} />
+                <MultiSelect label="Teachers" options={teacherOptions} selected={filterTeacherIds} onChange={setFilterTeacherIds} />
+                <MultiSelect label="Rooms" options={roomOptions} selected={filterRoomIds} onChange={setFilterRoomIds} />
+              </div>
+            )}
+            {!showUnplacedOnly && (unassignedSessions.length + orphanedSessions.length > 0) && (
               <div className="mb-4 rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-3">
                 <p className="text-xs font-medium text-amber-800 mb-2 flex items-center gap-1.5">
                   <AlertCircle size={12} />
@@ -1141,9 +1232,13 @@ export default function TimetableViewer() {
             <TimetableGrid
               sessions={sessions}
               timeslots={timeslots}
-              filterBatchId={viewMode === 'batch' ? batchFilterId : undefined}
-              filterTeacherId={viewMode === 'teacher' ? teacherFilterId : undefined}
-              filterRoomId={viewMode === 'room' ? roomFilterId : undefined}
+              density={density}
+              filterBatchIds={effectiveBatchIds}
+              filterTeacherIds={filterTeacherIds}
+              filterRoomIds={filterRoomIds}
+              draggedSessionId={draggedSession?.id ?? null}
+              highlightConflictsOnly={showConflictsOnly}
+              showUnplacedOnly={showUnplacedOnly}
               onSessionClick={openSessionDetail}
               onSessionHover={setHoveredSession}
               heatmapEnabled={heatmapEnabled}
@@ -1199,28 +1294,35 @@ export default function TimetableViewer() {
           </Card>
         </div>
 
-        <ScoreBreakdownPanel
-          score={scoreBreakdown}
-          rawExplanation={rawExplanation}
-          sessions={sessions}
-          highlightedSessionIds={highlightedSessionIds}
-          onViolationClick={highlightByText}
-          onClearHighlight={() => setHighlightedSessionIds(new Set())}
-        />
-
-        <ConflictSolverSidecar
-          session={conflictSession}
-          suggestions={backendSuggestions ?? fallbackSuggestions}
-          onClose={() => setConflictSession(null)}
-          onApplySuggestion={(timeslotId) => {
-            if (!conflictSession) return
-            setSelectedSession(conflictSession)
-            setEditMode(true)
-            setEditTeacherId(conflictSession.teacherId?.toString() ?? '')
-            setEditRoomId(conflictSession.roomId?.toString() ?? '')
-            setEditTimeslotId(String(timeslotId))
-          }}
-        />
+        {(showScorePanel || showConflictsPanel) && (
+          <div className="space-y-4">
+            {showScorePanel && (
+              <ScoreBreakdownPanel
+                score={scoreBreakdown}
+                rawExplanation={rawExplanation}
+                sessions={sessions}
+                highlightedSessionIds={highlightedSessionIds}
+                onViolationClick={highlightByText}
+                onClearHighlight={() => setHighlightedSessionIds(new Set())}
+              />
+            )}
+            {showConflictsPanel && (
+              <ConflictSolverSidecar
+                session={conflictSession}
+                suggestions={backendSuggestions ?? fallbackSuggestions}
+                onClose={() => setConflictSession(null)}
+                onApplySuggestion={(timeslotId) => {
+                  if (!conflictSession) return
+                  setSelectedSession(conflictSession)
+                  setEditMode(true)
+                  setEditTeacherId(conflictSession.teacherId?.toString() ?? '')
+                  setEditRoomId(conflictSession.roomId?.toString() ?? '')
+                  setEditTimeslotId(String(timeslotId))
+                }}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <Modal

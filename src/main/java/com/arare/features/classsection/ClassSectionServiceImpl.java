@@ -1,5 +1,6 @@
 package com.arare.features.classsection;
 
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
 import com.arare.features.batch.BatchRepository;
@@ -29,6 +30,11 @@ public class ClassSectionServiceImpl implements ClassSectionService {
     public ClassSectionResponse create(ClassSectionRequest req) {
         Batch batch = batchRepo.findById(req.batchId())
             .orElseThrow(() -> new ResourceNotFoundException("Batch", req.batchId()));
+
+        if (repo.existsByBatchIdAndLabel(req.batchId(), req.label())) {
+            throw new DuplicateResourceException(
+                "Section '" + req.label() + "' already exists for this batch");
+        }
 
         ClassSection cs = ClassSection.builder()
             .batch(batch)

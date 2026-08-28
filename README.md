@@ -1,390 +1,98 @@
 # ARARE
 
-Adaptive Real-Time Analysis and Re-evaluation Engine for university timetable scheduling.
+**A**daptive **R**eal-time **A**nalysis and **R**e-evaluation **E**ngine — a university timetable scheduling platform.
 
-ARARE is a full-stack scheduling platform built with Spring Boot, Timefold, and React. It manages academic master data, generates optimized schedules, analyzes disruptions, and supports export/import workflows.
+ARAR builds and maintains optimized weekly timetables. Operators load master data, run constraint-based schedule generation (Timefold Solver), inspect scores, handle disruptions/events with partial re-solving, and export the result. It is a Spring Boot backend with a React/TypeScript operator console.
 
-## 1. Introduction
+> **Authentication is out of scope by design.** ARARE is intended to run on a university's own infrastructure (local network / single tenant). The REST API is unauthenticated — keep the backend off the public internet and protect it at the network layer or behind a gateway.
 
-ARARE solves a constrained timetable optimization problem for universities.
+---
 
-Core operator workflow:
+## What you need to run it
 
-1. Maintain master data (departments, batches, teachers, rooms, subjects, timeslots).
-2. Define active university scheduling configuration.
-3. Run schedule generation with Timefold.
-4. Inspect score and timetable quality.
-5. Apply disruptions/events and partially re-solve impacted sessions.
-6. Export schedule artifacts (CSV, iCal).
+**Prerequisites:** JDK 21, Maven, Node 18+, PostgreSQL.
 
-## 2. System Overview
-
-The system has three runtime concerns:
-
-- Transactional domain management: CRUD + relationship integrity.
-- Optimization lifecycle: planning model build, solving, scoring, persistence.
-- Operational repair: disruption impact analysis + partial resolve.
-
-The backend is the source of truth for all scheduling logic. The frontend is an operator console that drives backend workflows.
-
-## 3. Architecture
-
-```mermaid
-flowchart LR
-  subgraph Frontend[React SPA]
-    Pages[Pages and routes]
-    UI[UI components]
-    API[Axios service layer]
-    Pages --> API
-    Pages --> UI
-  end
-
-  subgraph Backend[Spring Boot]
-    Controllers[REST controllers]
-    Services[Domain services]
-    Solver[Solver engine]
-    Repos[JPA repositories]
-    DB[(PostgreSQL)]
-    Controllers --> Services
-    Services --> Solver
-    Services --> Repos
-    Repos --> DB
-  end
-
-  API --> Controllers
+**1. Database** — create an empty PostgreSQL database (Flyway migrations run on startup):
+```bash
+createdb araredb
 ```
 
-Design intent:
+**2. Backend** — set the required environment variables, then start:
+```bash
+export ARARE_DB_URL=jdbc:postgresql://localhost:5432/araredb
+export ARARE_DB_USERNAME=postgres
+export ARARE_DB_PASSWORD=yourpassword        # optional: defaults to 123456 for local dev; override for real use
+# optional: ARARE_CORS_ORIGINS=http://localhost:5173
+mvn spring-boot:run
+```
+The API serves at `http://localhost:8080/api/v1`. A copy-ready template is in [`.env.example`](.env.example).
 
-- Controllers stay thin.
-- Services coordinate business workflows.
-- Repositories isolate persistence.
-- Solver code is isolated from CRUD modules.
-
-## 4. Technology Stack
-
-Backend:
-
-- Java 21
-- Spring Boot 3.3
-- Spring Web, Validation, Data JPA
-- Flyway
-- PostgreSQL (runtime)
-- H2 (tests)
-- Timefold Solver 1.14
-- Lombok
-
-Frontend:
-
-- React 18 + TypeScript
-- Vite
-- React Router
-- Axios
-- Tailwind CSS
-- Recharts
-
-## 5. Repository Layout
-
-- src/main/java/com/arare/common: shared entity base and enums
-- src/main/java/com/arare/config: infra configuration
-- src/main/java/com/arare/features: business modules
-- src/main/resources: app config and Flyway migrations
-- frontend/src/pages: route-level screens
-- frontend/src/services: typed API wrappers
-- frontend/src/components: layout, timetable, solver, UI primitives
-
-## 6. Build and Run
-
-Backend:
-
-- mvn test
-- mvn spring-boot:run
-
-Frontend:
-
-- cd frontend
-- npm install
-- npm run dev
-
-Default backend DB config is in src/main/resources/application.properties and can be overridden with ARARE_DB_URL, ARARE_DB_USERNAME, and ARARE_DB_PASSWORD. A ready-to-copy template is provided in .env.example at the repository root, and the frontend proxy target is configured via frontend/.env.example (VITE_BACKEND_URL).
-
-### Authentication scope
-
-Authentication and authorization are currently out of scope for ARARE. The REST API is unauthenticated and relies on the network layer (or an external gateway) to control who can reach it. Do not expose the backend directly to the public internet in this state.
-
-## 7. Configuration and Persistence
-
-Key backend settings:
-
-- spring.jpa.hibernate.ddl-auto=validate
-- spring.jpa.open-in-view=false
-- flyway enabled with classpath migrations
-- default Timefold termination: 30s
-
-Migration V1 hardens schema with audit/version columns and uniqueness guarantees (for example, day+slot uniqueness in timeslots and pre-allocation uniqueness).
-
-## 8. Domain Model
-
-Core scheduling entities and why they exist:
-
-- Schedule: versioned timetable run with score/status.
-- ClassSession: planning entity assigned by solver.
-- Subject: demand definition (hours, chunking, room/teacher requirements).
-- Teacher: qualification + availability + workload preferences.
-- Room: capacity/type/lab subtype + availability.
-- Timeslot: weekly temporal topology.
-- Batch/ClassSection: learner groups for conflict modeling and lab splitting.
-- PreAllocation: fixed assignments that must be honored.
-- Event: disruption/special event trigger for repair flow.
-- UniversityConfig: active global scheduling limits and working-day topology.
-
-## 9. Database Model
-
-The schema is business-driven rather than generic CRUD.
-
-Important relationship goals:
-
-- Support qualification checks (teacher-subject).
-- Support capacity/type checks (room-subject/session).
-- Support conflict checks (teacher/room/batch/time overlap).
-- Support inheritance and lock propagation (parent schedule + locked sessions).
-- Support incremental repair (event/disruption + session graph).
-
-## 10. Scheduling Workflow
-
-```mermaid
-flowchart TD
-  A[Generate request] --> B[ScheduleController]
-  B --> C[ScheduleService]
-  C --> D[FeasibilityCheckService]
-  D -->|pass| E[TimetableSolverService]
-  E --> F[TimetableProblemBuilder]
-  F --> G[Session generation]
-  G --> H[Pre-allocation + parent locks]
-  H --> I[Timefold solving]
-  I --> J[SolutionPersister]
-  J --> K[Schedule response]
-  D -->|fail| L[Feasibility issues]
+**3. Frontend** (optional, for the operator console):
+```bash
+cd frontend
+npm install
+npm run dev      # Vite dev server on http://localhost:5173 (proxies /api to :8080)
 ```
 
-Partial resolve lifecycle:
-
-1. Build dependency graph from current sessions.
-2. BFS from directly impacted sessions.
-3. Lock non-impacted sessions.
-4. Re-solve impacted subset.
-5. Persist repaired assignments.
-
-## 11. Solver Engine
-
-This is the most critical module.
-
-### Planning model
-
-- Solution: TimetableSolution
-- Entity: ClassSession
-- Variables: teacher, room, timeslot
-- Score: HardMediumSoftScore
-- Facts: timeslots, rooms, teachers, subjects, batches, sections, buildings, config
-
-### Problem build pipeline
-
-1. Load filtered domain facts.
-2. Validate timeslot topology.
-3. Generate/reuse sessions.
-4. Apply parent locked sessions.
-5. Apply locked pre-allocations.
-6. Pin non-impacted sessions for partial resolve.
-7. Initialize lazy associations before constraint traversal.
-
-### Constraint model
-
-Hard constraints enforce validity:
-
-- teacher/room/batch/section conflicts
-- resource requirements (teacher/room required)
-- qualification/availability
-- room type/capacity
-- invalid non-class slot placement
-- multi-slot feasibility checks
-- working-day and max-daily-class hard policies
-
-Medium constraints optimize operational quality:
-
-- teacher workload caps (daily/weekly/consecutive)
-- idle-gap reduction
-- batch midday break
-- split-lab synchronization
-- subject repetition and consistency preferences
-- department/building movement penalties
-
-Soft constraints optimize preferences:
-
-- free day preferences
-- teacher building preference
-- room stability
-- batch movement reduction
-
-### Solver design rationale
-
-- Feasibility checks happen before expensive search.
-- Session generation models demand explicitly before optimization.
-- Locks and pre-allocations constrain search to preserve operator intent.
-- Partial resolve minimizes timetable churn during disruptions.
-
-### Constraint quality assessment
-
-Current constraints are strong and pragmatic, but improvement opportunities exist:
-
-- Some pairwise constraints can become expensive as session counts grow.
-- Weight tuning is static in code; runtime tuning support would improve operability.
-- Additional null-safety guards around edge-case malformed data would make constraints more robust.
-
-## 12. Schedule Engine
-
-Responsibilities:
-
-- feasibility analysis before solve
-- schedule lifecycle (generate, fetch, delete, partial resolve)
-- conflict suggestions for manual edits
-- CSV/iCal exports
-- score explanation API surface
-
-This module is the application-level facade over solver workflows.
-
-## 13. Impact Analysis Engine
-
-Purpose: estimate disruption blast radius and drive incremental repair.
-
-```mermaid
-flowchart TD
-  A[Disruption request] --> B[DependencyGraphBuilder]
-  B --> C[Graph nodes/edges by shared teacher room batch]
-  C --> D[ImpactAnalyzer BFS]
-  D --> E[Impacted session IDs]
-  E --> F[Schedule partial resolve]
+**Run the tests:**
+```bash
+mvn test                 # backend (H2 + Flyway)
+cd frontend && npm run build   # frontend type-check + production build
 ```
 
-Key behavior:
+---
 
-- Seeds from directly affected sessions.
-- Includes locked sessions in impact output but limits expansion.
-- Supports teacher, room, timeslot, cancellation, and special-event-style impacts.
+## Core workflow (operator)
 
-## 14. Data Import Engine
+1. Load master data — institutes, departments, buildings, rooms, batches/sections, teachers, subjects, timeslots.
+2. Set the active **University Config** (working days, periods/day, max classes/day, break slots).
+3. **Generate** a schedule (Timefold solves for ~30s by default). Inspect the score breakdown.
+4. **Edit manually** (drag-and-drop) or **handle disruptions/events** → a partial re-solve repairs only the impacted sessions.
+5. **Export** to Excel / PDF / CSV.
 
-CSV import supports master-data onboarding for timeslots, buildings, departments, rooms, subjects, teachers, and batches.
+The timetable viewer supports compact/comfortable density, sticky day/time headers, multiselect filters (department/batch/teacher/room), conflict-only and unplaced-only views, and collapsible side panels — built to stay readable with thousands of sessions.
 
-Pipeline:
+---
 
-1. normalize entity type
-2. parse rows/header (BOM tolerant)
-3. validate row shape
-4. resolve references
-5. upsert by business key
-6. aggregate created/updated/skipped/errors
+## Documentation
 
-Error handling is row-oriented to maximize usable import outcomes.
+Start here, then follow the links for depth.
 
-## 15. Frontend Overview
+| Topic | Doc |
+|-------|-----|
+| Architecture, layers, async solve pipeline, request flows | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| JPA domain model & enums | [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) |
+| Full REST API reference | [docs/API.md](docs/API.md) |
+| Developer setup & testing | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Production / local deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Constraint solver | [docs/algorithms/SCHEDULING_SOLVER.md](docs/algorithms/SCHEDULING_SOLVER.md) |
+| Disruption impact analysis | [docs/algorithms/IMPACT_ANALYSIS.md](docs/algorithms/IMPACT_ANALYSIS.md) |
+| Pre-allocations | [docs/algorithms/PREALLOCATION.md](docs/algorithms/PREALLOCATION.md) |
+| Pre-solve feasibility check | [docs/algorithms/FEASIBILITY_CHECK.md](docs/algorithms/FEASIBILITY_CHECK.md) |
+| CSV / relational import | [docs/algorithms/DATA_IMPORT.md](docs/algorithms/DATA_IMPORT.md) |
+| Excel / PDF export | [docs/algorithms/EXPORT.md](docs/algorithms/EXPORT.md) |
+| Cascade deletion | [docs/algorithms/CASCADE_DELETION.md](docs/algorithms/CASCADE_DELETION.md) |
 
-The frontend is route-driven and aligned to operator workflows:
+---
 
-- schedule generation
-- timetable viewing/editing
-- disruption handling
-- event management
-- analytics/what-if
-- calendar portal
-- CSV import
+## Tech stack
 
-API calls are centralized through Axios wrappers in frontend/src/services.
+**Backend:** Java 21 · Spring Boot 3.3 · Spring Data JPA · Flyway · PostgreSQL (prod) / H2 (test) · Timefold Solver 1.14 · Lombok.
+**Frontend:** React 18 · TypeScript · Vite · Tailwind CSS · React Query · Recharts.
 
-Important caveat from source: ConstraintConfig is frontend-local and not persisted by backend endpoints.
+## Repository layout
 
-## 16. Performance
+```
+src/main/java/com/arare/{common,config,exception,features}   backend modules
+src/main/resources/db/migration                            Flyway migrations
+frontend/src/{pages,components,services}                     React app
+docs/                                                        this documentation set
+```
 
-Likely hotspots:
+## Troubleshooting
 
-- pairwise constraint joins on large session sets
-- dependency graph pairwise edge construction in dense resource groups
-- large in-memory CSV imports
+- **Generation fails** → run the feasibility check first; verify timeslot topology vs University Config, subject chunking divisibility, teacher qualifications, and room type/capacity coverage.
+- **Disruption impact looks too large** → inspect shared-resource density (teacher/room/batch) and the disrupted day/scope.
+- **Import fails** → check headers/separators/reference tokens; import foundational entities first (timeslots → buildings → departments → rooms → subjects → teachers → batches).
 
-Current architecture already mitigates some cost via feasibility gating, scoped partial resolve, and focused orchestration.
-
-## 17. REST API (Key Workflows)
-
-Important non-trivial endpoints:
-
-- POST /api/v1/schedules/generate
-- POST /api/v1/schedules/{id}/partial-resolve
-- POST /api/v1/schedules/{id}/disruption/preview
-- POST /api/v1/schedules/{id}/disruption/apply
-- GET /api/v1/schedules/{id}/score-explanation
-- GET /api/v1/schedules/{id}/export/csv
-- POST /api/v1/import/csv/{entityType}
-- GET /api/v1/import/template/csv/{entityType}
-
-CRUD endpoints exist for master-data modules and support the scheduling workflows above.
-
-## 18. Troubleshooting
-
-If generation fails:
-
-- run feasibility check first
-- verify timeslot topology vs university config
-- verify subject chunking divisibility
-- verify teacher qualification coverage
-- verify room type/subtype coverage and capacities
-
-If disruption impact looks too large:
-
-- inspect shared-resource density (teacher, room, batch)
-- verify lock strategy and disrupted day/scope
-
-If import fails:
-
-- check headers, separators, and reference tokens
-- import in dependency-friendly order (foundational entities first)
-
-## 19. Extension Guide
-
-To add a new constraint:
-
-1. implement rule in TimetableConstraintProvider
-2. assign Hard/Medium/Soft severity intentionally
-3. add/extend tests for expected behavior
-4. expose explanation details if useful for UI diagnostics
-
-To add a new disruption type:
-
-1. extend disruption model enums/DTOs
-2. implement direct-impact selection
-3. ensure graph traversal semantics remain valid
-4. wire frontend request payloads and handling
-
-## 20. Code Quality Notes
-
-Verified fixes applied during remediation (all items below were confirmed in source):
-
-- SolutionPersister null-score path is null-safe: `scoreText` is computed before the guard, so the exception message never dereferences a null score.
-- GlobalExceptionHandler covers ObjectOptimisticLockingFailureException (409) and HttpMessageNotReadableException (400) in addition to the standard 404/400/409/422/500 cases.
-- AcademicTerm @PrePersist guards for null startDate/endDate before calling isBefore().
-- Subject @PrePersist guards for chunkHours <= 0 before the modulo check.
-- DependencyGraphBuilder edges are day-scoped (not resource-id-only), so a Monday disruption does not flood the full week during BFS.
-- ScheduleGenerator UI uses a real elapsed-time counter with no fabricated score or insight strings.
-- Constraint tuning sliders have been removed; the UI only exposes behavior the solver actually honors (scope, resources, solving time).
-
-Remaining realistic risks:
-
-- Pairwise constraint joins are O(n^2) in the worst case per resource group; for very large schedules (hundreds of sessions per day) this may become a solve-time bottleneck.
-- Weight tuning is static in code; runtime constraint weight configuration would require a ConstraintWeights problem fact and a differential test before it can be trusted.
-
-## 21. Glossary
-
-- Hard constraint: must never be violated.
-- Medium constraint: quality objective with strong preference.
-- Soft constraint: preference objective.
-- Planning entity: mutable solver unit.
-- Planning solution: aggregate root for facts + entities + score.
-- Partial resolve: local re-optimization of impacted sessions.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for internals.

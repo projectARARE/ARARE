@@ -1,5 +1,6 @@
 package com.arare.features.department;
 
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.BatchRepository;
 import com.arare.features.building.Building;
@@ -34,6 +35,12 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional
     public DepartmentResponse create(DepartmentRequest req) {
+        if (repo.existsByName(req.name())) {
+            throw new DuplicateResourceException("Department '" + req.name() + "' already exists");
+        }
+        if (repo.existsByCode(req.code())) {
+            throw new DuplicateResourceException("Department with code '" + req.code() + "' already exists");
+        }
         Department d = Department.builder()
             .name(req.name())
             .code(req.code())
@@ -98,10 +105,10 @@ public class DepartmentServiceImpl implements DepartmentService {
     // requested ID does not exist — consistent with TeacherServiceImpl.resolveAll().
     private Institute resolveInstitute(Long id) {
         if (id == null) {
-            throw new IllegalArgumentException("Institute id is required for a department.");
+            throw new ResourceNotFoundException("Institute id is required for a department.");
         }
         return instituteRepo.findById(id)
-            .orElseThrow(() -> new IllegalArgumentException("Institute id does not exist: " + id));
+            .orElseThrow(() -> new ResourceNotFoundException("Institute id does not exist: " + id));
     }
 
     private List<Building> resolveBuildings(List<Long> ids) {

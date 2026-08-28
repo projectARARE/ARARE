@@ -138,9 +138,10 @@ public class StandardSessionGenerator implements SessionGenerator {
         }
 
         if (!canRunBySections) {
-            for (int i = 0; i < count; i++) {
-                generated.add(createSession(schedule, subject, batch, null));
-            }
+            // No lab room can accommodate the whole batch nor any per-section
+            // split, so any generated whole-batch lab session would be
+            // permanently room-capacity-infeasible. Skip emitting it rather than
+            // producing a known-infeasible session.
             return;
         }
 

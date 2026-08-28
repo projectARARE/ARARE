@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AlertTriangle, RefreshCw, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Card, Button, Select, Table, Badge } from '../components/ui'
@@ -12,6 +12,12 @@ import { useToast } from '../contexts/ToastContext'
 export default function DisruptionHandling() {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => {
+    const controller = new AbortController()
+    abortRef.current = controller
+    return () => controller.abort()
+  }, [])
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [events, setEvents] = useState<Event[]>([])
   const [selectedSchedule, setSelectedSchedule] = useState<string>('')
@@ -53,7 +59,7 @@ export default function DisruptionHandling() {
     setError(null)
     try {
       const job = await eventApi.applyToSchedule(eventId, +selectedSchedule)
-      const finished = await waitForJob(job)
+      const finished = await waitForJob(job, abortRef.current?.signal)
       if (finished.status === 'FAILED') {
         setError(finished.errorMessage || 'Re-optimization failed')
         return
