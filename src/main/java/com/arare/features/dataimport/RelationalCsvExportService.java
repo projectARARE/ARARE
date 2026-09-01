@@ -88,9 +88,9 @@ public class RelationalCsvExportService {
         };
     }
 
-    // =========================================================================
+    // 
     // ZIP plumbing
-    // =========================================================================
+    // 
 
     private void writeEntry(ZipOutputStream zos, String filename, String content) throws IOException {
         if (content == null || content.isEmpty()) return;
@@ -99,9 +99,9 @@ public class RelationalCsvExportService {
         zos.closeEntry();
     }
 
-    // =========================================================================
+    // 
     // Entity exports (sorted by natural key)
-    // =========================================================================
+    // 
 
     private String exportTimeslots() {
         List<Timeslot> all = timeslotRepository.findAll().stream()
@@ -204,9 +204,9 @@ public class RelationalCsvExportService {
         return CsvUtils.write(new String[]{"departmentCode", "year", "section", "studentCount", "preferredFreeDay"}, rows);
     }
 
-    // =========================================================================
+    // 
     // Relationship exports (replace-per-mentioned-entity semantics)
-    // =========================================================================
+    // 
 
     private String exportDeptBuildings() {
         List<List<String>> rows = new ArrayList<>();

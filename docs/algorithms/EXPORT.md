@@ -9,8 +9,9 @@ All classes live in `features/schedule/`.
 
 ## 1. `TimetableExportService` (`schedule/TimetableExportService.java`)
 
-`exportCsv(scheduleId)` returns a flat UTF-8-BOM CSV (Excel-friendly) of assigned
-sessions ordered by `day.ordinal()` then `startTime`. Columns:
+`exportCsv(scheduleId, view, entityId)` returns a flat UTF-8-BOM CSV
+(Excel-friendly) of assigned sessions ordered by `day.ordinal()` then
+`startTime`. Columns:
 `Day, Start, End, Subject, Code, Teacher, Room, Building, Batch, Section, Type,
 Duration(h), Locked`.
 
@@ -19,6 +20,13 @@ Duration(h), Locked`.
   (`"# N session(s) were not assigned…"`) and excluded from the rows.
 * Batch/section labels are derived from `ClassSession.getBatch()` /
   `getSection()` (lab-split sessions carry a `section`).
+* **Per-entity grouping**: when `view != ALL` and `entityId == null`, the CSV
+  exporter splits sessions by entity (teacher/room/batch **id**, never by label)
+  and returns a **ZIP** containing one CSV per entity, named after the entity id.
+  Passing a specific `entityId` returns a single CSV narrowed to that entity.
+  Grouping by id guarantees two distinct entities that happen to share a label
+  (e.g. the same teacher name, or the same batch label in two campuses) remain
+  separate files instead of being merged.
 
 ## 2. `ExcelExportService` (`schedule/ExcelExportService.java`)
 
@@ -47,11 +55,16 @@ Duration(h), Locked`.
 
 ### Sheet layout
 
-* `View.ALL`: one sheet **per batch** (`groupByBatch`), using
-  `uniqueSheetName` to guarantee valid, unique, ≤31-char Excel sheet names
-  (collisions after truncation get `-2`, `-3`, …). Lab sections group under
-  their parent batch.
-* `View.TEACHER/BATCH/ROOM`: a single sheet narrowed to that entity.
+* `View.ALL`: a **single** full-timetable sheet (`uniqueSheetName` guarantees a
+  valid, unique, ≤31-char Excel sheet name). This is one merged grid, not
+  one-sheet-per-batch.
+* `View.TEACHER/BATCH/ROOM` with a specific `entityId`: a single sheet narrowed
+  to that entity.
+* `View.TEACHER/BATCH/ROOM` with `entityId == null`: **one sheet per entity**,
+  grouped by entity **id** (via `groupByEntityId`) so distinct entities with
+  identical labels stay in separate sheets. Each sheet is named with
+  `uniqueSheetName`; colliding/truncated names get `-2`, `-3`, … suffixes.
+* Lab sections group under their parent batch via `effectiveBatchId`.
 
 ### Streaming
 
@@ -72,6 +85,10 @@ used by master-data tables (auto-detects numeric cells).
 * `matches`/`effectiveBatchId`/`entityLabel`/`dayColumns`/`batchLabel` logic is
   identical to `ExcelExportService`, so the two exports are guaranteed
   consistent.
+* **Per-entity output**: when `view != ALL` and `entityId == null`, the PDF
+  renders **one landscape page per entity** (a new page per teacher/room/batch),
+  grouped by entity **id** just like the Excel/CSV exporters, so identical
+  labels across distinct entities are never merged.
 
 ## 4. Shared notes
 

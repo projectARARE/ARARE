@@ -55,7 +55,7 @@ class ScheduleGenerationIntegrationTest {
      */
     @Test
     void minimalFeasibleScheduleProducesNonNegativeHardScore() {
-        // ── Domain facts ────────────────────────────────────────────────────
+        // Domain facts
         Building building = Building.builder().name("Main Block").build();
         building.setId(1L);
 
@@ -114,7 +114,7 @@ class ScheduleGenerationIntegrationTest {
             .build();
         ts2.setId(2L);
 
-        // ── Session generation (weeklyHours / chunkHours = 2 sessions) ─────
+        // Session generation (weeklyHours / chunkHours = 2 sessions)
         ClassSession s1 = ClassSession.builder()
             .subject(subject).batch(batch).duration(1).isLocked(false).build();
         s1.setId(1L);
@@ -123,7 +123,7 @@ class ScheduleGenerationIntegrationTest {
             .subject(subject).batch(batch).duration(1).isLocked(false).build();
         s2.setId(2L);
 
-        // ── Build TimetableSolution ──────────────────────────────────────────
+        // Build TimetableSolution
         TimetableSolution problem = new TimetableSolution(
             List.of(ts1, ts2),        // timeslots
             List.of(room),            // rooms
@@ -142,7 +142,7 @@ class ScheduleGenerationIntegrationTest {
             null                      // score (null = not yet solved)
         );
 
-        // ── Solve ────────────────────────────────────────────────────────────
+        // Solve
         SolverConfig config = new SolverConfig()
             .withSolutionClass(TimetableSolution.class)
             .withEntityClasses(ClassSession.class)
@@ -153,7 +153,7 @@ class ScheduleGenerationIntegrationTest {
         Solver<TimetableSolution> solver = SolverFactory.<TimetableSolution>create(config).buildSolver();
         TimetableSolution solved = solver.solve(problem);
 
-        // ── Assert: feasible (no hard violations) ───────────────────────────
+        // Assert: feasible (no hard violations)
         assertNotNull(solved.getScore(), "Score must not be null after solving");
         HardMediumSoftScore score = solved.getScore();
         assertTrue(
@@ -161,7 +161,7 @@ class ScheduleGenerationIntegrationTest {
             "Expected feasible schedule (hardScore ≥ 0), got: " + score
         );
 
-        // ── Assert: all sessions placed ──────────────────────────────────────
+        // Assert: all sessions placed
         // SolutionPersister would iterate sessions and copy timeslot/teacher/room;
         // verify the solver has assigned planning variables.
         long assigned = solved.getSessions().stream()

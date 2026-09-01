@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 // <p>Edges are intentionally <b>not</b> created between sessions on different
 // days for teacher/room. The previous version grouped resource edges by resource
 // id alone, which connected a teacher's Monday session to their Tuesday session
-// and made a Monday-only disruption flood the whole week's schedule during BFS —
+// and made a Monday-only disruption flood the whole week's schedule during BFS
 // contradicting the "minimal set" blast-radius claim in the README and the
 // day-matching rules in {@link ImpactAnalyzer}. Day-scoping teacher/room edges
 // is the narrower, correct definition, and it is consistent with

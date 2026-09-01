@@ -123,9 +123,9 @@ public class DisruptionServiceImpl implements DisruptionService {
         return solveJobService.completedNoop(scheduleId);
     }
 
-    // ------------------------------------------------------------------
+    // 
     // Private helpers
-    // ------------------------------------------------------------------
+    // 
 
     private void validateSchedule(Long scheduleId) {
         scheduleRepo.findById(scheduleId)

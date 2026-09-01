@@ -246,6 +246,8 @@ export const universityConfigApi = {
 }
 
 // Schedules
+export type ExportView = 'ALL' | 'TEACHER' | 'BATCH' | 'ROOM'
+
 export const scheduleApi = {
   getAll: () => api.get<Schedule[]>('/schedules').then((r) => r.data),
   getById: (id: number) => api.get<Schedule>(`/schedules/${id}`).then((r) => r.data),
@@ -264,14 +266,17 @@ export const scheduleApi = {
     api.post<DisruptionResponse>(`/schedules/${id}/disruption/preview`, data).then((r) => r.data),
   applyDisruption: (id: number, data: DisruptionRequest) =>
     api.post<SolveJobResponse>(`/schedules/${id}/disruption/apply`, data).then((r) => r.data),
-  exportCsv: (id: number) =>
-    api.get(`/schedules/${id}/export/csv`, { responseType: 'blob' }).then((r) => r.data as Blob),
-  exportPdf: (id: number, view: 'ALL' | 'TEACHER' | 'BATCH' | 'ROOM', entityId?: number) =>
+  exportCsv: (id: number, view: ExportView = 'ALL', entityId?: number) =>
+    api.get(`/schedules/${id}/export/csv`, {
+      responseType: 'blob',
+      params: { view, ...(entityId ? { entityId } : {}) },
+    }).then((r) => r.data as Blob),
+  exportPdf: (id: number, view: ExportView, entityId?: number) =>
     api.get(`/schedules/${id}/export/pdf`, {
       responseType: 'blob',
       params: { view, ...(entityId ? { entityId } : {}) },
     }).then((r) => r.data as Blob),
-  exportExcel: (id: number, view: 'ALL' | 'TEACHER' | 'BATCH' | 'ROOM', entityId?: number) =>
+  exportExcel: (id: number, view: ExportView, entityId?: number) =>
     api.get(`/schedules/${id}/export/excel`, {
       responseType: 'blob',
       params: { view, ...(entityId ? { entityId } : {}) },

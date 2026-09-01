@@ -1,4 +1,4 @@
-// ─── Enums ───────────────────────────────────────────────────────────────────
+// Enums
 
 export type SchoolDay = 'MONDAY' | 'TUESDAY' | 'WEDNESDAY' | 'THURSDAY' | 'FRIDAY' | 'SATURDAY' | 'SUNDAY'
 export type RoomType = 'LECTURE' | 'LAB'
@@ -25,7 +25,7 @@ export type EventType =
   | 'HOLIDAY'
   | 'OTHER'
 
-// ─── Building ────────────────────────────────────────────────────────────────
+// Building
 
 export interface Building {
   id: number
@@ -38,7 +38,7 @@ export interface BuildingRequest {
   location?: string
 }
 
-// ─── Institute (constituent unit within the university) ──────────────────────
+// Institute (constituent unit within the university)
 
 export interface Institute {
   id: number
@@ -54,7 +54,7 @@ export interface InstituteRequest {
   description?: string
 }
 
-// ─── Department ──────────────────────────────────────────────────────────────
+// Department
 
 export interface Department {
   id: number
@@ -72,7 +72,7 @@ export interface DepartmentRequest {
   buildingIds?: number[]
 }
 
-// ─── Room ────────────────────────────────────────────────────────────────────
+// Room
 
 export interface Room {
   id: number
@@ -93,7 +93,7 @@ export interface RoomRequest {
   availableTimeslotIds?: number[]
 }
 
-// ─── Teacher ─────────────────────────────────────────────────────────────────
+// Teacher
 
 export interface Teacher {
   id: number
@@ -122,7 +122,7 @@ export interface TeacherRequest {
   preferredFreeDay?: SchoolDay
 }
 
-// ─── Subject ─────────────────────────────────────────────────────────────────
+// Subject
 
 export interface Subject {
   id: number
@@ -157,7 +157,7 @@ export interface SubjectRequest {
   maxSessionsPerDay: number
 }
 
-// ─── Subject Offering ─────────────────────────────────────────────────────────
+// Subject Offering
 
 export interface SubjectOffering {
   id: number
@@ -179,7 +179,7 @@ export interface SubjectOfferingRequest {
   elective?: boolean
 }
 
-// ─── Batch ───────────────────────────────────────────────────────────────────
+// Batch
 
 export interface Batch {
   id: number
@@ -208,7 +208,7 @@ export interface BatchRequest {
   subjectIds?: number[]
 }
 
-// ─── ClassSection ────────────────────────────────────────────────────────────
+// ClassSection
 
 export interface ClassSection {
   id: number
@@ -226,7 +226,7 @@ export interface ClassSectionRequest {
   subjectIds?: number[]
 }
 
-// ─── Timeslot ────────────────────────────────────────────────────────────────
+// Timeslot
 
 export interface Timeslot {
   id: number
@@ -245,7 +245,7 @@ export interface TimeslotRequest {
   type: TimeslotType
 }
 
-// ─── University Config ───────────────────────────────────────────────────────
+// University Config
 
 export interface UniversityConfig {
   id?: number
@@ -275,7 +275,7 @@ export interface UniversityConfigDiagnostics {
   issues: string[]
 }
 
-// ─── Event ───────────────────────────────────────────────────────────────────
+// Event
 
 export interface Event {
   id: number
@@ -300,7 +300,7 @@ export interface EventRequest {
   description?: string
 }
 
-// ─── Schedule ────────────────────────────────────────────────────────────────
+// Schedule
 
 export interface Schedule {
   id: number
@@ -328,7 +328,7 @@ export interface ScheduleRequest {
   preAllocations?: PreAllocationSpec[]
 }
 
-// ─── Pre-Allocation (pre-assign teachers before solving) ──────────────────────
+// Pre-Allocation (pre-assign teachers before solving)
 
 export interface PreAllocationSpec {
   batchId: number
@@ -365,7 +365,7 @@ export interface PreAllocation {
   locked: boolean
 }
 
-// ─── Teacher Assignment (term teaching allotment) ─────────────────────────────
+// Teacher Assignment (term teaching allotment)
 
 export interface TeacherAssignment {
   id: number
@@ -393,7 +393,7 @@ export interface TeacherAssignmentRequest {
   notes?: string
 }
 
-// ─── Solve Job (async schedule generation) ────────────────────────────────────
+// Solve Job (async schedule generation)
 
 export type SolveJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED'
 export type SolveJobType = 'GENERATE' | 'PARTIAL_RESOLVE'
@@ -416,7 +416,7 @@ export function isSolveJobTerminal(job: SolveJobResponse): boolean {
   return job.status === 'SUCCEEDED' || job.status === 'FAILED' || job.status === 'CANCELLED'
 }
 
-// ─── ClassSession ─────────────────────────────────────────────────────────────
+// ClassSession
 
 export interface ClassSession {
   id: number
@@ -440,7 +440,7 @@ export interface ClassSession {
   scheduleId?: number
 }
 
-// ─── Score Explanation ────────────────────────────────────────────────────────
+// Score Explanation
 
 export interface ConstraintBreakdown {
   constraintName: string
@@ -498,7 +498,7 @@ export interface ImportOrderStep {
   dependencies: string[]
 }
 
-// ─── Session Assignment (manual edit) ────────────────────────────────────────
+// Session Assignment (manual edit)
 
 export interface SessionAssignmentRequest {
   teacherId?: number | null
@@ -510,7 +510,7 @@ export interface SessionAssignmentRequest {
   clearTimeslot?: boolean
 }
 
-// ─── Session Creation (right-click "add session here") ───────────────────────
+// Session Creation (right-click "add session here")
 
 export interface SessionCreateRequest {
   scheduleId: number
@@ -524,7 +524,7 @@ export interface SessionCreateRequest {
   locked?: boolean
 }
 
-// ─── AcademicTerm ─────────────────────────────────────────────────────────────
+// AcademicTerm
 
 export type AcademicTermStatus = 'UPCOMING' | 'ACTIVE' | 'CLOSED' | 'ARCHIVED'
 
@@ -552,7 +552,7 @@ export interface AcademicTermRequest {
   description?: string
 }
 
-// ─── Disruption / Impact Analyzer ─────────────────────────────────────────────
+// Disruption / Impact Analyzer
 
 export type DisruptionType =
   | 'TEACHER_UNAVAILABLE'

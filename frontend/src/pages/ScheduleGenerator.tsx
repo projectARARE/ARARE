@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle, Clock, GitBranch, Plus, Settings, ShieldCheck, Trash2, Wand2, X, Zap } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle, Clock, GitBranch, Plus, Settings, ShieldCheck, Trash2, X, Zap } from 'lucide-react'
 import { Card, Button, Input, Select, SearchableSelect, MultiSelect } from '../components/ui'
 import { scheduleApi, departmentApi, instituteApi, batchApi, teacherApi, roomApi, subjectApi } from '../services/api'
 import { useSolveJobPoll } from '../hooks/useSolveJob'
@@ -275,12 +275,8 @@ export default function ScheduleGenerator() {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">ARARE Engine Wizard</p>
-              <h2 className="text-xl font-semibold">Schedule Command Center</h2>
-            </div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs text-cyan-700">
-              <Wand2 size={13} />
-              Premium workflow mode
+              <p className="text-xs uppercase tracking-[0.14em] text-gray-500">Timetable Generation</p>
+              <h2 className="text-xl font-semibold">Schedule Generator</h2>
             </div>
           </div>
 

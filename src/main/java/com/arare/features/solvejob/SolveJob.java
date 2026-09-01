@@ -41,7 +41,7 @@ public class SolveJob extends BaseEntity {
     @Column(nullable = false, length = 32)
     private SolveJobStatus status;
 
-    // ── Request snapshot (GENERATE) ─────────────────────────────────────────
+    // Request snapshot (GENERATE)
     @Column
     private Integer solvingTimeSeconds;
 
@@ -60,7 +60,7 @@ public class SolveJob extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String roomIdsCsv;
 
-    // ── Request snapshot (PARTIAL_RESOLVE) ──────────────────────────────────
+    // Request snapshot (PARTIAL_RESOLVE)
     @Column(columnDefinition = "TEXT")
     private String impactedSessionIdsCsv;
 
@@ -70,7 +70,7 @@ public class SolveJob extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String disruptionFactsCsv;
 
-    // ── Outcome ─────────────────────────────────────────────────────────────
+    // Outcome
     @Column
     private String score;
 

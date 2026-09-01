@@ -105,11 +105,21 @@ public class ScheduleController {
     }
 
     @GetMapping("/{id}/export/csv")
-    public ResponseEntity<byte[]> exportCsv(@PathVariable Long id) {
-        byte[] csv = exportService.exportCsv(id);
-        return ResponseEntity.ok()
-            .header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".csv\"")
-            .body(csv);
+    public ResponseEntity<byte[]> exportCsv(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "ALL") TimetableExportService.View view,
+            @RequestParam(required = false) Long entityId) {
+        byte[] csv = exportService.exportCsv(id, view, entityId);
+        boolean zip = (view != TimetableExportService.View.ALL) && entityId == null;
+        ResponseEntity.BodyBuilder resp = ResponseEntity.ok();
+        if (zip) {
+            resp.header("Content-Type", "application/zip");
+            resp.header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".zip\"");
+        } else {
+            resp.header("Content-Type", "text/csv; charset=UTF-8");
+            resp.header("Content-Disposition", "attachment; filename=\"timetable-" + id + ".csv\"");
+        }
+        return resp.body(csv);
     }
 
     @GetMapping("/{id}/export/pdf")

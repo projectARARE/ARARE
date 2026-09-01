@@ -89,14 +89,14 @@ public class RelationalCsvImportService {
             roomRepository, subjectRepository, teacherRepository, batchRepository);
         context.loadFromDatabase();
 
-        // ── PASS 1: entity rows, in dependency order ─────────────────────────
+        // PASS 1: entity rows, in dependency order
         for (CsvEntityType entityType : CsvEntityType.importOrder()) {
             String csv = csvFiles.get(entityType.getFileName());
             if (csv == null || csv.isBlank()) continue;
             processEntityFile(csv, entityType, context, fileStats);
         }
 
-        // ── PASS 2: relationship files (replace per mentioned entity) ───────
+        // PASS 2: relationship files (replace per mentioned entity)
         processDeptBuildings(csvFiles.get("dept_buildings.csv"), context, fileStats);
         processTeacherSubjects(csvFiles.get("teacher_subjects.csv"), context, fileStats);
         processTeacherAvailability(csvFiles.get("teacher_availability.csv"), context, fileStats);
@@ -110,9 +110,9 @@ public class RelationalCsvImportService {
         return new CsvZipImportResponse(fileStats, List.of(), dryRun);
     }
 
-    // =========================================================================
+    // 
     // ZIP extraction
-    // =========================================================================
+    // 
 
     Map<String, String> extractZip(MultipartFile file) {
         if (file.getSize() > MAX_ZIP_BYTES) {
@@ -175,9 +175,9 @@ public class RelationalCsvImportService {
             new CsvZipImportResponse.FileImportStats(entityType.getFileName(), created, updated, skipped, errors));
     }
 
-    // =========================================================================
+    // 
     // PASS 2 — relationship processors (replace per mentioned entity)
-    // =========================================================================
+    // 
 
     private void processDeptBuildings(String csv, ImportContext context,
                                       Map<String, CsvZipImportResponse.FileImportStats> stats) {

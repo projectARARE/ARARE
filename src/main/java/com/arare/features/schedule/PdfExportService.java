@@ -56,15 +56,13 @@ public class PdfExportService {
         ALL, TEACHER, BATCH, ROOM
     }
 
+    // When a BATCH/TEACHER/ROOM view is selected without a single entity, the
+    // export emits one full timetable per entity so the operator gets a separate
+    // schedule for every batch (or teacher, or room), one PDF page each.
     @Transactional(readOnly = true)
     public byte[] exportPdf(Long scheduleId, View view, Long entityId) {
         com.arare.features.schedule.Schedule schedule = scheduleRepo.findById(scheduleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
-
-        String entityName = entityLabel(view, entityId);
-        String subtitle = entityName != null
-                ? schedule.getName() + "  ·  " + entityName
-                : schedule.getName();
 
         List<Timeslot> classSlots = timeslotRepo.findByType(com.arare.common.enums.TimeslotType.CLASS)
                 .stream()
@@ -84,15 +82,12 @@ public class PdfExportService {
             log.info("PDF export for schedule {} omitted {} session(s) whose timeslot is not CLASS.",
                     scheduleId, excludedNonClass);
         }
-        List<ClassSession> sessions = allSessions.stream()
+        List<ClassSession> placed = allSessions.stream()
                 .filter(s -> s.getTimeslot() != null)
-                .filter(s -> matches(s, view, entityId))
                 .toList();
 
-        Map<Long, List<ClassSession>> bySlot = new java.util.HashMap<>();
-        for (ClassSession s : sessions) {
-            bySlot.computeIfAbsent(s.getTimeslot().getId(), k -> new ArrayList<>()).add(s);
-        }
+        boolean perEntity = view != View.ALL && entityId == null;
+        List<Long> entityIds = perEntity ? entityIdsInView(view, placed) : List.of();
 
         Document doc = new Document(PageSize.A4.rotate());
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -100,42 +95,98 @@ public class PdfExportService {
             PdfWriter.getInstance(doc, out);
             doc.open();
 
-            doc.add(new Paragraph(schedule.getName(), TITLE));
-            doc.add(new Paragraph(subtitle, SUB));
-            doc.add(new Paragraph("Generated " + java.time.LocalDateTime.now()
-                    + "  ·  " + sessions.size() + " session(s) shown", SUB));
-            doc.add(new Paragraph(" "));
-
-            PdfPTable table = new PdfPTable(days.size() + 1);
-            table.setWidthPercentage(100);
-            table.setSpacingBefore(6);
-            table.setSpacingAfter(12);
-            float[] widths = new float[days.size() + 1];
-            widths[0] = 1.6f;
-            for (int i = 1; i < widths.length; i++) widths[i] = 1.0f;
-            table.setWidths(widths);
-
-            table.addCell(headerCell("Time"));
-            for (SchoolDay d : days) table.addCell(headerCell(d.name()));
-
-            for (Timeslot slot : classSlots) {
-                table.addCell(timeCell(slot.getStartTime(), slot.getEndTime()));
-                for (SchoolDay d : days) {
-                    List<ClassSession> cellSessions = bySlot.getOrDefault(slot.getId(), List.of())
-                            .stream()
-                            .filter(s -> s.getTimeslot().getDay() == d)
-                            .toList();
-                    table.addCell(sessionCell(cellSessions, view));
+            if (perEntity) {
+                if (entityIds.isEmpty()) {
+                    renderGrid(doc, schedule, schedule.getName(), classSlots, days,
+                            placed, view);
+                } else {
+                    for (int i = 0; i < entityIds.size(); i++) {
+                        if (i > 0) doc.newPage();
+                        Long id = entityIds.get(i);
+                        List<ClassSession> es = placed.stream()
+                                .filter(s -> matches(s, view, id))
+                                .toList();
+                        String subtitle = schedule.getName() + "  ·  " + entityLabel(view, id);
+                        renderGrid(doc, schedule, subtitle, classSlots, days, es, view);
+                    }
                 }
+            } else {
+                String entityName = entityLabel(view, entityId);
+                String subtitle = entityName != null
+                        ? schedule.getName() + "  ·  " + entityName
+                        : schedule.getName();
+                List<ClassSession> sessions = entityId == null
+                        ? placed
+                        : placed.stream().filter(s -> matches(s, view, entityId)).toList();
+                renderGrid(doc, schedule, subtitle, classSlots, days, sessions, view);
             }
 
-            doc.add(table);
             doc.close();
         } catch (DocumentException e) {
             throw new IllegalStateException("Failed to render PDF timetable", e);
         }
 
         return out.toByteArray();
+    }
+
+    private void renderGrid(Document doc, com.arare.features.schedule.Schedule schedule,
+                            String subtitle, List<Timeslot> classSlots, List<SchoolDay> days,
+                            List<ClassSession> sessions, View view) throws DocumentException {
+        Map<Long, List<ClassSession>> bySlot = new java.util.HashMap<>();
+        for (ClassSession s : sessions) {
+            bySlot.computeIfAbsent(s.getTimeslot().getId(), k -> new ArrayList<>()).add(s);
+        }
+
+        doc.add(new Paragraph(schedule.getName(), TITLE));
+        doc.add(new Paragraph(subtitle, SUB));
+        doc.add(new Paragraph("Generated " + java.time.LocalDateTime.now()
+                + "  ·  " + sessions.size() + " session(s) shown", SUB));
+        doc.add(new Paragraph(" "));
+
+        PdfPTable table = new PdfPTable(days.size() + 1);
+        table.setWidthPercentage(100);
+        table.setSpacingBefore(6);
+        table.setSpacingAfter(12);
+        float[] widths = new float[days.size() + 1];
+        widths[0] = 1.6f;
+        for (int i = 1; i < widths.length; i++) widths[i] = 1.0f;
+        table.setWidths(widths);
+
+        table.addCell(headerCell("Time"));
+        for (SchoolDay d : days) table.addCell(headerCell(d.name()));
+
+        for (Timeslot slot : classSlots) {
+            table.addCell(timeCell(slot.getStartTime(), slot.getEndTime()));
+            for (SchoolDay d : days) {
+                List<ClassSession> cellSessions = bySlot.getOrDefault(slot.getId(), List.of())
+                        .stream()
+                        .filter(s -> s.getTimeslot().getDay() == d)
+                        .toList();
+                table.addCell(sessionCell(cellSessions, view));
+            }
+        }
+
+        doc.add(table);
+    }
+
+    private List<Long> entityIdsInView(View view, List<ClassSession> sessions) {
+        return switch (view) {
+            case TEACHER -> sessions.stream()
+                    .map(ClassSession::getTeacher)
+                    .filter(java.util.Objects::nonNull)
+                    .map(com.arare.features.teacher.Teacher::getId)
+                    .distinct().sorted().toList();
+            case BATCH -> sessions.stream()
+                    .map(this::effectiveBatchId)
+                    .filter(java.util.Objects::nonNull)
+                    .distinct().sorted().toList();
+            case ROOM -> sessions.stream()
+                    .map(ClassSession::getRoom)
+                    .filter(java.util.Objects::nonNull)
+                    .map(com.arare.features.room.Room::getId)
+                    .distinct().sorted().toList();
+            case ALL -> List.of();
+        };
     }
 
     private boolean matches(ClassSession s, View view, Long entityId) {

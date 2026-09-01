@@ -78,7 +78,7 @@ export default function Table<T>({
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [exporting, setExporting] = useState(false)
 
-  // ─── Search ────────────────────────────────────────────────────────────────
+  // Search
 
   const filtered = useMemo(() => {
     if (!query.trim()) return data
@@ -95,7 +95,7 @@ export default function Table<T>({
     })
   }, [data, query, searchKeys, columns])
 
-  // ─── Sort ──────────────────────────────────────────────────────────────────
+  // Sort
 
   const sorted = useMemo(() => {
     if (!sortKey || !sortDir) return filtered
@@ -122,7 +122,7 @@ export default function Table<T>({
       : <ChevronDown size={12} className="text-indigo-600" />
   }
 
-  // ─── Selection ─────────────────────────────────────────────────────────────
+  // Selection
 
   const allKeys = sorted.map(keyExtractor)
   const allSelected = allKeys.length > 0 && allKeys.every((k) => selected.has(k))
@@ -144,7 +144,7 @@ export default function Table<T>({
     onSelectionChange?.(sorted.filter((r) => next.has(keyExtractor(r))))
   }, [selected, sorted, keyExtractor, onSelectionChange])
 
-  // ─── Context menu ──────────────────────────────────────────────────────────
+  // Context menu
 
   const handleContextMenu = (e: React.MouseEvent, row: T) => {
     if (!onRowContextMenu) return
@@ -156,7 +156,7 @@ export default function Table<T>({
 
   const colCount = columns.length + (selectable ? 1 : 0)
 
-  // ─── Export ─────────────────────────────────────────────────────────────────
+  // Export
 
   const effectiveExportColumns = useMemo<ExportColumn<T>[]>(() => {
     if (exportColumns) return exportColumns

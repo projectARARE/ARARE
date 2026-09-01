@@ -162,7 +162,11 @@ Pipeline producing a `TimetableSolution`:
    impacted set are exempted).
 6. On a partial resolve, every session is either unlocked (impacted) or pinned
    (non-impacted) so the solver only moves the minimal set.
-7. `LazyAssociationInitializer.initialize` force-loads lazy collections.
+7. `LazyAssociationInitializer.initialize` eagerly materializes lazy
+   associations (schedule `blockedDays`, working days, home room, teacher/room
+   collections) so constraint evaluation does not hit a
+   `LazyInitializationException` after the Hibernate session closes. It runs
+   before the solver starts.
 8. `applyTeacherAllotments` derives `allowedTeacherIds` from `TeacherAssignment`.
 9. Assemble the solution: `teacherBusyIntervals` from
    `findTeacherBusyIntervals` and `roomBusyIntervals` from
@@ -204,16 +208,6 @@ scoping (`SubjectOffering` → section curriculum → batch curriculum → depar
 Asserts the active config is internally consistent (`workingDays.size()` matches
 `daysPerWeek`, every configured working day has CLASS timeslots, and
 `breakSlotIndices` are non-negative). Throws `IllegalStateException` on mismatch.
-
-### `LazyAssociationInitializer` (`solver/LazyAssociationInitializer.java`)
-
-Force-touches lazy `@ManyToMany`/`@OneToMany` collections (department
-buildings, teacher subjects/availability, room building, batch working days /
-home room, schedule blocked days, section→batch) **before** the Hibernate
-session closes. This prevents `LazyInitializationException` during constraint
-evaluation across the session boundary. Note: this is an O(N) per-collection walk
-(a "manual N+1 guard") that can be removed once all collections switch to
-`@Fetch(SUBSELECT)`.
 
 ### `findTeacherBusyIntervals` (`JpaProblemDataGateway`)
 

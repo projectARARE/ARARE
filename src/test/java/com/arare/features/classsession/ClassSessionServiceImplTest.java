@@ -124,7 +124,7 @@ class ClassSessionServiceImplTest {
         assertSame(before, session.getTeacher());
     }
 
-    // ── Server-side enforcement (L11): mirror the solver HARD constraints ──
+    // Server-side enforcement (L11): mirror the solver HARD constraints
 
     @Test
     void rejectsLockedSessionAssignmentEdit() {
@@ -326,7 +326,7 @@ class ClassSessionServiceImplTest {
         verify(repo, never()).save(any());
     }
 
-    // ── Manual session creation (right-click "add session") ──
+    // Manual session creation (right-click "add session")
 
     private Department dept;
     private Schedule schedule;

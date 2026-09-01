@@ -49,6 +49,14 @@ public class ExcelExportService {
         ALL, TEACHER, BATCH, ROOM
     }
 
+    // Sentinel key for sessions that have no applicable entity in the active
+    // view dimension (e.g. a session with no teacher in a TEACHER split).
+    private static final long UNASSIGNED = -1L;
+
+    // The ALL view emits one full timetable on a single sheet. When a
+    // BATCH/TEACHER/ROOM view is selected without a single entity, one sheet is
+    // emitted per entity so each batch (or teacher, or room) gets its own
+    // schedule tab. Selecting a specific entity keeps a single narrowed sheet.
     @Transactional(readOnly = true)
     public byte[] exportExcel(Long scheduleId, View view, Long entityId) {
         com.arare.features.schedule.Schedule schedule = scheduleRepo.findById(scheduleId)
@@ -70,30 +78,37 @@ public class ExcelExportService {
             log.info("Excel export for schedule {} omitted {} session(s) whose timeslot is not CLASS.",
                     scheduleId, excludedNonClass);
         }
-        List<ClassSession> sessions = allSessions.stream()
+        List<ClassSession> placed = allSessions.stream()
                 .filter(s -> s.getTimeslot() != null)
-                .filter(s -> matches(s, view, entityId))
                 .toList();
+
+        boolean perEntity = view != View.ALL && entityId == null;
 
         try (XSSFWorkbook template = new XSSFWorkbook();
              SXSSFWorkbook wb = new SXSSFWorkbook(template, 500)) {
 
             Styles styles = new Styles(wb);
+            Set<String> usedSheetNames = new java.util.HashSet<>();
 
-            if (view == View.ALL) {
-                Map<String, List<ClassSession>> byBatch = groupByBatch(sessions);
-                if (byBatch.isEmpty()) {
-                    Sheet sheet = wb.createSheet("Timetable");
-                    renderGrid(sheet, wb, styles, schedule, entityLabel(view, entityId), classSlots, days, sessions, view);
+            if (perEntity) {
+                Map<Long, List<ClassSession>> groups = groupByEntityId(placed, view);
+                if (groups.isEmpty()) {
+                    renderGrid(wb.createSheet("Timetable"), wb, styles, schedule,
+                            schedule.getName(), classSlots, days, placed, view);
                 } else {
-                    Set<String> usedSheetNames = new java.util.HashSet<>();
-                    byBatch.forEach((label, batchSessions) ->
-                            renderGrid(wb.createSheet(uniqueSheetName(usedSheetNames, label)), wb, styles, schedule,
-                                    label, classSlots, days, batchSessions, view));
+                    groups.forEach((id, groupSessions) -> {
+                        String label = id == UNASSIGNED ? "Unassigned" : entitySheetLabel(view, id);
+                        renderGrid(wb.createSheet(uniqueSheetName(usedSheetNames, label)), wb, styles,
+                                schedule, label, classSlots, days, groupSessions, view);
+                    });
                 }
             } else {
-                Sheet sheet = wb.createSheet("Timetable");
-                renderGrid(sheet, wb, styles, schedule, entityLabel(view, entityId), classSlots, days, sessions, view);
+                List<ClassSession> sessions = entityId == null
+                        ? placed
+                        : placed.stream().filter(s -> matches(s, view, entityId)).toList();
+                String subtitle = entityLabel(view, entityId);
+                Sheet sheet = wb.createSheet(uniqueSheetName(usedSheetNames, subtitle == null ? schedule.getName() : subtitle));
+                renderGrid(sheet, wb, styles, schedule, subtitle, classSlots, days, sessions, view);
             }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -234,12 +249,55 @@ public class ExcelExportService {
         return sb.toString();
     }
 
-    private Map<String, List<ClassSession>> groupByBatch(List<ClassSession> sessions) {
-        Map<String, List<ClassSession>> map = new java.util.LinkedHashMap<>();
+    // Groups placed sessions into per-entity buckets for the active view so each
+    // batch/teacher/room becomes its own sheet. Buckets are labelled with the
+    // plain entity name (without the "Batch:"/"Teacher:"/"Room:" prefix) so the
+    // sheet tab reads naturally; sessions with no applicable entity fall through
+    // to an "Unassigned" bucket.
+    // Buckets placed sessions by the entity's database id (teacher id, room id,
+    // batch id) so that distinct entities with identical display labels — e.g.
+    // two teachers with the same name, or the same "CSE Yr1-A" in two campuses —
+    // still get their own separate sheet. Sessions with no entity in the active
+    // view fall into a single "Unassigned" sheet.
+    private Map<Long, List<ClassSession>> groupByEntityId(List<ClassSession> sessions, View view) {
+        Map<Long, List<ClassSession>> map = new java.util.LinkedHashMap<>();
         for (ClassSession s : sessions) {
-            map.computeIfAbsent(batchLabel(s), k -> new ArrayList<>()).add(s);
+            Long key = entityKey(s, view);
+            map.computeIfAbsent(key == null ? UNASSIGNED : key, k -> new ArrayList<>()).add(s);
         }
         return map;
+    }
+
+    private Long entityKey(ClassSession s, View view) {
+        return switch (view) {
+            case TEACHER -> s.getTeacher() != null ? s.getTeacher().getId() : null;
+            case ROOM -> s.getRoom() != null ? s.getRoom().getId() : null;
+            case BATCH -> effectiveBatchId(s);
+            case ALL -> UNASSIGNED;
+        };
+    }
+
+    private String entitySheetLabel(View view, Long id) {
+        switch (view) {
+            case TEACHER:
+                return teacherRepo.findById(id)
+                        .map(t -> "Teacher: " + t.getName())
+                        .orElse("Teacher " + id);
+            case ROOM:
+                return roomRepo.findById(id)
+                        .map(r -> "Room: " + r.getRoomNumber()
+                                + (r.getBuilding() != null ? " (" + r.getBuilding().getName() + ")" : ""))
+                        .orElse("Room " + id);
+            case BATCH:
+                return batchRepo.findById(id)
+                        .map(b -> {
+                            String dept = b.getDepartment() != null ? b.getDepartment().getName() + " " : "";
+                            return "Batch: " + dept + "Yr" + b.getYear() + "-" + b.getSection();
+                        })
+                        .orElse("Batch " + id);
+            default:
+                return "Timetable";
+        }
     }
 
     private String safeSheetName(String label) {

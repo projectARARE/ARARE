@@ -28,9 +28,9 @@ public final class CsvUtils {
     private CsvUtils() {
     }
 
-    // =========================================================================
+    // 
     // Parsing
-    // =========================================================================
+    // 
 
     /**
      * Parses RFC 4180 CSV text into a list of rows keyed by normalized headers.
@@ -114,9 +114,9 @@ public final class CsvUtils {
         return values;
     }
 
-    // =========================================================================
+    // 
     // Writing
-    // =========================================================================
+    // 
 
     /**
      * Serializes a {@code [headers, rows]} collection into RFC 4180 text,
@@ -156,9 +156,9 @@ public final class CsvUtils {
         return value;
     }
 
-    // =========================================================================
+    // 
     // Row value helpers
-    // =========================================================================
+    // 
 
     /** Returns the trimmed value or {@code null} when the cell is empty. */
     public static String blankToNull(String value) {
@@ -186,9 +186,9 @@ public final class CsvUtils {
             .collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
     }
 
-    // =========================================================================
+    // 
     // Scalar parsing helpers
-    // =========================================================================
+    // 
 
     public static <E extends Enum<E>> E parseEnum(Class<E> type, String raw) {
         try {
@@ -246,9 +246,9 @@ public final class CsvUtils {
         }
     }
 
-    // =========================================================================
+    // 
     // Natural-key builders (mirror the schema UNIQUE constraints exactly)
-    // =========================================================================
+    // 
 
     /** Normalizes any identifier for case-insensitive comparisons. */
     public static String key(String raw) {

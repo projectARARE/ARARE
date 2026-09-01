@@ -80,9 +80,9 @@ public class ImportContext {
         });
     }
 
-    // =========================================================================
+    // 
     // Lookups
-    // =========================================================================
+    // 
 
     public Department departmentByCode(String code) {
         return deptByCode.get(CsvUtils.key(code));
@@ -149,9 +149,9 @@ public class ImportContext {
         return batchByKey.get(CsvUtils.batchKey(deptCode, year, section));
     }
 
-    // =========================================================================
+    // 
     // Registrations (called after an upsert so later files can reference it)
-    // =========================================================================
+    // 
 
     public void register(Department department) {
         deptByCode.put(CsvUtils.key(department.getCode()), department);

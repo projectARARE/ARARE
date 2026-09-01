@@ -19,8 +19,8 @@ public interface PreAllocationRepository extends JpaRepository<PreAllocation, Lo
 
     List<PreAllocation> findByScheduleIdAndLocked(Long scheduleId, boolean locked);
 
-    // ─── Cascade-purge helpers (pre_allocations rows must be removed before
-    //     their referenced parent rows, which are non-null FKs) ─────────────
+    // Cascade-purge helpers (pre_allocations rows must be removed before
+    //     their referenced parent rows, which are non-null FKs)
 
     @Transactional @Modifying
     @Query("DELETE FROM PreAllocation pa WHERE pa.schedule.id = :scheduleId")

@@ -36,7 +36,7 @@ public class UniversityConfig extends BaseEntity {
     @Builder.Default
     private boolean active = true;
 
-    // Number of working days per week (1–7). Nothing is blocked by default —
+    // Number of working days per week (1–7). Nothing is blocked by default
     // the selected days are the ONLY days sessions may be scheduled on.
     @Min(1)
     @Max(7)
@@ -50,25 +50,25 @@ public class UniversityConfig extends BaseEntity {
     @Builder.Default
     private int timeslotsPerDay = 8;
 
-// Maximum class sessions a student batch can have in a single day.
-// Medium constraint enforced by the ConstraintProvider.
+    // Maximum class sessions a student batch can have in a single day.
+    // Medium constraint enforced by the ConstraintProvider.
     @Min(1)
     @Column(nullable = false)
     @Builder.Default
     private int maxClassesPerDay = 6;
 
-// Zero-based indices of break periods within a day.
-// Example: [3] means the 4th period of every day is a lunch break.
-// The timeslot generator marks these as {@code TimeslotType.BREAK}.
+    // Zero-based indices of break periods within a day.
+    // Example: [3] means the 4th period of every day is a lunch break.
+    // The timeslot generator marks these as {@code TimeslotType.BREAK}.
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "config_break_indices", joinColumns = @JoinColumn(name = "config_id"))
     @Column(name = "slot_index")
     @Builder.Default
     private List<Integer> breakSlotIndices = new ArrayList<>();
 
-// Working days configured for this university.
-// Derived from daysPerWeek but stored explicitly so display code
-// doesn't need to recompute the set.
+    // Working days configured for this university.
+    // Derived from daysPerWeek but stored explicitly so display code
+    // doesn't need to recompute the set.
     @ElementCollection(targetClass = SchoolDay.class, fetch = FetchType.EAGER)
     @CollectionTable(name = "config_working_days", joinColumns = @JoinColumn(name = "config_id"))
     @Enumerated(EnumType.STRING)

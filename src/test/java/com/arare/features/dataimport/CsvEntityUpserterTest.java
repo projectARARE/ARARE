@@ -44,7 +44,7 @@ class CsvEntityUpserterTest {
 
     @Test
     void teacherWithSameNameButNewEmployeeIdCreatesNewTeacher() {
-        // A teacher with the same NAME exists but a different employeeId —
+        // A teacher with the same NAME exists but a different employeeId
         // the upserter must create a NEW entity, never match on name.
         Teacher existing = new Teacher();
         existing.setId(1L);

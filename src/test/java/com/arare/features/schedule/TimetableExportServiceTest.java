@@ -14,10 +14,6 @@ import com.arare.features.subject.Subject;
 import com.arare.features.teacher.Teacher;
 import com.arare.features.teacher.TeacherRepository;
 import com.arare.features.timeslot.Timeslot;
-import com.arare.features.timeslot.TimeslotRepository;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,25 +22,27 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class ExcelExportServiceTest {
+class TimetableExportServiceTest {
 
     @Mock private ScheduleRepository scheduleRepo;
     @Mock private ClassSessionRepository sessionRepo;
-    @Mock private TimeslotRepository timeslotRepo;
+    @Mock private BatchRepository batchRepo;
     @Mock private TeacherRepository teacherRepo;
     @Mock private RoomRepository roomRepo;
-    @Mock private BatchRepository batchRepo;
 
-    @InjectMocks private ExcelExportService service;
+    @InjectMocks private TimetableExportService service;
 
     private Schedule schedule;
     private Subject subject;
@@ -90,26 +88,31 @@ class ExcelExportServiceTest {
     }
 
     @Test
-    void exportAll_producesReadableSingleSheetWorkbook() throws Exception {
+    void exportAll_returnsFullFlatCsv() {
         when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
-        when(timeslotRepo.findByType(TimeslotType.CLASS)).thenReturn(List.of(slot));
         when(sessionRepo.findByScheduleId(1L)).thenReturn(List.of(session));
 
-        byte[] excel = service.exportExcel(1L, ExcelExportService.View.ALL, null);
+        byte[] bytes = service.exportCsv(1L, TimetableExportService.View.ALL, null);
 
-        assertTrue(excel.length > 1000);
-        // xlsx files are ZIP archives; verify signature
-        assertTrue(excel[0] == 'P' && excel[1] == 'K');
-
-        try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
-            assertEquals(1, wb.getNumberOfSheets());
-            Sheet sheet = wb.getSheetAt(0);
-            assertTrue(sheet.getPhysicalNumberOfRows() >= 5, "grid must contain header + slot rows");
-        }
+        String csv = new String(bytes, StandardCharsets.UTF_8);
+        assertTrue(csv.startsWith("\uFEFF"));
+        assertTrue(csv.contains("Algorithms"));
+        assertTrue(csv.contains("Dr. Q"));
     }
 
     @Test
-    void exportBatchPerEntity_splitsIntoSeparateSheetsPerBatch() throws Exception {
+    void exportBatchEntity_filtersToThatBatch() {
+        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
+        when(sessionRepo.findByScheduleId(1L)).thenReturn(List.of(session));
+
+        byte[] bytes = service.exportCsv(1L, TimetableExportService.View.BATCH, 5L);
+
+        String csv = new String(bytes, StandardCharsets.UTF_8);
+        assertTrue(csv.contains("Algorithms"), "matching session should be present");
+    }
+
+    @Test
+    void exportBatchPerEntity_returnsZipWithOneEntryPerBatch() throws Exception {
         Department dept2 = Department.builder().name("CSE").build();
         dept2.setId(3L);
         Batch otherBatch = Batch.builder().department(dept2).year(1).section("B").build();
@@ -119,64 +122,47 @@ class ExcelExportServiceTest {
             .batch(otherBatch).teacher(teacher).room(room).timeslot(slot).duration(1).build();
 
         when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
-        when(timeslotRepo.findByType(TimeslotType.CLASS)).thenReturn(List.of(slot));
         when(sessionRepo.findByScheduleId(1L)).thenReturn(List.of(session, otherSession));
 
-        byte[] excel = service.exportExcel(1L, ExcelExportService.View.BATCH, null);
+        byte[] bytes = service.exportCsv(1L, TimetableExportService.View.BATCH, null);
 
-        assertTrue(excel.length > 1000);
-        try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
-            assertEquals(2, wb.getNumberOfSheets(), "each batch should get its own sheet");
+        assertEquals('P', bytes[0], "should be a ZIP archive");
+        assertEquals('K', bytes[1]);
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+            int entries = 0;
+            ByteArrayOutputStream first = new ByteArrayOutputStream();
+            while (zis.getNextEntry() != null) {
+                entries++;
+                byte[] buf = new byte[1024];
+                int n;
+                while ((n = zis.read(buf)) > 0) {
+                    if (entries == 1) first.write(buf, 0, n);
+                }
+            }
+            assertEquals(2, entries, "one CSV file per batch");
+            assertTrue(new String(first.toByteArray(), StandardCharsets.UTF_8).contains("Algorithms"));
         }
     }
 
     @Test
-    void exportTeacherPerEntity_separatesSameNameTeachersIntoDistinctSheets() throws Exception {
+    void exportTeacherPerEntity_separatesSameNameTeachersIntoDistinctFiles() throws Exception {
         Teacher sameName = Teacher.builder().name("Dr. Q").build();
-        sameName.setId(9L);
+        sameName.setId(8L);
         ClassSession other = ClassSession.builder()
             .id(22L).schedule(schedule).subject(subject)
             .batch(batch).teacher(sameName).room(room).timeslot(slot).duration(1).build();
 
         when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
-        when(timeslotRepo.findByType(TimeslotType.CLASS)).thenReturn(List.of(slot));
         when(sessionRepo.findByScheduleId(1L)).thenReturn(List.of(session, other));
 
-        byte[] excel = service.exportExcel(1L, ExcelExportService.View.TEACHER, null);
+        byte[] bytes = service.exportCsv(1L, TimetableExportService.View.TEACHER, null);
 
-        assertTrue(excel.length > 1000);
-        try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
-            assertEquals(2, wb.getNumberOfSheets(), "two distinct teachers with the same name must get separate sheets");
+        assertEquals('P', bytes[0], "should be a ZIP archive");
+        assertEquals('K', bytes[1]);
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+            int entries = 0;
+            while (zis.getNextEntry() != null) entries++;
+            assertEquals(2, entries, "two distinct teachers with the same name must get separate files");
         }
-    }
-
-    @Test
-    void exportTeacher_filtersSessions() throws Exception {
-        Teacher other = Teacher.builder().name("Dr. Other").build();
-        other.setId(99L);
-        ClassSession otherSession = ClassSession.builder()
-            .id(21L).schedule(schedule).subject(subject)
-            .batch(batch).teacher(other).room(room).timeslot(slot).duration(1).build();
-
-        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
-        when(timeslotRepo.findByType(TimeslotType.CLASS)).thenReturn(List.of(slot));
-        when(sessionRepo.findByScheduleId(1L)).thenReturn(List.of(session, otherSession));
-        when(teacherRepo.findById(7L)).thenReturn(Optional.of(teacher));
-
-        byte[] excel = service.exportExcel(1L, ExcelExportService.View.TEACHER, 7L);
-
-        assertTrue(excel.length > 1000);
-    }
-
-    @Test
-    void exportBatch_filtersSessions() throws Exception {
-        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
-        when(timeslotRepo.findByType(TimeslotType.CLASS)).thenReturn(List.of(slot));
-        when(sessionRepo.findByScheduleId(1L)).thenReturn(List.of(session));
-        when(batchRepo.findById(5L)).thenReturn(Optional.of(batch));
-
-        byte[] excel = service.exportExcel(1L, ExcelExportService.View.BATCH, 5L);
-
-        assertTrue(excel.length > 1000);
     }
 }

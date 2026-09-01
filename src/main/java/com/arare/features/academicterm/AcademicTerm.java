@@ -21,7 +21,7 @@ import java.time.LocalDate;
 @Builder
 public class AcademicTerm extends BaseEntity {
 
-    // e.g. "Semester 1 2025–26". 
+    // e.g. "Semester 1 2025–26".
     @NotBlank
     @Column(nullable = false)
     private String name;
@@ -38,7 +38,7 @@ public class AcademicTerm extends BaseEntity {
     @Column(nullable = false)
     private LocalDate endDate;
 
-    // Date when exam period begins (optional — used to block scheduling). 
+    // Date when exam period begins (optional — used to block scheduling).
     @Column
     private LocalDate examPeriodStart;
 

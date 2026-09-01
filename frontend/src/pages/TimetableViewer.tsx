@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { AlertCircle, Move, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus, Pin, CheckCircle2, Archive, FileText, Sheet, Pencil, Trash2, Copy, X, BarChart3, AlertTriangle, Filter, Rows3, Columns3 } from 'lucide-react'
+import { AlertCircle, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus, Pin, CheckCircle2, Archive, FileText, Sheet, Pencil, Trash2, Copy, X, BarChart3, AlertTriangle, Filter, Rows3, Columns3 } from 'lucide-react'
 import { Card, Button, Select, Badge, Modal, ContextMenu, Input, ConfirmDialog, SearchableSelect, MultiSelect, Toggle } from '../components/ui'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import TimetableGrid from '../components/timetable/TimetableGrid'
-import SessionCell from '../components/timetable/SessionCell'
 import ScoreBreakdownPanel from '../components/timetable/ScoreBreakdownPanel'
 import ConflictSolverSidecar, { buildConflictSuggestions } from '../components/timetable/ConflictSolverSidecar'
-import { scheduleApi, timeslotApi, batchApi, teacherApi, roomApi, sessionApi, subjectApi, classSectionApi, preAllocationApi } from '../services/api'
+import { scheduleApi, timeslotApi, batchApi, teacherApi, roomApi, sessionApi, subjectApi, classSectionApi, preAllocationApi, type ExportView } from '../services/api'
 import { waitForJob } from '../hooks/useSolveJob'
 import type {
   Schedule,
@@ -28,18 +27,12 @@ import type {
 } from '../types'
 import { useToast } from '../contexts/ToastContext'
 
-type ViewMode = 'batch' | 'teacher' | 'room'
+type ViewMode = 'all' | 'batch' | 'teacher' | 'room'
 
 type HeatEntry = {
   hard: number
   soft: number
   notes: string[]
-}
-
-type DragPreview = {
-  slotId: number
-  severity: 'hard' | 'soft' | 'clean'
-  label: string
 }
 
 const STATUS_VARIANT: Record<string, 'gray' | 'green' | 'yellow' | 'red' | 'blue' | 'purple'> = {
@@ -148,47 +141,40 @@ function loadSavedViews(scheduleId: number): SavedView[] {
   }
 }
 
-function buildDragPreview(dragged: ClassSession | null, slot: Timeslot | null, sessions: ClassSession[]): DragPreview | null {  if (!dragged || !slot || !dragged.id) return null
-
-  let hardConflicts = 0
-  let softPenalty = 0
-  const withoutDragged = sessions.filter((s) => s.id !== dragged.id)
-
-  for (const s of withoutDragged) {
-    if (s.timeslotId !== slot.id || s.day !== slot.day) continue
-    if (dragged.teacherId && s.teacherId && dragged.teacherId === s.teacherId) hardConflicts += 1
-    if (dragged.roomId && s.roomId && dragged.roomId === s.roomId) hardConflicts += 1
-    if (dragged.batchId && s.batchId && dragged.batchId === s.batchId) hardConflicts += 1
+/**
+ * Human-readable label for an entity in a given view dimension. Used to name
+ * per-entity tab bar entries and to suffix downloaded per-entity files.
+ */
+function entityLabel(
+  mode: ViewMode,
+  id: number,
+  batches: Batch[],
+  teachers: Teacher[],
+  rooms: Room[],
+): string {
+  if (mode === 'batch') {
+    const b = batches.find((x) => x.id === id)
+    return b
+      ? b.departmentName
+        ? `${b.departmentName} · Yr ${b.year}-${b.section}`
+        : `Yr ${b.year}-${b.section}`
+      : `Batch #${id}`
   }
-
-  if (dragged.batchId && dragged.subjectId) {
-    const sameDaySubject = withoutDragged.filter((s) =>
-      s.day === slot.day && s.batchId === dragged.batchId && s.subjectId === dragged.subjectId,
-    )
-    softPenalty += sameDaySubject.length
+  if (mode === 'teacher') {
+    const t = teachers.find((x) => x.id === id)
+    return t ? t.name : `Teacher #${id}`
   }
+  const r = rooms.find((x) => x.id === id)
+  return r ? `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''}` : `Room #${id}`
+}
 
-  if (hardConflicts > 0) {
-    return {
-      slotId: slot.id,
-      severity: 'hard',
-      label: '!! HARD CONFLICT',
-    }
-  }
-
-  if (softPenalty > 0) {
-    return {
-      slotId: slot.id,
-      severity: 'soft',
-      label: `+${softPenalty} soft penalty`,
-    }
-  }
-
-  return {
-    slotId: slot.id,
-    severity: 'clean',
-    label: 'Clean move',
-  }
+/**
+ * Filesystem-safe slug derived from an entity label, used when naming a
+ * single-entity downloaded file (e.g. "cse-yr-1a" for a batch).
+ */
+function entitySlug(mode: ViewMode, id: number, batches: Batch[], teachers: Teacher[], rooms: Room[]): string {
+  const label = entityLabel(mode, id, batches, teachers, rooms)
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 export default function TimetableViewer() {
@@ -217,6 +203,8 @@ export default function TimetableViewer() {
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('batch')
+  const [focusedEntityId, setFocusedEntityId] = useState<number | null>(null)
+  const [activeTabId, setActiveTabId] = useState<number | null>(null)
   const [filterBatchIds, setFilterBatchIds] = useState<number[]>([])
   const [filterTeacherIds, setFilterTeacherIds] = useState<number[]>([])
   const [filterRoomIds, setFilterRoomIds] = useState<number[]>([])
@@ -249,10 +237,6 @@ export default function TimetableViewer() {
   const [hoveredSession, setHoveredSession] = useState<ClassSession | null>(null)
   const [conflictSession, setConflictSession] = useState<ClassSession | null>(null)
   const [backendSuggestions, setBackendSuggestions] = useState<ConflictSuggestion[] | null>(null)
-
-  const [draggedSession, setDraggedSession] = useState<ClassSession | null>(null)
-  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null)
-  const [dropSaving, setDropSaving] = useState(false)
 
   const [slotContextMenu, setSlotContextMenu] = useState<SlotContextMenuState | null>(null)
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null)
@@ -309,15 +293,6 @@ export default function TimetableViewer() {
   // data the grid can't render.
   const [orphanCount, setOrphanCount] = useState(0)
   const totalUnassigned = unassignedCount + orphanCount
-  // Sessions with no timeslot assignment at all: draggable from the tray into
-  // a free slot. Orphaned sessions (timeslot id no longer present in the
-  // timeslot set) are listed too but are not draggable — the grid cannot
-  // place them, they must be re-assigned through the editor.
-  const unassignedSessions = useMemo(() => sessions.filter((s) => !s.timeslotId), [sessions])
-  const orphanedSessions = useMemo(() => {
-    const known = new Set(timeslots.map((t) => t.id))
-    return sessions.filter((s) => s.timeslotId != null && !known.has(s.timeslotId))
-  }, [sessions, timeslots])
   const lockedCount = useMemo(
     () => sessions.filter((s) => s.isLocked).length,
     [sessions],
@@ -331,6 +306,17 @@ export default function TimetableViewer() {
     }
     return { hard, soft }
   }, [heatBySessionId])
+
+  const publishBlockReason = useMemo(() => {
+    const placed = sessions.filter((s) => s.timeslotId != null).length
+    if (placed === 0) return 'Publish requires at least one placed session — generate or place sessions first.'
+    if (heatSummary.hard > 0) {
+      return `Cannot publish: ${heatSummary.hard} session(s) still have hard conflicts. Resolve conflicts or re-run the solver before publishing.`
+    }
+    return null
+  }, [sessions, heatSummary.hard])
+
+  const canPublish = publishBlockReason === null
 
   const fallbackSuggestions = useMemo(() => {
     if (!conflictSession) return []
@@ -420,17 +406,33 @@ export default function TimetableViewer() {
 
   useEffect(() => { load() }, [scheduleId])
 
+  const exportView = (): ExportView =>
+    viewMode === 'teacher' ? 'TEACHER' : viewMode === 'room' ? 'ROOM' : viewMode === 'batch' ? 'BATCH' : 'ALL'
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const handleExportCsv = async () => {
     try {
-      const blob = await scheduleApi.exportCsv(scheduleId)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `timetable-${schedule?.name ?? scheduleId}.csv`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      if (viewMode === 'all') {
+        const blob = await scheduleApi.exportCsv(scheduleId, 'ALL')
+        downloadBlob(blob, `timetable-${schedule?.name ?? scheduleId}.csv`)
+      } else if (focusedEntityId != null) {
+        const blob = await scheduleApi.exportCsv(scheduleId, exportView(), focusedEntityId)
+        const slug = entitySlug(viewMode, focusedEntityId, batches, teachers, rooms)
+        downloadBlob(blob, `timetable-${schedule?.name ?? scheduleId}-${slug}.csv`)
+      } else {
+        const blob = await scheduleApi.exportCsv(scheduleId, exportView())
+        downloadBlob(blob, `timetable-${schedule?.name ?? scheduleId}-by-${viewMode}.zip`)
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Export failed')
     }
@@ -438,23 +440,16 @@ export default function TimetableViewer() {
 
   const handleExportPdf = async () => {
     try {
-      const view = viewMode === 'teacher' ? 'TEACHER' : viewMode === 'room' ? 'ROOM' : 'BATCH'
-      const blob = await scheduleApi.exportPdf(
-        scheduleId,
-        currentFilterId ? view : 'ALL',
-        currentFilterId || undefined,
-      )
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      const suffix = currentFilterId
-        ? viewMode === 'teacher' ? '-teacher' : viewMode === 'room' ? '-room' : '-batch'
-        : ''
-      a.href = url
-      a.download = `timetable-${schedule?.name ?? scheduleId}${suffix}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const view = exportView()
+      if (view !== 'ALL' && focusedEntityId == null) {
+        const blob = await scheduleApi.exportPdf(scheduleId, view)
+        downloadBlob(blob, `timetable-${schedule?.name ?? scheduleId}-by-${viewMode}.pdf`)
+      } else {
+        const entityId = focusedEntityId ?? undefined
+        const blob = await scheduleApi.exportPdf(scheduleId, view, entityId)
+        const suffix = entityId ? `-${entitySlug(viewMode ?? 'all', entityId, batches, teachers, rooms)}` : ''
+        downloadBlob(blob, `timetable-${schedule?.name ?? scheduleId}${suffix}.pdf`)
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'PDF export failed')
     }
@@ -462,23 +457,16 @@ export default function TimetableViewer() {
 
   const handleExportExcel = async () => {
     try {
-      const view = viewMode === 'teacher' ? 'TEACHER' : viewMode === 'room' ? 'ROOM' : 'BATCH'
-      const blob = await scheduleApi.exportExcel(
-        scheduleId,
-        currentFilterId ? view : 'ALL',
-        currentFilterId || undefined,
-      )
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      const suffix = currentFilterId
-        ? viewMode === 'teacher' ? '-teacher' : viewMode === 'room' ? '-room' : '-batch'
-        : ''
-      a.href = url
-      a.download = `timetable-${schedule?.name ?? scheduleId}${suffix}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const view = exportView()
+      if (view !== 'ALL' && focusedEntityId == null) {
+        const blob = await scheduleApi.exportExcel(scheduleId, view)
+        downloadBlob(blob, `timetable-${schedule?.name ?? scheduleId}-by-${viewMode}.xlsx`)
+      } else {
+        const entityId = focusedEntityId ?? undefined
+        const blob = await scheduleApi.exportExcel(scheduleId, view, entityId)
+        const suffix = entityId ? `-${entitySlug(viewMode ?? 'all', entityId, batches, teachers, rooms)}` : ''
+        downloadBlob(blob, `timetable-${schedule?.name ?? scheduleId}${suffix}.xlsx`)
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Excel export failed')
     }
@@ -486,6 +474,10 @@ export default function TimetableViewer() {
 
   const handlePublish = async () => {
     if (!schedule || publishing) return
+    if (!canPublish) {
+      toast.error(publishBlockReason ?? 'This schedule cannot be published yet')
+      return
+    }
     setPublishing(true)
     try {
       const updated = await scheduleApi.activate(schedule.id)
@@ -751,10 +743,10 @@ export default function TimetableViewer() {
     }
     setCreateSlot(slot)
     setCreateSubjectId(subjects[0]?.id ? String(subjects[0].id) : '')
-    setCreateBatchId(viewMode === 'batch' && filterBatchIds.length === 1 ? String(filterBatchIds[0]) : '')
+    setCreateBatchId(viewMode === 'batch' && displayEntityId != null ? String(displayEntityId) : '')
     setCreateSectionId('')
-    setCreateTeacherId(viewMode === 'teacher' && filterTeacherIds.length === 1 ? String(filterTeacherIds[0]) : '')
-    setCreateRoomId(viewMode === 'room' && filterRoomIds.length === 1 ? String(filterRoomIds[0]) : '')
+    setCreateTeacherId(viewMode === 'teacher' && displayEntityId != null ? String(displayEntityId) : '')
+    setCreateRoomId(viewMode === 'room' && displayEntityId != null ? String(displayEntityId) : '')
     setCreateDuration(1)
     setCreateLocked(false)
     setCreateError(null)
@@ -816,60 +808,6 @@ export default function TimetableViewer() {
     loadExplanations()
   }
 
-  /**
-   * Drop-to-commit: a session dragged onto a slot with no hard conflicts is
-   * moved immediately (the backend re-validates hard constraints and rejects
-   * the PATCH otherwise). Only hard-conflict drops open the editor so the
-   * operator decides consciously.
-   */
-  const handleDropToSlot = async (slot: Timeslot) => {
-    if (!draggedSession) return
-    const session = draggedSession
-    setDraggedSession(null)
-    setDragPreview(null)
-    if (scheduleReadonly) {
-      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
-      return
-    }
-    if (session.isLocked) {
-      toast.error(`"${session.subjectName}" is locked — unlock it in the editor to move it`)
-      return
-    }
-    if (dropSaving) return
-    const preview = buildDragPreview(session, slot, sessions)
-    if (preview?.severity === 'hard') {
-      setSelectedSession(session)
-      setEditMode(true)
-      setEditTeacherId(session.teacherId?.toString() ?? '')
-      setEditRoomId(session.roomId?.toString() ?? '')
-      setEditTimeslotId(String(slot.id))
-      setEditLocked(session.isLocked)
-      return
-    }
-    setDropSaving(true)
-    try {
-      await sessionApi.updateAssignment(session.id, {
-        timeslotId: slot.id,
-        locked: session.isLocked,
-      })
-      toast.success(`Moved "${session.subjectName}" to ${slot.day} ${slot.startTime}-${slot.endTime}`)
-      // Reveal the session: if the active view filter no longer matches the
-      // moved session, clear that filter so the placement is immediately visible.
-      if (viewMode === 'batch' && filterBatchIds.length > 0 && (!session.batchId || !filterBatchIds.includes(session.batchId))) {
-        setFilterBatchIds([])
-      } else if (viewMode === 'teacher' && filterTeacherIds.length > 0 && (!session.teacherId || !filterTeacherIds.includes(session.teacherId))) {
-        setFilterTeacherIds([])
-      } else if (viewMode === 'room' && filterRoomIds.length > 0 && (!session.roomId || !filterRoomIds.includes(session.roomId))) {
-        setFilterRoomIds([])
-      }
-      refreshSessionsAndSchedule()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : `Move failed — ${slot.day} ${slot.startTime}`)
-    } finally {
-      setDropSaving(false)
-    }
-  }
-
   const highlightByText = (text: string) => {
     const lowered = text.toLowerCase()
     const tokens = lowered.split(/[^a-z0-9]+/).filter((t) => t.length > 3)
@@ -894,6 +832,7 @@ export default function TimetableViewer() {
   }
 
   const viewOptions = [
+    { value: 'all', label: 'Full timetable' },
     { value: 'batch', label: 'By Batch' },
     { value: 'teacher', label: 'By Teacher' },
     { value: 'room', label: 'By Room' },
@@ -919,13 +858,38 @@ export default function TimetableViewer() {
     return opts.sort((a, b) => a.label.localeCompare(b.label))
   }, [batches])
 
-  // Used for exports. With multiselect we fall back to the first selected id in
-  // the active view dimension (or ALL when several/none are chosen).
-  const currentFilterId =
-    viewMode === 'batch' && filterBatchIds.length === 1 ? filterBatchIds[0]
-    : viewMode === 'teacher' && filterTeacherIds.length === 1 ? filterTeacherIds[0]
-    : viewMode === 'room' && filterRoomIds.length === 1 ? filterRoomIds[0]
-    : undefined
+  // Per-entity view model. When a view dimension (batch/teacher/room) is
+  // active the schedule is shown as a separate timetable per entity, navigable
+  // through a tab bar, or focused down to a single entity via the searchable
+  // dropdown. "Full timetable" (viewMode === 'all') keeps the single merged
+  // grid and the multiselect filters behave exactly as before.
+  const modeEntities = useMemo(() => {
+    const items = viewMode === 'batch' ? batches : viewMode === 'teacher' ? teachers : rooms
+    return items
+      .map((it) => ({ id: it.id, label: entityLabel(viewMode, it.id, batches, teachers, rooms) }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [viewMode, batches, teachers, rooms])
+
+  const entityIdsInSchedule = useMemo(() => {
+    const set = new Set<number>()
+    for (const s of sessions) {
+      const id = viewMode === 'batch' ? s.batchId : viewMode === 'teacher' ? s.teacherId : s.roomId
+      if (id != null) set.add(id)
+    }
+    return modeEntities.filter((e) => set.has(e.id))
+  }, [sessions, viewMode, modeEntities])
+
+  const displayEntityId = useMemo(() => {
+    if (focusedEntityId != null) return focusedEntityId
+    if (activeTabId != null && entityIdsInSchedule.some((e) => e.id === activeTabId)) return activeTabId
+    return entityIdsInSchedule[0]?.id ?? null
+  }, [focusedEntityId, activeTabId, entityIdsInSchedule])
+
+  const entitySelectOptions = modeEntities.map((e) => ({ value: e.id, label: e.label }))
+
+  const gridFilterBatchIds = viewMode === 'batch' ? (displayEntityId != null ? [displayEntityId] : effectiveBatchIds) : effectiveBatchIds
+  const gridFilterTeacherIds = viewMode === 'teacher' ? (displayEntityId != null ? [displayEntityId] : filterTeacherIds) : filterTeacherIds
+  const gridFilterRoomIds = viewMode === 'room' ? (displayEntityId != null ? [displayEntityId] : filterRoomIds) : filterRoomIds
 
   const handleSaveView = () => {
     const name = window.prompt('Name this view:')
@@ -949,6 +913,8 @@ export default function TimetableViewer() {
     const view = savedViews.find((v) => v.name === name)
     if (!view) return
     setViewMode(view.mode)
+    setFocusedEntityId(null)
+    setActiveTabId(null)
     setFilterBatchIds(view.batchIds ?? [])
     setFilterTeacherIds(view.teacherIds ?? [])
     setFilterRoomIds(view.roomIds ?? [])
@@ -992,6 +958,33 @@ export default function TimetableViewer() {
       value: section.id,
       label: `${section.batchName ?? `Batch #${section.batchId}`} · ${section.label}`,
     }))
+
+  const renderGrid = () => (
+    <TimetableGrid
+      sessions={sessions}
+      timeslots={timeslots}
+      density={density}
+      filterBatchIds={gridFilterBatchIds}
+      filterTeacherIds={gridFilterTeacherIds}
+      filterRoomIds={gridFilterRoomIds}
+      highlightConflictsOnly={showConflictsOnly}
+      showUnplacedOnly={showUnplacedOnly}
+      onSessionClick={openSessionDetail}
+      onSessionHover={setHoveredSession}
+      heatmapEnabled={heatmapEnabled}
+      heatBySessionId={heatBySessionId}
+      highlightedSessionIds={highlightedSessionIds}
+      preAllocatedSessionIds={preAllocatedSessionIds}
+      onSessionContextMenu={handleSessionContextMenu}
+      onCellContextMenu={(slot, x, y) => {
+        if (scheduleReadonly) return
+        setSlotContextMenu({ slot, x, y })
+      }}
+      onSlotAdd={(slot) => openCreateSession(slot)}
+      blockedDays={schedule?.blockedDays ?? []}
+      onOrphanSessionsCount={setOrphanCount}
+    />
+  )
 
   if (loading) return <div className="animate-pulse h-96 bg-gray-100 rounded-lg" />
 
@@ -1087,16 +1080,33 @@ export default function TimetableViewer() {
             <Button variant="secondary" size="sm" icon={<Download size={14} />} onClick={handleExportCsv}>
               Export CSV
             </Button>
-            <Button variant="secondary" size="sm" icon={<FileText size={14} />} onClick={handleExportPdf} title="Download the current view as a PDF (all sessions if no filter is set)">
+            <Button variant="secondary" size="sm" icon={<FileText size={14} />} onClick={handleExportPdf} title="Download as PDF — one page per entity, or a single file when a specific entity is focused">
               PDF
             </Button>
-            <Button variant="secondary" size="sm" icon={<Sheet size={14} />} onClick={handleExportExcel} title="Download as Excel — one sheet per batch (all sessions if no filter is set)">
+            <Button variant="secondary" size="sm" icon={<Sheet size={14} />} onClick={handleExportExcel} title="Download as Excel — one sheet per entity, or a single sheet in the full timetable">
               Excel
             </Button>
             {schedule?.status === 'DRAFT' && (
-              <Button variant="primary" size="sm" loading={publishing} icon={<CheckCircle2 size={14} />} onClick={handlePublish}>
-                Publish
-              </Button>
+              <span className="flex items-center gap-2">
+                {publishBlockReason && (
+                  <span className="text-xs text-rose-700 bg-rose-50 border border-rose-200 px-2 py-1 rounded" title={publishBlockReason}>
+                    {heatSummary.hard > 0
+                      ? `${heatSummary.hard} hard conflict${heatSummary.hard !== 1 ? 's' : ''} remaining`
+                      : 'No placed sessions yet'}
+                  </span>
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={publishing}
+                  icon={<CheckCircle2 size={14} />}
+                  disabled={!canPublish}
+                  title={publishBlockReason ?? 'Make this timetable the active published schedule'}
+                  onClick={handlePublish}
+                >
+                  Publish
+                </Button>
+              </span>
             )}
             {schedule && (schedule.status === 'ACTIVE' || schedule.status === 'PARTIAL') && (
               <Button variant="secondary" size="sm" loading={archiving} icon={<Archive size={14} />} onClick={handleArchive}>
@@ -1144,9 +1154,26 @@ export default function TimetableViewer() {
             <div className="flex items-center gap-3 flex-wrap mb-3">
               <Select
                 value={viewMode}
-                onChange={(e) => { setViewMode(e.target.value as ViewMode) }}
+                onChange={(e) => {
+                  setViewMode(e.target.value as ViewMode)
+                  setFocusedEntityId(null)
+                  setActiveTabId(null)
+                }}
                 options={viewOptions}
               />
+              {viewMode !== 'all' && (
+                <div className="w-56">
+                  <SearchableSelect
+                    label={viewMode === 'batch' ? 'Focus a batch' : viewMode === 'teacher' ? 'Focus a teacher' : 'Focus a room'}
+                    placeholder={viewMode === 'batch' ? 'All batches…' : viewMode === 'teacher' ? 'All teachers…' : 'All rooms…'}
+                    value={focusedEntityId}
+                    onChange={(v) => setFocusedEntityId(v == null ? null : Number(v))}
+                    options={entitySelectOptions}
+                    allowClear
+                    maxHeight={260}
+                  />
+                </div>
+              )}
               <div className="flex items-center rounded-md border border-gray-300 overflow-hidden">
                 <button
                   type="button"
@@ -1175,10 +1202,6 @@ export default function TimetableViewer() {
               >
                 Filters
               </Button>
-              <div className="ml-auto text-xs text-slate-500 flex items-center gap-1.5">
-                <Move size={13} />
-                {dropSaving ? 'Saving move…' : 'Drag a session to a slot — safe drops apply instantly; conflicts open the editor'}
-              </div>
             </div>
             {filterBarOpen && (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 border-t border-slate-100 pt-3 mb-3">
@@ -1188,87 +1211,42 @@ export default function TimetableViewer() {
                 <MultiSelect label="Rooms" options={roomOptions} selected={filterRoomIds} onChange={setFilterRoomIds} />
               </div>
             )}
-            {!showUnplacedOnly && (unassignedSessions.length + orphanedSessions.length > 0) && (
-              <div className="mb-4 rounded-lg border border-dashed border-amber-300 bg-amber-50/60 p-3">
-                <p className="text-xs font-medium text-amber-800 mb-2 flex items-center gap-1.5">
-                  <AlertCircle size={12} />
-                  {unassignedSessions.length > 0
-                    ? `Unassigned (${unassignedSessions.length}) — drag a card into a slot to place it`
-                    : 'Placement'}
-                  {orphanedSessions.length > 0 && (
-                    <span className="font-normal opacity-80">
-                      — {orphanedSessions.length} session{orphanedSessions.length !== 1 ? 's' : ''} have a timeslot that no longer exists; click to re-assign
-                    </span>
-                  )}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {unassignedSessions.map((s) => (
-                    <SessionCell
-                      key={s.id}
-                      session={s}
-                      onClick={openSessionDetail}
-                      onContextMenu={handleSessionContextMenu}
-                      onDragStart={
-                        dropSaving || scheduleReadonly
-                          ? undefined
-                          : (session) => {
-                              setDraggedSession(session)
-                              setDragPreview(null)
-                            }
-                      }
-                      onDragEnd={() => {
-                        setDraggedSession(null)
-                        setDragPreview(null)
-                      }}
-                      preAllocated={preAllocatedSessionIds.has(s.id)}
-                    />
-                  ))}
-                  {orphanedSessions.map((s) => (
-                    <SessionCell key={s.id} session={s} onClick={openSessionDetail} onContextMenu={handleSessionContextMenu} />
+            {viewMode === 'all' ? (
+              renderGrid()
+            ) : focusedEntityId != null ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    {viewMode === 'batch' ? 'Batch' : viewMode === 'teacher' ? 'Teacher' : 'Room'}: {displayEntityId != null ? entityLabel(viewMode, displayEntityId, batches, teachers, rooms) : ''}
+                  </h3>
+                  <Button variant="secondary" size="sm" onClick={() => setFocusedEntityId(null)}>
+                    Show all {viewMode}s
+                  </Button>
+                </div>
+                {displayEntityId != null ? renderGrid() : <p className="text-sm text-slate-500">No sessions for this {viewMode}.</p>}
+              </div>
+            ) : entityIdsInSchedule.length === 0 ? (
+              <p className="text-sm text-slate-500">No {viewMode} assigned sessions yet.</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
+                  <span className="text-xs font-medium text-slate-500 mr-1 self-center">
+                    {viewMode === 'batch' ? 'Batches' : viewMode === 'teacher' ? 'Teachers' : 'Rooms'}:
+                  </span>
+                  {entityIdsInSchedule.map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => setActiveTabId(e.id)}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium ${displayEntityId === e.id ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                    >
+                      {e.label}
+                    </button>
                   ))}
                 </div>
+                {displayEntityId != null ? renderGrid() : <p className="text-sm text-slate-500">Select a {viewMode} above.</p>}
               </div>
             )}
-            <TimetableGrid
-              sessions={sessions}
-              timeslots={timeslots}
-              density={density}
-              filterBatchIds={effectiveBatchIds}
-              filterTeacherIds={filterTeacherIds}
-              filterRoomIds={filterRoomIds}
-              draggedSessionId={draggedSession?.id ?? null}
-              highlightConflictsOnly={showConflictsOnly}
-              showUnplacedOnly={showUnplacedOnly}
-              onSessionClick={openSessionDetail}
-              onSessionHover={setHoveredSession}
-              heatmapEnabled={heatmapEnabled}
-              heatBySessionId={heatBySessionId}
-              highlightedSessionIds={highlightedSessionIds}
-              preAllocatedSessionIds={preAllocatedSessionIds}
-              onSessionDragStart={
-                dropSaving || scheduleReadonly
-                  ? undefined
-                  : (session) => {
-                      setDraggedSession(session)
-                      setDragPreview(null)
-                    }
-              }
-              onSessionDragEnd={() => {
-                setDraggedSession(null)
-                setDragPreview(null)
-              }}
-              onSessionContextMenu={handleSessionContextMenu}
-              onSlotDragHover={(slot) => setDragPreview(buildDragPreview(draggedSession, slot, sessions))}
-              onSlotDrop={handleDropToSlot}
-              onCellContextMenu={(slot, x, y) => {
-                if (scheduleReadonly) return
-                setSlotContextMenu({ slot, x, y })
-              }}
-              onSlotAdd={(slot) => openCreateSession(slot)}
-              dragPreview={dragPreview}
-              blockedDays={schedule?.blockedDays ?? []}
-              onOrphanSessionsCount={setOrphanCount}
-            />
           </Card>
 
           <Card title="Conflict Inspector" description="Hover over a session to inspect why this slot is risky.">

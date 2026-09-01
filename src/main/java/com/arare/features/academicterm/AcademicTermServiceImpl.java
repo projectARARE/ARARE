@@ -67,7 +67,7 @@ public class AcademicTermServiceImpl implements AcademicTermService {
         repo.deleteById(id);
     }
 
-    // ------------------------------------------------------------------
+    // 
 
     private AcademicTerm findEntity(Long id) {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("AcademicTerm", id));

@@ -130,4 +130,29 @@ class PdfExportServiceTest {
 
         assertTrue(pdf.length > 1000);
     }
+
+    @Test
+    void exportBatchPerEntity_emitsPdfForEveryBatch() {
+        Department dept2 = Department.builder().name("CSE").build();
+        dept2.setId(3L);
+        Batch otherBatch = Batch.builder().department(dept2).year(1).section("B").build();
+        otherBatch.setId(6L);
+        ClassSession otherSession = ClassSession.builder()
+            .id(21L).schedule(schedule).subject(subject)
+            .batch(otherBatch).teacher(teacher).room(room).timeslot(slot).duration(1).build();
+
+        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
+        when(timeslotRepo.findByType(TimeslotType.CLASS)).thenReturn(List.of(slot));
+        when(sessionRepo.findByScheduleId(1L)).thenReturn(List.of(session, otherSession));
+        when(batchRepo.findById(5L)).thenReturn(Optional.of(batch));
+        when(batchRepo.findById(6L)).thenReturn(Optional.of(otherBatch));
+
+        byte[] pdf = service.exportPdf(1L, PdfExportService.View.BATCH, null);
+
+        assertTrue(pdf.length > 1000);
+        assertEquals('%', pdf[0]);
+        assertEquals('P', pdf[1]);
+        assertEquals('D', pdf[2]);
+        assertEquals('F', pdf[3]);
+    }
 }

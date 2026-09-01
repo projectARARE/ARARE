@@ -55,9 +55,9 @@ public class ImpactAnalyzer {
         return impacted;
     }
 
-    // ------------------------------------------------------------------
+    // 
     // Seed selection
-    // ------------------------------------------------------------------
+    // 
 
     private List<Long> findInitialSessions(DisruptionRequest event, List<ClassSession> sessions) {
         List<Long> initial = sessions.stream()
@@ -114,9 +114,9 @@ private boolean matchesDay(ClassSession s, DisruptionRequest event) {
         return s.getTimeslot() != null && s.getTimeslot().getDay().name().equals(disruptionDay);
     }
 
-    // ------------------------------------------------------------------
+    // 
     // Expansion rule
-    // ------------------------------------------------------------------
+    // 
 
 // Controls how far BFS expands.
 // Currently expands all dependency types — every session sharing a resource

@@ -73,9 +73,9 @@ public class CsvEntityUpserter {
         };
     }
 
-    // =========================================================================
+    // 
     // Entity upserts
-    // =========================================================================
+    // 
 
     private boolean upsertTimeslot(Map<String, String> row, int rowNumber, ImportContext context) {
         SchoolDay day = CsvUtils.parseEnum(SchoolDay.class, CsvUtils.required(row, "day", rowNumber));
@@ -324,9 +324,9 @@ public class CsvEntityUpserter {
         return created;
     }
 
-    // =========================================================================
+    // 
     // Value resolvers (token columns → managed entity references)
-    // =========================================================================
+    // 
 
     private List<Building> resolveBuildings(Set<String> names, ImportContext context) {
         List<Building> resolved = new ArrayList<>();
@@ -392,9 +392,9 @@ public class CsvEntityUpserter {
         return "DEPT:" + subjectCode;
     }
 
-    // =========================================================================
+    // 
     // Small helpers
-    // =========================================================================
+    // 
 
     private static int parseRequiredInt(Map<String, String> row, String column, int rowNumber) {
         return Integer.parseInt(CsvUtils.required(row, column, rowNumber));

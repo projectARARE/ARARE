@@ -49,9 +49,9 @@ import java.util.List;
 @AllArgsConstructor
 public class TimetableSolution {
 
-    // ------------------------------------------------------------------
+    // 
     // Problem Facts – the solver reads these; they never change
-    // ------------------------------------------------------------------
+    // 
 
     // All schedulable timeslots (type == CLASS). 
     @ValueRangeProvider(id = "timeslotRange")
@@ -107,16 +107,16 @@ public class TimetableSolution {
     @ProblemFactCollectionProperty
     private List<DisruptionConstraintFact> disruptionFacts = List.of();
 
-    // ------------------------------------------------------------------
+    // 
     // Planning Entities – the solver assigns teacher/room/timeslot here
-    // ------------------------------------------------------------------
+    // 
 
     @PlanningEntityCollectionProperty
     private List<ClassSession> sessions;
 
-    // ------------------------------------------------------------------
+    // 
     // Score
-    // ------------------------------------------------------------------
+    // 
 
     @PlanningScore
     private HardMediumSoftScore score;

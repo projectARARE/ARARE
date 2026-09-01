@@ -2,7 +2,7 @@
 
 **A**daptive **R**eal-time **A**nalysis and **R**e-evaluation **E**ngine — a university timetable scheduling platform.
 
-ARAR builds and maintains optimized weekly timetables. Operators load master data, run constraint-based schedule generation (Timefold Solver), inspect scores, handle disruptions/events with partial re-solving, and export the result. It is a Spring Boot backend with a React/TypeScript operator console.
+ARARE builds and maintains optimized weekly timetables. Operators load master data, run constraint-based schedule generation (Timefold Solver), inspect scores, handle disruptions/events with partial re-solving, and export the result. It is a Spring Boot backend with a React/TypeScript operator console.
 
 > **Authentication is out of scope by design.** ARARE is intended to run on a university's own infrastructure (local network / single tenant). The REST API is unauthenticated — keep the backend off the public internet and protect it at the network layer or behind a gateway.
 

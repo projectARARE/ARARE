@@ -45,6 +45,11 @@ public class TimeslotTopologyValidator {
                 throw new IllegalStateException(
                     "UniversityConfig invalid: breakSlotIndices cannot be negative.");
             }
+            if (breakIdx >= cfg.getTimeslotsPerDay()) {
+                throw new IllegalStateException(
+                    "UniversityConfig invalid: breakSlotIndices must be less than timeslotsPerDay ("
+                        + cfg.getTimeslotsPerDay() + ").");
+            }
         }
     }
 }

@@ -314,7 +314,9 @@ public class ClassSessionServiceImpl implements ClassSessionService {
                     + "'. Non-lab sessions for '" + s.getSubject().getName()
                     + "' must be scheduled there.");
         }
-    }    private static Long scheduleIdOf(ClassSession s) {
+    }
+
+    private static Long scheduleIdOf(ClassSession s) {
         return s.getSchedule() != null ? s.getSchedule().getId() : null;
     }
 

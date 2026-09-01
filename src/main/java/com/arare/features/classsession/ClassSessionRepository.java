@@ -50,7 +50,7 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
         @Param("teacherId") Long teacherId
     );
 
-    // ─── Cross-schedule availability (Prompt 3) ─────────────────────────────
+    // Cross-schedule availability
     // Sessions that already book a teacher in some OTHER ACTIVE (live)
     // schedule. Both the manual-PATCH gate and the solver busy-interval facts
     // feed off these two queries so a teacher is never double-booked across
@@ -117,7 +117,7 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
         @Param("roomId") Long roomId
     );
 
-    // ─── Cascade-delete helpers ──────────────────────────────────────────────
+    // Cascade-delete helpers
 
     @Transactional @Modifying
     @Query("DELETE FROM ClassSession cs WHERE cs.schedule.id = :scheduleId")
@@ -145,7 +145,7 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
            "(SELECT b.id FROM Batch b WHERE b.department.id = :departmentId)")
     void deleteByDepartmentIdViaBatch(@Param("departmentId") Long departmentId);
 
-    // ─── SET NULL helpers (keeps sessions, unassigns the planning variable) ──
+    // SET NULL helpers (keeps sessions, unassigns the planning variable)
 
     @Transactional @Modifying
     @Query("UPDATE ClassSession cs SET cs.teacher = null WHERE cs.teacher.id = :teacherId")
@@ -167,12 +167,18 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
     @Query("UPDATE ClassSession cs SET cs.room = null " +
            "WHERE cs.room.id IN (SELECT r.id FROM Room r WHERE r.building.id = :buildingId)")
     void clearRoomsByBuildingId(@Param("buildingId") Long buildingId);
-    // ��� Single-teacher-per-subject-section guard ����������������������������
-    // Serves the manual-edit gate in ClassSessionServiceImpl: finds every
-    // OTHER session for the same subject and effective batch (lectures key by
-    // cs.batch, section-based labs by cs.section.batch) so a re-assignment
-    // cannot introduce a second teacher for that subject.
-
+    /**
+     * Manual-edit gate: finds every OTHER session for the same subject and
+     * effective batch (lectures key by {@code batch}, section-based labs by
+     * {@code section.batch}) so a re-assignment cannot introduce a second
+     * teacher for that subject.
+     *
+     * @param scheduleId       the schedule being edited
+     * @param subjectId        the subject whose sessions are being checked
+     * @param effectiveBatchId the effective batch (batch or section's batch)
+     * @param excludeId        the session currently being re-assigned
+     * @return the other sessions for that subject and effective batch
+     */
     @Query("SELECT cs FROM ClassSession cs WHERE cs.schedule.id = :scheduleId " +
            "AND cs.subject.id = :subjectId " +
            "AND (cs.batch.id = :effectiveBatchId OR cs.section.batch.id = :effectiveBatchId) " +
