@@ -607,5 +607,8 @@ export interface FeasibilityCheckResult {
   warningCount: number
   totalSessionsEstimate: number
   availableTimeslots: number
+  teacherCount: number
+  roomCount: number
+  recommendedSolvingTimeSeconds: number
   issues: FeasibilityIssue[]
 }

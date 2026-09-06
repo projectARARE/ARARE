@@ -53,6 +53,7 @@ export default function ScheduleGenerator() {
   const [error, setError] = useState<string | null>(null)
   const [feasibility, setFeasibility] = useState<FeasibilityCheckResult | null>(null)
   const [checkingFeasibility, setCheckingFeasibility] = useState(false)
+  const [timeTouched, setTimeTouched] = useState(false)
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [jobStartedAt, setJobStartedAt] = useState<number | null>(null)
@@ -147,6 +148,12 @@ export default function ScheduleGenerator() {
     setPreAllocations((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const applyRecommendedTime = (result: FeasibilityCheckResult | null) => {
+    if (result?.recommendedSolvingTimeSeconds && !timeTouched) {
+      setForm((f) => ({ ...f, solvingTimeSeconds: result.recommendedSolvingTimeSeconds }))
+    }
+  }
+
   const handleGenerate = async () => {
     if (!form.name.trim()) { setError('Schedule name is required'); return }
     if (form.scope === 'DEPARTMENT' && !form.departmentId) {
@@ -186,6 +193,7 @@ export default function ScheduleGenerator() {
           const request = buildRequest()
           const result = await scheduleApi.checkFeasibility(request)
           setFeasibility(result)
+          applyRecommendedTime(result)
           if (wizardStep < 4) setWizardStep(4)
         } catch {
           // Keep original generation error visible if feasibility endpoint also fails.
@@ -227,6 +235,7 @@ export default function ScheduleGenerator() {
     try {
       const result = await scheduleApi.checkFeasibility(buildRequest())
       setFeasibility(result)
+      applyRecommendedTime(result)
       if (wizardStep < 4) setWizardStep(4)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Feasibility check failed')
@@ -694,15 +703,25 @@ export default function ScheduleGenerator() {
                 <input
                   type="range"
                   min={10}
-                  max={300}
+                  max={Math.max(300, form.solvingTimeSeconds ?? 300)}
                   step={10}
                   value={form.solvingTimeSeconds ?? 30}
-                  onChange={(e) => setForm({ ...form, solvingTimeSeconds: +e.target.value })}
+                  onChange={(e) => {
+                    setTimeTouched(true)
+                    setForm({ ...form, solvingTimeSeconds: +e.target.value })
+                  }}
                   className="w-full accent-cyan-500"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
                   {TIME_MARKS.map((m) => <span key={m}>{timeLabel(m)}</span>)}
                 </div>
+                {feasibility?.recommendedSolvingTimeSeconds && (
+                  <p className="mt-1 text-xs text-cyan-700">
+                    Recommended: {timeLabel(feasibility.recommendedSolvingTimeSeconds)} for
+                    {' '}~{feasibility.totalSessionsEstimate} sessions × {feasibility.teacherCount} teachers × {feasibility.roomCount} rooms
+                    {' '}- adopted automatically after Check Feasibility.
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -766,6 +785,7 @@ export default function ScheduleGenerator() {
                 </span>
                 <span className="ml-2 text-xs text-gray-600">
                   ~{feasibility.totalSessionsEstimate} sessions - {feasibility.availableTimeslots} slots
+                  {' · '}solving time {timeLabel(feasibility.recommendedSolvingTimeSeconds)}
                 </span>
               </div>
             </div>

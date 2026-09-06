@@ -68,7 +68,7 @@ public class FeasibilityCheckService {
             issues.add(error("BATCH",
                     "No batches found for the selected scope. Configure batches before generating a schedule.",
                     null, null));
-            return result(issues, 0, classTimeslotCount);
+            return result(issues, 0, classTimeslotCount, teachers.size(), rooms.size());
         }
 
         // Force-load lazy associations used in the checks below
@@ -107,7 +107,7 @@ public class FeasibilityCheckService {
             issues.add(error("TIMESLOT",
                     "No CLASS-type timeslots are configured. Add timeslots before generating a schedule.",
                     null, null));
-            return result(issues, 0, 0);
+            return result(issues, 0, 0, teachers.size(), rooms.size());
         }
 
         //  3. Subject → teacher qualification check (ERROR if none) 
@@ -260,12 +260,14 @@ public class FeasibilityCheckService {
     //  actually inside the schedule's teacher scope.
     checkTeacherAllotments(issues, batches, sections, subjects, teachers);
 
-        log.info("Feasibility check for req={}: {} errors, {} warnings, ~{} sessions",
+        int recommended = SolvingTimeRecommender.recommend(totalSessions, teachers.size(), rooms.size(), classTimeslotCount);
+        log.info("Feasibility check for req={}: {} errors, {} warnings, ~{} sessions, "
+                        + "{} teachers x {} rooms x {} slots -> recommend {}s solve",
                 req.name(), issues.stream().filter(i -> i.severity() == FeasibilityIssue.Severity.ERROR).count(),
                 issues.stream().filter(i -> i.severity() == FeasibilityIssue.Severity.WARNING).count(),
-                totalSessions);
+                totalSessions, teachers.size(), rooms.size(), classTimeslotCount, recommended);
 
-        return result(issues, totalSessions, classTimeslotCount);
+        return result(issues, totalSessions, classTimeslotCount, teachers.size(), rooms.size());
     }
 
 
@@ -680,11 +682,14 @@ public class FeasibilityCheckService {
     }
 
     private static FeasibilityCheckResult result(List<FeasibilityIssue> issues,
-                                                  int totalSessions, int timeslots) {
+                                                  int totalSessions, int timeslots,
+                                                  int teacherCount, int roomCount) {
         // Sort: errors first, then warnings
         issues.sort(Comparator.comparing(i -> i.severity() == FeasibilityIssue.Severity.ERROR ? 0 : 1));
         long errors   = issues.stream().filter(i -> i.severity() == FeasibilityIssue.Severity.ERROR).count();
         long warnings = issues.stream().filter(i -> i.severity() == FeasibilityIssue.Severity.WARNING).count();
-        return new FeasibilityCheckResult(errors == 0, (int) errors, (int) warnings, totalSessions, timeslots, issues);
+        int recommended = SolvingTimeRecommender.recommend(totalSessions, teacherCount, roomCount, timeslots);
+        return new FeasibilityCheckResult(errors == 0, (int) errors, (int) warnings, totalSessions,
+                timeslots, teacherCount, roomCount, recommended, issues);
     }
 }

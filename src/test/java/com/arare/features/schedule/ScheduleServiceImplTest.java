@@ -90,7 +90,7 @@ class ScheduleServiceImplTest {
         ScheduleRequest req = new ScheduleRequest("Term 1", ScheduleScope.DEPARTMENT,
             null, null, null, null, null, null, 30, null, null);
         when(feasibilityCheckService.check(req))
-            .thenReturn(new FeasibilityCheckResult(true, 0, 0, 12, 40, List.of()));
+            .thenReturn(new FeasibilityCheckResult(true, 0, 0, 12, 40, 0, 0, 1800, List.of()));
         when(repo.save(any())).thenAnswer(inv -> {
             Schedule saved = inv.getArgument(0);
             saved.setId(10L);
@@ -112,6 +112,7 @@ class ScheduleServiceImplTest {
         ScheduleRequest req = new ScheduleRequest("Term 1", ScheduleScope.DEPARTMENT,
             null, null, null, null, null, null, 30, null, null);
         when(feasibilityCheckService.check(req)).thenReturn(new FeasibilityCheckResult(false, 2, 0, 12, 8,
+            0, 0, 1800,
             List.of(new FeasibilityIssue(FeasibilityIssue.Severity.ERROR, "BATCH",
                 "No batches found for the selected scope.", null, null))));
 
@@ -127,7 +128,7 @@ class ScheduleServiceImplTest {
         ScheduleRequest req = new ScheduleRequest("Term 1", ScheduleScope.DEPARTMENT,
             99L, null, null, null, null, null, 30, null, null);
         when(feasibilityCheckService.check(req))
-            .thenReturn(new FeasibilityCheckResult(true, 0, 0, 12, 40, List.of()));
+            .thenReturn(new FeasibilityCheckResult(true, 0, 0, 12, 40, 0, 0, 1800, List.of()));
         when(repo.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.generate(req));

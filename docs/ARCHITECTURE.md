@@ -206,6 +206,11 @@ the worker runs on a separate thread.
 (`application.properties`); the per-request `solvingTimeSeconds` overrides it via
 a `SolverConfigOverride`. `environment-mode = REPRODUCIBLE`.
 
+The frontend pre-fills `solvingTimeSeconds` from the feasibility check's
+`recommendedSolvingTimeSeconds` ([FEASIBILITY_CHECK.md §9](algorithms/FEASIBILITY_CHECK.md))
+rather than relying on the 30s default, which is only adequate for toy-scale
+problems.
+
 ---
 
 ## 5. CORS

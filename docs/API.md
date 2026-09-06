@@ -204,6 +204,12 @@ Unique on (`day`, `start_time`, `end_time`); `endTime` must be after `startTime`
 `ScheduleRequest.preAllocations` items are `PreAllocationSpec{batchId, subjectId, teacherId?, roomId?, timeslotId?}` (timeslotId optional → only teacher/room pinned).
 Generate runs a feasibility check first; if infeasible → `422`.
 
+`FeasibilityCheckResult`: `{feasible, errorCount, warningCount, totalSessionsEstimate,
+availableTimeslots, teacherCount, roomCount, recommendedSolvingTimeSeconds, issues[]}`.
+`recommendedSolvingTimeSeconds` is the solve wall-clock derived from the exact
+scope (see [FEASIBILITY_CHECK.md §9](algorithms/FEASIBILITY_CHECK.md)) and is what
+the frontend pre-fills into the Solve Time control.
+
 ## Pre-Allocations — `/api/v1/pre-allocations`
 | Method | Path | Purpose | Body |
 | --- | --- | --- | --- |

@@ -46,7 +46,7 @@ cd frontend && npm run build   # frontend type-check + production build
 
 1. Load master data — institutes, departments, buildings, rooms, batches/sections, teachers, subjects, timeslots.
 2. Set the active **University Config** (working days, periods/day, max classes/day, break slots).
-3. **Generate** a schedule (Timefold solves for ~30s by default). Inspect the score breakdown.
+3. **Generate** a schedule. Run **Check Feasibility** first — it returns a recommended solve time derived from the problem scale (sessions × teachers × rooms × timeslots) that the timer pre-fills, so the solver gets the wall-clock it actually needs rather than the 30s flat default. Inspect the score breakdown.
 4. **Edit manually** (drag-and-drop) or **handle disruptions/events** → a partial re-solve repairs only the impacted sessions.
 5. **Export** to Excel / PDF / CSV.
 
@@ -69,6 +69,7 @@ Start here, then follow the links for depth.
 | Disruption impact analysis | [docs/algorithms/IMPACT_ANALYSIS.md](docs/algorithms/IMPACT_ANALYSIS.md) |
 | Pre-allocations | [docs/algorithms/PREALLOCATION.md](docs/algorithms/PREALLOCATION.md) |
 | Pre-solve feasibility check | [docs/algorithms/FEASIBILITY_CHECK.md](docs/algorithms/FEASIBILITY_CHECK.md) |
+| Solve-time recommendation | [docs/algorithms/FEASIBILITY_CHECK.md](docs/algorithms/FEASIBILITY_CHECK.md) §9 |
 | CSV / relational import | [docs/algorithms/DATA_IMPORT.md](docs/algorithms/DATA_IMPORT.md) |
 | Excel / PDF export | [docs/algorithms/EXPORT.md](docs/algorithms/EXPORT.md) |
 | Cascade deletion | [docs/algorithms/CASCADE_DELETION.md](docs/algorithms/CASCADE_DELETION.md) |

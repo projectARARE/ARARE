@@ -1,0 +1,134 @@
+{
+  "scale": "small",
+  "seedMode": "sequence",
+  "solverBudgetSeconds": 1050,
+  "timestamp": "2026-09-06T16:28:29+0530",
+  "scope": {
+    "teacherIds": 20,
+    "roomIds": 12,
+    "resolveMs": 142
+  },
+  "capacityMath": {
+    "rows": [
+      "D01-S1: 8x6h -> demand=48h vs 3 teachers x 2ch = 90h",
+      "D01-S2: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
+      "D01-S3: 8x6h -> demand=48h vs 3 teachers x 2ch = 90h",
+      "D01-S4: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
+      "D01-S5: 8x4h -> demand=32h vs 3 teachers x 1ch = 90h",
+      "D01-S6: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
+      "D01-L1: 8x2h -> demand=16h vs 2 teachers x 2ch = 60h"
+    ],
+    "shortSubjects": []
+  },
+  "feasibility": {
+    "feasible": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "totalSessionsEstimate": 208,
+    "availableTimeslots": 42,
+    "teacherCount": 20,
+    "roomCount": 12,
+    "recommendedSolvingTimeSeconds": 525
+  },
+  "solveJob": {
+    "status": "SUCCEEDED",
+    "bestScore": "0hard/-680medium/-802soft",
+    "elapsedMillis": 1050113,
+    "scheduleId": 5
+  },
+  "schedule": {
+    "status": "DRAFT",
+    "score": "0hard/-680medium/-802soft"
+  },
+  "sessions": {
+    "total": 208,
+    "assignedTeacher": 208,
+    "assignedRoom": 208,
+    "assignedTimeslot": 208
+  },
+  "density": {
+    "batchSlotCoverageMin": 33,
+    "batchSlotCoverageAvg": 33.0,
+    "ofWeekSlots": 35
+  },
+  "scoreExplanation": {
+    "score": "0hard/-680medium/-802soft",
+    "feasible": true,
+    "hardScore": 0,
+    "breakdown": [
+      {
+        "constraint": "Batch missing midday break",
+        "level": "MEDIUM",
+        "matchCount": 6,
+        "impact": "0hard/-6medium/0soft"
+      },
+      {
+        "constraint": "Cognitive load: same subject too many times per day",
+        "level": "MEDIUM",
+        "matchCount": 1,
+        "impact": "0hard/-1medium/0soft"
+      },
+      {
+        "constraint": "Session outside department buildings",
+        "level": "MEDIUM",
+        "matchCount": 208,
+        "impact": "0hard/-208medium/0soft"
+      },
+      {
+        "constraint": "Student idle gap",
+        "level": "MEDIUM",
+        "matchCount": 319,
+        "impact": "0hard/-319medium/0soft"
+      },
+      {
+        "constraint": "Teacher building change between consecutive classes",
+        "level": "MEDIUM",
+        "matchCount": 32,
+        "impact": "0hard/-32medium/0soft"
+      },
+      {
+        "constraint": "Teacher idle gap",
+        "level": "MEDIUM",
+        "matchCount": 114,
+        "impact": "0hard/-114medium/0soft"
+      },
+      {
+        "constraint": "Batch building change between consecutive classes",
+        "level": "SOFT",
+        "matchCount": 139,
+        "impact": "0hard/0medium/-139soft"
+      },
+      {
+        "constraint": "Non-lab multi-slot should be consecutive",
+        "level": "SOFT",
+        "matchCount": 38,
+        "impact": "0hard/0medium/-38soft"
+      },
+      {
+        "constraint": "Room stability for subject and batch",
+        "level": "SOFT",
+        "matchCount": 209,
+        "impact": "0hard/0medium/-209soft"
+      },
+      {
+        "constraint": "Session moved from previous timetable",
+        "level": "SOFT",
+        "matchCount": 208,
+        "impact": "0hard/0medium/-208soft"
+      },
+      {
+        "constraint": "Teacher building preference violated",
+        "level": "SOFT",
+        "matchCount": 208,
+        "impact": "0hard/0medium/-208soft"
+      }
+    ]
+  },
+  "exports": {
+    "csv": 25028,
+    "pdf": 32020,
+    "excel": 6048,
+    "relationalZip": 34668
+  },
+  "totalElapsedSeconds": 1057.782
+}

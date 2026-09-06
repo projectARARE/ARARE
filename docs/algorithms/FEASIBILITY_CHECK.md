@@ -112,5 +112,28 @@ other teacher and the schedule is unsolvable.
 * `result(...)` sorts issues (errors first), counts them, and sets
   `feasible = errors == 0`.
 
-The result reports `totalSessions` and `classTimeslotCount` so the UI can show
-utilisation at a glance.
+The result reports `totalSessions`, `classTimeslotCount`, `teacherCount` and
+`roomCount` so the UI can show utilisation at a glance.
+
+## 9. Recommended solve time (`recommendedSolvingTimeSeconds`)
+
+`SolvingTimeRecommender.recommend(sessions, teachers, rooms, classTimeslots)`
+derives the wall-clock the solver should be given for the *exact* scope of the
+request:
+
+```
+seconds = ceil(sessions x teachers x rooms x classTimeslots / 8000) x MARGIN_FACTOR
+```
+
+`8000` is the measured Construction-Heuristic candidate evaluations/sec (each CH
+step ranks every teacher × room × timeslot value for one session). `MARGIN_FACTOR`
+(4.0) is calibrated on the reference dataset: with ×2 the small scope
+(208 sessions × 20 teachers × 12 rooms × 42 slots ≈ 525s) still ended at −1 hard
+after 480s; at ×4 (~1050s) the same data reaches **0 hard**, all 208 sessions
+assigned, and every batch at full density (33 of 35 slots). Results are clamped
+to [30, 1800] seconds.
+
+The frontend pre-fills this value into the Solve Time control after a successful
+feasibility check and expands the slider range to fit it, so the E2E flow and the
+UI both run the solver with the budget the problem actually requires instead of
+the 30s `timefold.solver.termination.spent-limit` application default.
