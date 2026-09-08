@@ -1,5 +1,6 @@
 package com.arare.features.impact;
 
+import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.classsession.ClassSessionRepository;
 import com.arare.features.room.RoomRepository;
 import com.arare.features.schedule.Schedule;
@@ -104,6 +105,43 @@ class DisruptionServiceImplTest {
             DisruptionType.TEACHER_UNAVAILABLE, null, null, "Absent");
 
         assertThrows(IllegalArgumentException.class, () -> service.applyDisruption(1L, request));
+    }
+
+    @Test
+    void applyDisruption_rejectsDatelessTeacherDisruption() {
+        Schedule schedule = new Schedule();
+        schedule.setId(1L);
+        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
+
+        DisruptionRequest request = new DisruptionRequest(
+            DisruptionType.TEACHER_UNAVAILABLE, 5L, null, "Absent");
+
+        assertThrows(IllegalArgumentException.class, () -> service.applyDisruption(1L, request));
+    }
+
+    @Test
+    void applyDisruption_rejectsDatelessRoomDisruption() {
+        Schedule schedule = new Schedule();
+        schedule.setId(1L);
+        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
+
+        DisruptionRequest request = new DisruptionRequest(
+            DisruptionType.ROOM_UNAVAILABLE, 6L, null, "Flooded");
+
+        assertThrows(IllegalArgumentException.class, () -> service.applyDisruption(1L, request));
+    }
+
+    @Test
+    void applyDisruption_rejectsTeacherDisruptionForUnknownTeacher() {
+        Schedule schedule = new Schedule();
+        schedule.setId(1L);
+        when(scheduleRepo.findById(1L)).thenReturn(Optional.of(schedule));
+        when(teacherRepo.findById(5L)).thenReturn(Optional.empty());
+
+        DisruptionRequest request = new DisruptionRequest(
+            DisruptionType.TEACHER_UNAVAILABLE, 5L, LocalDate.of(2026, 8, 10), "Absent");
+
+        assertThrows(ResourceNotFoundException.class, () -> service.applyDisruption(1L, request));
     }
 
     @Test

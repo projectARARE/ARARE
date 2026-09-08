@@ -20,7 +20,7 @@ app.
 | Language / runtime | Java 21, Spring Boot 3.3.0 |
 | Constraint solver | Timefold Solver 1.14.0 (`timefold-solver-spring-boot-starter`, `timefold-solver-core`) — the community successor to OptaPlanner |
 | Persistence | Spring Data JPA (Hibernate), PostgreSQL in production, H2 in tests |
-| Migrations | Flyway (SQL scripts in `src/main/resources/db/migration`, `V1`…`V11`) |
+| Migrations | Flyway (SQL scripts in `src/main/resources/db/migration`, `V1`…`V13`; V7 is split into `V7_1`/`V7_2`) |
 | DTO mapping | **Hand-written** mapping in service classes. A `mapstruct` dependency is declared in `pom.xml` and its annotation processor is registered, but **no `@Mapper` interface exists** in the codebase — mapping is done manually (see the many `toResponse(...)` methods). |
 | Scheduling / async | Spring `@Async` on a dedicated `ThreadPoolTaskExecutor` (`solveTaskExecutor`) |
 | Excel export | Apache POI 5.2.5 (`poi-ooxml`) |
@@ -48,6 +48,38 @@ JpaRepository  (thin, query-method only)
    │
    ▼
 @Entity  (JPA, extends BaseEntity)  ⇄  PostgreSQL
+```
+
+### System component diagram
+
+```mermaid
+flowchart LR
+    subgraph FE["Frontend · React 18 + TS (Vite)"]
+        SW["Wizard / manual edit"]
+        VW["Timetable viewer"]
+        CH["Feasibility · solve-time"]
+    end
+    API{{"Spring Boot · /api/v1"}}
+    subgraph BE["Backend modules (features/)"]
+        MD["master data · schedule · sessions\npreallocation · feasibility"]
+        SOLVE["solvejob · solver · scheduler"]
+        IMPACT["impact"]
+        IO["dataimport · export · cascadedeletion"]
+    end
+    JOB["SolveJobRunner\n@Async solveTaskExecutor"]
+    TF["Timefold Solver\n(in-memory, no DB)"]
+    DB[("PostgreSQL\nFlyway V1–V13")]
+    FE --> API
+    API --> MD
+    API --> IO
+    MD --> SOLVE
+    IMPACT --> SOLVE
+    SOLVE --> JOB
+    JOB --> TF
+    JOB --> DB
+    MD --> DB
+    IO --> DB
+    SW -. "poll /solve-jobs/{id} (useSolveJobPoll)" .-> API
 ```
 
 - **Controllers** (`features/**/*Controller`) expose REST only. They do not
@@ -192,6 +224,28 @@ the worker runs on a separate thread.
    `ApplicationReadyEvent` and marks any leftover `QUEUED`/`RUNNING` jobs
    `FAILED` (so they cannot block schedule deletion forever).
 
+### Lifecycle state machine
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> QUEUED : "submitGenerate / submitPartialResolve"
+    QUEUED --> RUNNING : "worker starts (guarded, writes problemId)"
+    QUEUED --> CANCELLED : "cancel (guarded)"
+    QUEUED --> FAILED : "startup recovery sweeper"
+    RUNNING --> SUCCEEDED : "solve + persist atomically (guarded)"
+    RUNNING --> CANCELLED : "cancel / terminateEarly (guarded)"
+    RUNNING --> FAILED : "exception markFailed / recovery sweeper"
+    SUCCEEDED --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
+    note right of RUNNING
+        Every transition is a guarded bulk UPDATE
+        (WHERE status IN (...) · @Version not bumped) —
+        exactly one concurrent writer wins.
+    end note
+```
+
 ### Thread pool (`AsyncConfig`)
 `solveTaskExecutor` — `ThreadPoolTaskExecutor`:
 
@@ -265,6 +319,49 @@ ScheduleServiceImpl.generate  (@Transactional)
             └─ QUEUED/RUNNING→SUCCEEDED + persist (one tx)  [cancel wins → skip]
    ◀── 202 Accepted + SolveJobResponse (id, status=QUEUED)
 poll GET /api/v1/solve-jobs/{id}
+```
+
+### Generate flow (sequence diagram)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as ScheduleGenerator.tsx
+    participant API as ScheduleController
+    participant SV as ScheduleServiceImpl
+    participant FZ as FeasibilityCheckService
+    participant SJ as SolveJobService
+    participant RU as SolveJobRunner (@Async)
+    participant TF as Timefold Solver
+    participant PS as SolutionPersister
+    participant DB as PostgreSQL
+
+    UI->>API: POST /api/v1/schedules/generate
+    API->>SV: generate(req)
+    SV->>FZ: check(req)
+    alt infeasible
+        FZ-->>SV: constraint issues
+        SV-->>API: throw InfeasibleScheduleException
+        API-->>UI: 422 + diagnostics
+    else feasible
+        SV->>DB: insert Schedule (DRAFT) + pre-allocations
+        SV->>SJ: submitGenerate(scheduleId, req)
+        SJ->>DB: insert SolveJob (QUEUED)
+        SJ-->>API: 202 SolveJobResponse
+        API-->>UI: 202 Accepted {jobId}
+    end
+    Note over SJ,RU: afterCommit hook starts worker only after the job row commits
+    RU->>DB: guarded QUEUED→RUNNING (writes problemId)
+    RU->>RU: build problem (read-only tx)
+    RU->>TF: solver.solve(problem) — no DB open
+    activate TF
+    TF-->>RU: best solution
+    deactivate TF
+    RU->>DB: guarded QUEUED/RUNNING→SUCCEEDED (cancel wins → skip)
+    RU->>PS: persist(schedule, solution) — same tx
+    PS->>DB: write assignments + score/explanation
+    UI->>API: poll GET /api/v1/solve-jobs/{id} (useSolveJobPoll)
+    API-->>UI: SUCCEEDED → open viewer
 ```
 
 ### Manual edit of a session

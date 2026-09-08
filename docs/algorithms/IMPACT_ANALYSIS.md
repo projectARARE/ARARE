@@ -108,10 +108,12 @@ closest first):
 | `SESSION_CANCELLED` | `s.id == affectedEntityId` |
 | `SPECIAL_EVENT` | `event.date() != null` **and** `matchesDay(s, event)` (day only) |
 
-`matchesDay` returns **false** when `event.date()` is null. This is deliberate:
-a dayless teacher/room block produces no `DisruptionConstraintFact` in the
-solver, so the preview must also report zero impact and degrade to a no-op
-rather than claiming impact and then doing nothing on re-solve.
+`matchesDay` returns **false** when `event.date()` is null. This is a safety net,
+not the primary guard: since a dayless teacher/room block would produce no
+`DisruptionConstraintFact` in the solver (and would otherwise wrongly claim
+impact and then do nothing on re-solve), `DisruptionServiceImpl.validateRequest`
+**rejects** `TEACHER_UNAVAILABLE` / `ROOM_UNAVAILABLE` without a date (400). A
+dayless `SPECIAL_EVENT` is still allowed and simply matches nothing.
 
 ## 4. `SESSION_CANCELLED` special case
 
@@ -136,6 +138,15 @@ cancelled session (no BFS) or builds the graph + runs `ImpactAnalyzer`. It then
 summarises impacted sessions (`DisruptionResponse.ImpactedSession`) with
 subject, batch label, teacher, room, day, and times. Used to show the operator
 the blast radius before committing.
+
+### Request validation (`validateRequest`)
+
+Applied before both preview and apply:
+
+* `affectedEntityId` **required** for every type except `SPECIAL_EVENT`.
+* `TEACHER_UNAVAILABLE` / `ROOM_UNAVAILABLE` **require a `date`** — a dateless
+  block would silently match nothing (400).
+* The affected entity must **exist**: Teacher / Room / Timeslot / Session
 
 ### `applyDisruption` (writes)
 
@@ -162,3 +173,24 @@ These facts feed the `disruptionViolation` HARD constraint (see
 the timetable. The `impactedSessionIds` list is what the partial-resolve job
 passes to `TimetableProblemBuilder`, which pins every *non*-impacted session and
 unlocks the impacted ones (see `SCHEDULING_SOLVER.md` §4.1).
+
+## 6. Impact flow diagram
+
+```mermaid
+flowchart TD
+    REQ["DisruptionRequest\n{type · affectedEntityId · date?}"] --> VAL["validateRequest\nentityId required (≠ SPECIAL_EVENT) · teacher/room need a date ·\nentity must exist → 400/404"]
+    VAL --> LOAD["load schedule sessions"]
+    LOAD --> CANCEL{"type == SESSION_CANCELLED?"}
+    CANCEL -- "yes" --> DIRECT["impacted = {affectedEntityId}\nno graph · no BFS · cancelSession clears timeslot directly"]
+    CANCEL -- "no" --> BUILD["DependencyGraphBuilder.build\nsame-day edges · TEACHER / ROOM / BATCH (effectiveBatch)"]
+    BUILD --> BFS["ImpactAnalyzer.analyze\nseed = isDirectlyAffected (+ unassigned when TIMESLOT_BLOCKED)\nBFS expansion · stop at locked nodes"]
+    DIRECT --> RESULT["impactedSessionIds (BFS order)"]
+    BFS --> RESULT
+    RESULT --> PIPE{"preview or apply?"}
+    PIPE -- "preview" --> RESP["DisruptionResponse\nimpacted summary (read-only, no solve)"]
+    PIPE -- "apply" --> EMPTY{"impacted empty?"}
+    EMPTY -- "yes" --> NOOP["completedNoop\nno solve job submitted"]
+    EMPTY -- "no" --> FACTS["buildFacts(request) → DisruptionConstraintFact rows\ndayless special event suppressed"]
+    FACTS --> SUB["ensureNoActiveJobForSchedule → submitPartialResolve\n(scheduleId · impactedIds · facts)"]
+    SUB --> JOB["SolveJob QUEUED → SolveJobRunner\nproblem: impacted unlocked · rest pinned\nfacts feed disruptionViolation (HARD) so the re-solve really moves things"]
+```

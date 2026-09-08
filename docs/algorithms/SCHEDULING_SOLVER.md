@@ -54,7 +54,7 @@ private Timeslot timeslot;
 
 ## 2. Constraint set
 
-`TimetableConstraintProvider.defineConstraints` returns ~40 constraints in three
+`TimetableConstraintProvider.defineConstraints` returns 43 constraints in three
 buckets. Overlap between two sessions is computed by
 `overlapsByPlannedDuration` (slot-number based; falls back to start/end time
 comparison when `slotNumber` is null). Most binary clash constraints use
@@ -282,3 +282,30 @@ generated or written inside its read-only transaction. It re-attaches the
 **latest partial-resolve disruption facts** (`latestPartialResolveFacts`) before
 `SolutionManager.explain`, so an infeasible partial resolve is re-scored with the
 same constraints and the breakdown matches the persisted score.
+
+## 9. Solver pipeline diagram
+
+```mermaid
+flowchart TD
+    REQ["ProblemBuildRequest\nschedule · scope · impactedSessionIds · disruptionFacts"] --> GW["JpaProblemDataGateway.loadFacts\nsubjects · batches · sections · rooms · teachers · timeslots"]
+    GW --> TV["TimeslotTopologyValidator.validate\nCLASS timeslot topology vs active UniversityConfig"]
+    TV --> SESS{"sessions exist?"}
+    SESS -- "yes" --> REUSE["reuse persisted sessions"]
+    SESS -- "no" --> GEN["StandardSessionGenerator\nlectures whole-batch · labs per-section"]
+    REUSE --> PARENT["ParentLockedSessionApplier\n(only when a parent schedule exists)\nlocked placements copied from parent schedule"]
+    GEN --> PARENT
+    PARENT --> PRE["PreAllocationApplier\nfull pins · partial-pin facts (impacted sessions exempt)"]
+    PRE --> PR{"partial resolve?"}
+    PR -- "yes" --> UNLOCK["unlock impacted set · pin every non-impacted session"]
+    PR -- "no" --> LAZY
+    UNLOCK --> LAZY["LazyAssociationInitializer.initialize\n(eagerly materialize lazy associations before solve)"]
+    LAZY --> ALLOT["applyTeacherAllotments\n→ allowedTeacherIds (term-allotment gate)"]
+    ALLOT --> FACTS["assemble problem facts\nteacherBusyIntervals · roomBusyIntervals · previousAssignments\n(parent placements · or fresh churn baseline from current session rows)"]
+    FACTS --> SOL["TimetableSolution (`@PlanningSolution`)"]
+    SOL --> RUN["solver.solve(problem)\nin-memory · REPRODUCIBLE · no DB open · 30s cap (or solvingTimeSeconds)"]
+    RUN --> NULLSCORE{"score == null?"}
+    NULLSCORE -- "yes (truly unsolved)" --> THROW["throw — nothing persisted"]
+    NULLSCORE -- "no" --> FEAS{"hardScore >= 0?"}
+    FEAS -- "yes" --> DRAFT["SolutionPersister → schedule DRAFT\nscore + explanation persisted"]
+    FEAS -- "no (negative hard)" --> INF["SolutionPersister → best-effort rows written\nschedule INFEASIBLE (read-only, cannot activate)"]
+```

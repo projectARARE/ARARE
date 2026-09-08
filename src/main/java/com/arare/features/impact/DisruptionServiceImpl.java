@@ -161,9 +161,45 @@ public class DisruptionServiceImpl implements DisruptionService {
     }
 
     private void validateRequest(DisruptionRequest request) {
-        boolean needsEntity = request.type() != DisruptionType.SPECIAL_EVENT;
-        if (needsEntity && request.affectedEntityId() == null) {
-            throw new IllegalArgumentException("affectedEntityId is required for disruption type " + request.type());
+        switch (request.type()) {
+            case TEACHER_UNAVAILABLE, ROOM_UNAVAILABLE -> {
+                if (request.affectedEntityId() == null) {
+                    throw new IllegalArgumentException(
+                            "affectedEntityId is required for disruption type " + request.type());
+                }
+                // Teacher/room unavailability only has meaning on a specific day; a
+                // null date would silently match nothing and degrade to a no-op.
+                if (request.date() == null) {
+                    throw new IllegalArgumentException(
+                            request.type() + " requires a date");
+                }
+                if (request.type() == DisruptionType.TEACHER_UNAVAILABLE) {
+                    teacherRepo.findById(request.affectedEntityId())
+                            .orElseThrow(() -> new ResourceNotFoundException("Teacher", request.affectedEntityId()));
+                } else {
+                    roomRepo.findById(request.affectedEntityId())
+                            .orElseThrow(() -> new ResourceNotFoundException("Room", request.affectedEntityId()));
+                }
+            }
+            case TIMESLOT_BLOCKED -> {
+                if (request.affectedEntityId() == null) {
+                    throw new IllegalArgumentException(
+                            "affectedEntityId is required for disruption type " + request.type());
+                }
+                timeslotRepo.findById(request.affectedEntityId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Timeslot", request.affectedEntityId()));
+            }
+            case SESSION_CANCELLED -> {
+                if (request.affectedEntityId() == null) {
+                    throw new IllegalArgumentException(
+                            "affectedEntityId is required for disruption type " + request.type());
+                }
+                sessionRepo.findById(request.affectedEntityId())
+                        .orElseThrow(() -> new ResourceNotFoundException("ClassSession", request.affectedEntityId()));
+            }
+            default -> {
+                // SPECIAL_EVENT needs no entity and works dayless (facts are suppressed).
+            }
         }
     }
 

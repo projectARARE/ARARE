@@ -95,6 +95,7 @@ public class EventServiceImpl implements EventService {
         List<LocalDate> dates = eventDates(event);
 
         for (LocalDate date : dates) {
+            if (date == null) continue; // dayless event: teacher/room/timeslot facts are skipped (see buildFacts)
             for (var room : event.getAffectedRooms()) {
                 impacted.addAll(disruptionService.previewImpact(scheduleId,
                         new DisruptionRequest(DisruptionType.ROOM_UNAVAILABLE, room.getId(), date, event.getDescription()))

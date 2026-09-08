@@ -12,8 +12,10 @@ public class PreAllocationApplier {
     /**
      * Applies pre-allocations to the freshly generated sessions.
      *
-     * <p>A pre-allocation WITH a timeslot fully pins teacher + room + timeslot
-     * ({@code isLocked=true}). A pre-allocation WITHOUT a timeslot pins only the
+     * <p>A pre-allocation WITH a timeslot fully pins the slot ({@code isLocked=true})
+     * and fixes whichever of teacher/room the row explicitly carries — values left
+     * null are not overwritten, so a slot-only pin preserves the session's
+     * existing teacher/room. A pre-allocation WITHOUT a timeslot pins only the
      * teacher (and optionally room) via a {@link PreAllocationConstraintFact}:
      * the solver keeps those values (HARD constraint) while remaining free to
      * choose a compatible slot, because {@code @PlanningPin} would freeze the
@@ -48,9 +50,15 @@ public class PreAllocationApplier {
                         return;
                     }
                     if (pa.getTimeslot() != null) {
-                        // Full pin: teacher + room + timeslot fixed.
-                        s.setTeacher(pa.getTeacher());
-                        s.setRoom(pa.getRoom());
+                        // Full pin: pin whatever the pre-allocation carries —
+                        // teacher/room are only overwritten when explicitly set,
+                        // so a slot-only pin never wipes a pre-existing assignment.
+                        if (pa.getTeacher() != null) {
+                            s.setTeacher(pa.getTeacher());
+                        }
+                        if (pa.getRoom() != null) {
+                            s.setRoom(pa.getRoom());
+                        }
                         s.setTimeslot(pa.getTimeslot());
                         s.setLocked(true);
                     } else if (pa.getTeacher() != null) {

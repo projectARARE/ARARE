@@ -115,8 +115,9 @@ eagerly for the response DTO.
 
 * For each **locked** `PreAllocation` (`findLockedPreAllocations`), match
   generated sessions by `subject.id` + `effectiveBatch.id`:
-  * **Full pin** (`pa.timeslot != null`): set `teacher`, `room`, `timeslot`, and
-    `isLocked = true`.
+  * **Full pin** (`pa.timeslot != null`): fix the slot and `isLocked = true`;
+    teacher/room are pinned **only if the row carries them** — a slot-only pin
+    preserves an already-assigned teacher/room rather than wiping it.
   * **Partial pin** (`pa.timeslot == null`): set `teacher` (+`room`) and emit a
     `PreAllocationConstraintFact(sessionId, teacherId, roomId)`. The
     `preAllocationViolation` HARD constraint then forces the solver to keep those
@@ -129,6 +130,25 @@ eagerly for the response DTO.
 
 `PreAllocationConstraintFact` (`solver/PreAllocationConstraintFact.java`) is the
 problem-fact record consumed by `preAllocationViolation`.
+
+### Applier flow
+
+```mermaid
+flowchart TD
+    PA["locked PreAllocation\nschedule · batch · subject · teacher? · room? · timeslot?"] --> MATCH["match generated sessions\nsubject.id == pa.subject && effectiveBatch.id == pa.batch"]
+    MATCH --> LOCKED{"session.isLocked?"}
+    LOCKED -- "yes" --> SKIP["skip"]
+    LOCKED -- "no" --> IMP{"id ∈ impactedSessionIds?"}
+    IMP -- "yes" --> SKIP["skip — disruption may move it"]
+    IMP -- "no" --> TS{"pa.timeslot != null?"}
+    TS -- "full pin" --> FULL["pin timeslot (+ teacher/room if carried)\nisLocked = true → solver keeps pinned values;\nnull teacher/room preserve existing assignment"]
+    TS -- "partial pin" --> TEACH{"pa.teacher != null?"}
+    TEACH -- "yes" --> PART["set teacher (+ room)\nemit PreAllocationConstraintFact (HARD preAllocationViolation)\nslot stays free — avoids @PlanningPin unassigned risk"]
+    TEACH -- "no" --> SKIP
+    FULL --> NEXT["next pre-allocation"]
+    PART --> NEXT
+    SKIP --> NEXT
+```
 
 ## 5. Cancellation / cleanup
 

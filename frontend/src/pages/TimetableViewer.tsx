@@ -35,6 +35,31 @@ type HeatEntry = {
   notes: string[]
 }
 
+type DropPreview = { slotId: number; severity: 'hard' | 'soft' | 'clean'; label: string }
+
+function buildDropPreview(dragged: ClassSession, slot: Timeslot, sessions: ClassSession[]): DropPreview {
+  let hard = 0
+  let soft = 0
+
+  for (const other of sessions) {
+    if (other.id === dragged.id || other.timeslotId !== slot.id || other.day !== slot.day) continue
+    if (dragged.teacherId && other.teacherId === dragged.teacherId) hard++
+    if (dragged.roomId && other.roomId === dragged.roomId) hard++
+    if (dragged.batchId && other.batchId === dragged.batchId) hard++
+  }
+
+  if (hard === 0) {
+    for (const other of sessions) {
+      if (other.id === dragged.id || other.day !== slot.day || !dragged.batchId || other.batchId !== dragged.batchId) continue
+      if (dragged.subjectId && other.subjectId === dragged.subjectId) soft++
+    }
+  }
+
+  if (hard > 0) return { slotId: slot.id, severity: 'hard', label: `${hard} hard conflict(s) remain` }
+  if (soft > 0) return { slotId: slot.id, severity: 'soft', label: `${soft} soft issue(s)` }
+  return { slotId: slot.id, severity: 'clean', label: 'Looks clean — drop to place here' }
+}
+
 const STATUS_VARIANT: Record<string, 'gray' | 'green' | 'yellow' | 'red' | 'blue' | 'purple'> = {
   ACTIVE: 'green',
   PARTIAL: 'yellow',
@@ -237,6 +262,8 @@ export default function TimetableViewer() {
   const [hoveredSession, setHoveredSession] = useState<ClassSession | null>(null)
   const [conflictSession, setConflictSession] = useState<ClassSession | null>(null)
   const [backendSuggestions, setBackendSuggestions] = useState<ConflictSuggestion[] | null>(null)
+  const [draggedSession, setDraggedSession] = useState<ClassSession | null>(null)
+  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null)
 
   const [slotContextMenu, setSlotContextMenu] = useState<SlotContextMenuState | null>(null)
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null)
@@ -519,6 +546,10 @@ export default function TimetableViewer() {
       toast.error('Select an entity to disrupt')
       return
     }
+    if ((disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE') && !disruptionDate) {
+      toast.error('Select a date — teacher/room disruptions affect a specific day')
+      return
+    }
     setDisruptionPreviewing(true)
     setDisruptionPreview(null)
     try {
@@ -532,6 +563,14 @@ export default function TimetableViewer() {
   }
 
   const handleApplyDisruption = async () => {
+    if (!disruptionEntityId && disruptionType !== 'SPECIAL_EVENT') {
+      toast.error('Select an entity to disrupt')
+      return
+    }
+    if ((disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE') && !disruptionDate) {
+      toast.error('Select a date — teacher/room disruptions affect a specific day')
+      return
+    }
     setDisruptionApplying(true)
     try {
       const job = await scheduleApi.applyDisruption(scheduleId, buildDisruptionRequest())
@@ -959,6 +998,43 @@ export default function TimetableViewer() {
       label: `${section.batchName ?? `Batch #${section.batchId}`} · ${section.label}`,
     }))
 
+  const handleSlotDragHover = (slot: Timeslot | null) => {
+    if (!draggedSession || !slot) {
+      setDropPreview(null)
+      return
+    }
+    setDropPreview(buildDropPreview(draggedSession, slot, sessions))
+  }
+
+  const handleSlotDrop = async (slot: Timeslot) => {
+    const session = draggedSession
+    setDraggedSession(null)
+    setDropPreview(null)
+    if (!session) return
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      return
+    }
+    if (session.isLocked) {
+      toast.error('This session is locked — unlock it before dragging')
+      return
+    }
+    if (slot.id === session.timeslotId) return
+    try {
+      await sessionApi.updateAssignment(session.id, {
+        timeslotId: slot.id,
+        clearTimeslot: false,
+        locked: session.isLocked,
+      })
+      const label = `${slot.day} ${slot.startTime}-${slot.endTime}`
+      toast.success(`"${session.subjectName ?? 'Session'}" moved to ${label}`)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      setDropPreview(null)
+      toast.error(e instanceof Error ? e.message : 'Failed to move session')
+    }
+  }
+
   const renderGrid = () => (
     <TimetableGrid
       sessions={sessions}
@@ -971,6 +1047,12 @@ export default function TimetableViewer() {
       showUnplacedOnly={showUnplacedOnly}
       onSessionClick={openSessionDetail}
       onSessionHover={setHoveredSession}
+      onSessionDragStart={setDraggedSession}
+      onSessionDragEnd={() => { setDraggedSession(null); setDropPreview(null) }}
+      onSlotDragHover={handleSlotDragHover}
+      onSlotDrop={handleSlotDrop}
+      dragPreview={dropPreview}
+      draggedSessionId={draggedSession?.id ?? null}
       heatmapEnabled={heatmapEnabled}
       heatBySessionId={heatBySessionId}
       highlightedSessionIds={highlightedSessionIds}
@@ -1544,7 +1626,7 @@ export default function TimetableViewer() {
           {(disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Date (optional - limits to that day)
+                Date (required for teacher/room disruptions)
               </label>
               <input
                 type="date"

@@ -6,13 +6,56 @@ This document describes the JPA domain model. All entities extend
 declares its own `@PlanningId @Id` for Timefold.
 
 Tables are created by Flyway migrations (`src/main/resources/db/migration`,
-`V1`…`V11`); `spring.jpa.hibernate.ddl-auto=validate` in production, so the
+`V1`…`V13`); `spring.jpa.hibernate.ddl-auto=validate` in production, so the
 schema is owned by the migrations, not by Hibernate auto-DDL.
 
 Relationship conventions:
 - `@ManyToOne` sides are the owning side (they hold the FK column).
 - `@ManyToMany` sides listed below create a join table unless noted.
 - `@ElementCollection` creates a separate collection table.
+
+```mermaid
+erDiagram
+    INSTITUTE ||--o{ DEPARTMENT : "owns"
+    DEPARTMENT ||--o{ BATCH : "has"
+    DEPARTMENT ||--o{ SUBJECT : "offers (optional)"
+    DEPARTMENT ||--o{ TEACHER_ASSIGNMENT : "scopes allotment"
+    DEPARTMENT }o--o{ BUILDING : "buildingsAllowed"
+    BUILDING ||--o{ ROOM : "contains"
+    BATCH ||--o{ CLASS_SECTION : "lab split"
+    BATCH ||--o{ CLASS_SESSION : "attends"
+    BATCH ||--o{ SUBJECT_OFFERING : "takes"
+    BATCH ||--o{ TEACHER_ASSIGNMENT : "covers"
+    BATCH }o--o{ SUBJECT : "curriculum (legacy)"
+    BATCH }o--o| ROOM : "homeRoom"
+    CLASS_SECTION ||--o{ CLASS_SESSION : "lab session"
+    CLASS_SECTION ||--o{ SUBJECT_OFFERING : "takes"
+    CLASS_SECTION }o--o{ SUBJECT : "curriculum (legacy)"
+    SUBJECT ||--o{ CLASS_SESSION : "generates"
+    SUBJECT ||--o{ SUBJECT_OFFERING : "offered"
+    SUBJECT ||--o{ TEACHER_ASSIGNMENT : "allotted"
+    TEACHER ||--o{ TEACHER_ASSIGNMENT : "teaches"
+    TEACHER }o--o{ SUBJECT : "qualified"
+    SCHEDULE ||--o{ CLASS_SESSION : "contains"
+    SCHEDULE ||--o{ PRE_ALLOCATION : "pins"
+    SCHEDULE ||--o{ SOLVE_JOB : "drives"
+    SCHEDULE }o--o| SCHEDULE : "parent version"
+    BATCH ||--o{ PRE_ALLOCATION : "for"
+    SUBJECT ||--o{ PRE_ALLOCATION : "for"
+    PRE_ALLOCATION }o--o| TEACHER : "fixes (optional)"
+    PRE_ALLOCATION }o--o| ROOM : "fixes (optional)"
+    PRE_ALLOCATION }o--o| TIMESLOT : "fixes (nullable)"
+    ROOM }o--o{ TIMESLOT : "availability"
+    TEACHER }o--o{ TIMESLOT : "availability"
+    ROOM }o--o{ EVENT : "affectedRooms"
+    TEACHER }o--o{ EVENT : "affectedTeachers"
+    TIMESLOT }o--o{ EVENT : "affectedTimeslots"
+    UNIVERSITY_CONFIG {
+        boolean active
+        int daysPerWeek
+        int maxClassesPerDay
+    }
+```
 
 ---
 

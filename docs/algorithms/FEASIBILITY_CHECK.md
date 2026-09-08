@@ -137,3 +137,23 @@ The frontend pre-fills this value into the Solve Time control after a successful
 feasibility check and expands the slider range to fit it, so the E2E flow and the
 UI both run the solver with the budget the problem actually requires instead of
 the 30s `timefold.solver.termination.spent-limit` application default.
+
+## 10. Validation flow diagram
+
+```mermaid
+flowchart TD
+    R["ScheduleRequest\n{scope · batchIds · teacherIds · roomIds · preAllocations}"] --> SCOPE["scope loading\nmirrors JpaProblemDataGateway (batches · teachers · rooms · subjects,\n+ institute-wide subjects always added)"]
+    SCOPE --> NB{"no batches?"}
+    NB -- "yes" --> ABORT["single ERROR · abort"]
+    NB -- "no" --> NT{"no CLASS timeslots?"}
+    NT -- "yes" --> ABORT
+    NT -- "no" --> SUB["per-subject\nchunkHours ≤ 0 · weeklyHours % chunkHours · qualified teacher"]
+    SUB --> M["multi-slot contiguous-run\nmissing slotNumber? · longestConsecutiveClassRun ≥ chunk"]
+    M --> LAB["lab room-type\nrequiresRoom → matching room type exists"]
+    LAB --> CAP["capacity\nper-batch sessions > classTimeslots → ERROR\ntotalSessions > teachers × slots → WARNING"]
+    CAP --> SX["per-batch × subject\nsessionsPerBatch (lab × sectionCount) > classTimeslots → ERROR"]
+    SX --> P["pre-allocation correctness\nmissing/out-of-scope · wrong room type · two teachers ·\ncross-schedule double-book → ERROR"]
+    P --> AL["teacher allotments\nexactly one in-scope teacher per (batch, subject)"]
+    AL --> OUT["result\nfeasible = errorCount == 0 · issues sorted errors-first"]
+    OUT --> TIME["recommendedSolvingTimeSeconds\nceil(sessions×teachers×rooms×slots / 8000) × 4 · clamped [30, 1800]"]
+```

@@ -140,6 +140,92 @@ class PreAllocationApplierTest {
     }
 
     @Test
+    void fullPinWithoutTeacherOrRoomPreservesExistingAssignment() {
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(1L);
+
+        Subject subject = Subject.builder().name("Physics Lab").isLab(true).build();
+        subject.setId(2L);
+        Teacher assignedTeacher = Teacher.builder().name("Dr. Y").build();
+        assignedTeacher.setId(7L);
+        Room assignedRoom = Room.builder().roomNumber("L-202").build();
+        assignedRoom.setId(8L);
+        Timeslot slotOnly = new Timeslot();
+        slotOnly.setId(6L);
+
+        ClassSession session = ClassSession.builder()
+            .id(10L)
+            .subject(subject)
+            .batch(batch)
+            .teacher(assignedTeacher)
+            .room(assignedRoom)
+            .duration(1)
+            .isLocked(false)
+            .build();
+
+        PreAllocation pa = PreAllocation.builder()
+            .batch(batch)
+            .subject(subject)
+            .teacher(null)
+            .room(null)
+            .timeslot(slotOnly)
+            .locked(true)
+            .build();
+        pa.setId(20L);
+
+        applier.apply(List.of(session), List.of(pa));
+
+        // A slot-only pin must pin the timeslot WITHOUT wiping the teacher/room
+        // that were already assigned by an earlier partial pin or manual edit.
+        assertTrue(session.isLocked());
+        assertSame(slotOnly, session.getTimeslot());
+        assertSame(assignedTeacher, session.getTeacher());
+        assertSame(assignedRoom, session.getRoom());
+    }
+
+    @Test
+    void fullPinWithTeacherKeepsRoomItDoesNotCarry() {
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(1L);
+
+        Subject subject = Subject.builder().name("Physics Lab").isLab(true).build();
+        subject.setId(2L);
+        Teacher pinnedTeacher = Teacher.builder().name("Dr. X").build();
+        pinnedTeacher.setId(3L);
+        Room existingRoom = Room.builder().roomNumber("L-202").build();
+        existingRoom.setId(8L);
+        Timeslot timeslot = new Timeslot();
+        timeslot.setId(6L);
+
+        ClassSession session = ClassSession.builder()
+            .id(10L)
+            .subject(subject)
+            .batch(batch)
+            .teacher(null)
+            .room(existingRoom)
+            .duration(1)
+            .isLocked(false)
+            .build();
+
+        PreAllocation pa = PreAllocation.builder()
+            .batch(batch)
+            .subject(subject)
+            .teacher(pinnedTeacher)
+            .room(null)
+            .timeslot(timeslot)
+            .locked(true)
+            .build();
+        pa.setId(20L);
+
+        applier.apply(List.of(session), List.of(pa));
+
+        assertSame(pinnedTeacher, session.getTeacher());
+        // Room is not carried by the pre-allocation → existing assignment kept.
+        assertSame(existingRoom, session.getRoom());
+        assertSame(timeslot, session.getTimeslot());
+    }
+
+    @Test
     void skipsPartialPinForImpactedSession() {
         Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
         batch.setId(1L);

@@ -6,6 +6,44 @@ ARARE builds and maintains optimized weekly timetables. Operators load master da
 
 > **Authentication is out of scope by design.** ARARE is intended to run on a university's own infrastructure (local network / single tenant). The REST API is unauthenticated — keep the backend off the public internet and protect it at the network layer or behind a gateway.
 
+## System at a glance
+
+```mermaid
+flowchart TB
+    subgraph UI["Operator console — React 18 + TS"]
+        WIZ["Schedule generator wizard\n(pre-allocations, solve time)"]
+        VIEW["Timetable viewer\n(drag-drop, conflict / unplaced filters)"]
+        EX["Export buttons\n(Excel / PDF / CSV)"]
+    end
+    API{{"REST /api/v1 · Spring Boot 3.3"}}
+    subgraph CORE["Scheduling core"]
+        SVC["ScheduleServiceImpl\nfeasibility pre-check → DRAFT"]
+        JOB["SolveJobService + SolveJobRunner\nasync · guarded QUEUED→…→SUCCEEDED"]
+        BUILD["TimetableProblemBuilder\nfacts · sessions · pins · churn baseline"]
+        SOLVER["Timefold Solver\n43 constraints · HardMediumSoft"]
+        PERSIST["SolutionPersister\nDRAFT (feasible) · INFEASIBLE (best-effort)"]
+    end
+    subgraph SPT["Supporting modules"]
+        IMP["ImpactAnalyzer\ndependency-graph BFS"]
+        DI["CSV / ZIP import"]
+    end
+    DB[("PostgreSQL / H2\nFlyway V1–V13")]
+    WIZ --> API
+    VIEW --> API
+    EX --> API
+    DI --> API
+    API --> SVC
+    API --> IMP
+    SVC --> JOB
+    JOB --> BUILD
+    BUILD --> SOLVER
+    SOLVER --> PERSIST
+    IMP --> JOB
+    BUILD --> DB
+    PERSIST --> DB
+    SOLVER -. "live best score" .-> JOB
+```
+
 ---
 
 ## What you need to run it

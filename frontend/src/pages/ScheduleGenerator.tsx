@@ -355,7 +355,7 @@ export default function ScheduleGenerator() {
                   helpText="Only batches and subjects from this department will be scheduled"
                 />
               )}
-              {form.scope === 'INSTITUTE' && institutes.length > 1 && (
+              {form.scope === 'INSTITUTE' && (
                 <Select
                   label="Institute"
                   value={form.instituteId ?? ''}
