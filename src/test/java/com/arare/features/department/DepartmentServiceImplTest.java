@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
@@ -115,5 +116,56 @@ class DepartmentServiceImplTest {
 
         verify(cascadeDeletionService).purgePreAllocationsForDepartment(7L);
         verify(repo).deleteById(7L);
+    }
+
+    // Per-institute department uniqueness: the same code in a DIFFERENT
+    // institute is allowed (V14 drops the global UNIQUE on code).
+    @Test
+    void createAllowsSameCodeInDifferentInstitute() {
+        Institute inst = new Institute();
+        inst.setId(5L);
+        when(instituteRepo.findById(5L)).thenReturn(Optional.of(inst));
+        when(repo.existsByInstituteIdAndName(5L, "CSE")).thenReturn(false);
+        when(repo.existsByInstituteIdAndCode(5L, "CS")).thenReturn(false);
+        when(repo.save(org.mockito.ArgumentMatchers.any(Department.class)))
+            .thenAnswer(inv -> inv.getArgument(0));
+
+        DepartmentResponse resp = service.create(new DepartmentRequest("CSE", "CS", 5L, null));
+
+        assertEquals("CS", resp.code());
+        assertEquals(5L, resp.instituteId());
+        verify(repo).save(org.mockito.ArgumentMatchers.any(Department.class));
+    }
+
+    // Per-institute department uniqueness: the same code within the SAME
+    // institute must be rejected.
+    @Test
+    void createRejectsSameCodeInSameInstitute() {
+        Institute inst = new Institute();
+        inst.setId(5L);
+        when(instituteRepo.findById(5L)).thenReturn(Optional.of(inst));
+        when(repo.existsByInstituteIdAndCode(5L, "CS")).thenReturn(true);
+
+        assertThrows(
+            com.arare.exception.DuplicateResourceException.class,
+            () -> service.create(new DepartmentRequest("ECE", "CS", 5L, null))
+        );
+        verify(repo, never()).save(org.mockito.ArgumentMatchers.any(Department.class));
+    }
+
+    // Per-institute department uniqueness: the same NAME within the SAME
+    // institute must be rejected (mirrors code check).
+    @Test
+    void createRejectsSameNameInSameInstitute() {
+        Institute inst = new Institute();
+        inst.setId(5L);
+        when(instituteRepo.findById(5L)).thenReturn(Optional.of(inst));
+        when(repo.existsByInstituteIdAndName(5L, "CSE")).thenReturn(true);
+
+        assertThrows(
+            com.arare.exception.DuplicateResourceException.class,
+            () -> service.create(new DepartmentRequest("CSE", "CS", 5L, null))
+        );
+        verify(repo, never()).save(org.mockito.ArgumentMatchers.any(Department.class));
     }
 }

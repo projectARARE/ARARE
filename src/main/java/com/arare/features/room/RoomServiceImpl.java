@@ -91,10 +91,16 @@ public class RoomServiceImpl implements RoomService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
-        sessionRepo.clearRoomById(id);   // Unassign room from sessions, keep sessions
+        /**
+         * Unassign room from sessions, keep sessions
+         */
+        sessionRepo.clearRoomById(id);   
         cascadeDeletionService.purgePreAllocationsForRoom(id);
         cascadeDeletionService.detachRoomFromEvents(id);
-        batchRepo.clearHomeRoomByRoomId(id);   // Null Batch.homeRoom FK before deleting
+        /**
+         * Null Batch.homeRoom FK before deleting
+         */
+        batchRepo.clearHomeRoomByRoomId(id);   
         repo.deleteById(id);
     }
 
@@ -102,8 +108,10 @@ public class RoomServiceImpl implements RoomService {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Room", id));
     }
 
-    // Resolves every requested ID to its entity, failing with a 400-level
-    // validation error instead of silently dropping unknown IDs.
+    /**
+     * Resolves every requested ID to its entity, failing with a 400-level
+     * validation error instead of silently dropping unknown IDs.
+     */
     private <T> List<T> resolveAll(org.springframework.data.jpa.repository.JpaRepository<T, Long> repo, List<Long> ids, String type) {
         if (ids == null) return List.of();
         List<T> found = repo.findAllById(ids);

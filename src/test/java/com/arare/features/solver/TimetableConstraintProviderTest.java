@@ -1,5 +1,9 @@
 package com.arare.features.solver;
 
+import ai.timefold.solver.core.api.score.stream.Constraint;
+import ai.timefold.solver.core.api.score.stream.ConstraintFactory;
+import ai.timefold.solver.core.api.score.stream.ConstraintProvider;
+import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore;
 import ai.timefold.solver.test.api.score.stream.ConstraintVerifier;
 import com.arare.features.solver.RoomBusyInterval;
 import com.arare.common.enums.LabSubtype;
@@ -18,6 +22,57 @@ import java.time.LocalTime;
 import java.util.List;
 
 class TimetableConstraintProviderTest {
+
+    /**
+     * Replicates the relationship used by teacherConflict/roomConflict/
+     * batchConflict/sectionConflict: an id-ordered join over
+     * forEachIncludingUnassigned. Unlike forEachUniquePair (whose internal
+     * forEach SKIPS sessions missing a planning variable, e.g. teacher=null),
+     * this fires for every distinct unordered pair even when incomplete.
+     */
+    public static class PairOnlyProvider implements ConstraintProvider {
+        @Override
+        public Constraint[] defineConstraints(ConstraintFactory factory) {
+            return new Constraint[]{
+                factory.forEachIncludingUnassigned(ClassSession.class)
+                    .join(factory.forEachIncludingUnassigned(ClassSession.class),
+                        ai.timefold.solver.core.api.score.stream.Joiners.lessThan(ClassSession::getId))
+                    .penalize(HardMediumSoftScore.ONE_HARD)
+                    .asConstraint("Any pair penalized"),
+            };
+        }
+    }
+
+    ConstraintVerifier<PairOnlyProvider, TimetableSolution> pairOnlyVerifier =
+        ConstraintVerifier.build(new PairOnlyProvider(), TimetableSolution.class, ClassSession.class);
+
+    @Test
+    void pairStreamPairsTwoSessions() {
+        ClassSession s1 = ClassSession.builder().duration(1).build();
+        s1.setId(1L);
+        ClassSession s2 = ClassSession.builder().duration(1).build();
+        s2.setId(2L);
+
+        TimetableSolution solution = new TimetableSolution();
+        solution.setSessions(List.of(s1, s2));
+        solution.setTimeslots(List.of());
+        solution.setRooms(List.of());
+        solution.setTeachers(List.of());
+        solution.setSubjects(List.of());
+        solution.setBatches(List.of());
+        solution.setClassSections(List.of());
+        solution.setBuildings(List.of());
+        solution.setConfigs(List.of());
+        solution.setPreAllocationFacts(List.of());
+        solution.setTeacherBusyIntervals(List.of());
+        solution.setRoomBusyIntervals(List.of());
+        solution.setPreviousAssignments(List.of());
+        solution.setDisruptionFacts(List.of());
+
+        pairOnlyVerifier.verifyThat((p, f) -> ((PairOnlyProvider) p).defineConstraints(f)[0])
+            .givenSolution(solution)
+            .penalizesBy(1);
+    }
 
     ConstraintVerifier<TimetableConstraintProvider, TimetableSolution> constraintVerifier =
             ConstraintVerifier.build(new TimetableConstraintProvider(), TimetableSolution.class, ClassSession.class);
@@ -527,6 +582,115 @@ class TimetableConstraintProviderTest {
         constraintVerifier.verifyThat(TimetableConstraintProvider::roomBusyCrossSchedule)
                 .given(busy, s)
                 .penalizesBy(0);
+    }
+
+    // -- Batch conflict should fire for same batch + overlapping duration, mirroring live data (523 dur2 + 529 dur1, same slot) --
+
+    @Test
+    void batchConflictPenalizesSameBatchOverlappingSessions() {
+        Batch batch = Batch.builder().build();
+        batch.setId(5L);
+
+        Timeslot ts = buildTimeslot(7L, SchoolDay.MONDAY, 13, 14, 7);
+
+        ClassSession s523 = ClassSession.builder()
+                .batch(batch)
+                .timeslot(ts)
+                .duration(2)
+                .build();
+        s523.setId(523L);
+        ClassSession s529 = ClassSession.builder()
+                .batch(batch)
+                .timeslot(ts)
+                .duration(1)
+                .build();
+        s529.setId(529L);
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::batchConflict)
+                .given(s523, s529)
+                .penalizesBy(1);
+    }
+
+    @Test
+    void batchConflictPenalizesSameBatchSameDurationOverlap() {
+        Batch batch = Batch.builder().build();
+        batch.setId(5L);
+
+        Timeslot ts = buildTimeslot(7L, SchoolDay.MONDAY, 13, 14, 7);
+
+        ClassSession s1 = ClassSession.builder()
+                .batch(batch)
+                .timeslot(ts)
+                .duration(1)
+                .build();
+        s1.setId(1L);
+        ClassSession s2 = ClassSession.builder()
+                .batch(batch)
+                .timeslot(ts)
+                .duration(1)
+                .build();
+        s2.setId(2L);
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::batchConflict)
+                .given(s1, s2)
+                .penalizesBy(1);
+    }
+
+    @Test
+    void batchConflictIgnoresDifferentBatches() {
+        Batch batchA = Batch.builder().build();
+        batchA.setId(5L);
+        Batch batchB = Batch.builder().build();
+        batchB.setId(6L);
+
+        Timeslot ts = buildTimeslot(7L, SchoolDay.MONDAY, 13, 14, 7);
+
+        ClassSession s1 = ClassSession.builder()
+                .batch(batchA)
+                .timeslot(ts)
+                .duration(1)
+                .build();
+        s1.setId(1L);
+        ClassSession s2 = ClassSession.builder()
+                .batch(batchB)
+                .timeslot(ts)
+                .duration(1)
+                .build();
+        s2.setId(2L);
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::batchConflict)
+                .given(s1, s2)
+                .penalizesBy(0);
+    }
+
+    @Test
+    void teacherConflictPenalizesSameTeacherSameSlot() {
+        Teacher t = Teacher.builder().build();
+        t.setId(1L);
+        Timeslot ts = buildTimeslot(7L, SchoolDay.MONDAY, 13, 14, 7);
+        ClassSession s1 = ClassSession.builder().teacher(t).timeslot(ts).duration(1).build();
+        s1.setId(1L);
+        ClassSession s2 = ClassSession.builder().teacher(t).timeslot(ts).duration(1).build();
+        s2.setId(2L);
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::teacherConflict)
+                .given(s1, s2)
+                .penalizesBy(1);
+    }
+
+    @Test
+    void sectionConflictPenalizesSameSectionSameSlot() {
+        com.arare.features.classsection.ClassSection sec = com.arare.features.classsection.ClassSection.builder().build();
+        sec.setId(1L);
+        Timeslot ts = buildTimeslot(7L, SchoolDay.MONDAY, 13, 14, 7);
+        ClassSession s1 = ClassSession.builder().section(sec).timeslot(ts).duration(1).build();
+        s1.setId(1L);
+        ClassSession s2 = ClassSession.builder().section(sec).timeslot(ts).duration(1).build();
+        s2.setId(2L);
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::sectionConflict)
+                .given(s1, s2)
+                .penalizesBy(1);
     }
 
     private Timeslot buildTimeslot(Long id, SchoolDay day, int startHour, int endHour, int slotNumber) {

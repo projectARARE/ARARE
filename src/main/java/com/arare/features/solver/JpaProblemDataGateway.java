@@ -48,27 +48,40 @@ public class JpaProblemDataGateway implements ProblemDataGateway {
 
     @Override
     public ProblemFacts loadFacts(ProblemBuildRequest request) {
-        List<Room> rooms = (request.roomIds() != null && !request.roomIds().isEmpty())
-            ? resolveAll(roomRepo, request.roomIds(), "Room")
-            : roomRepo.findAll();
-
-        List<Teacher> teachers = (request.teacherIds() != null && !request.teacherIds().isEmpty())
-            ? resolveAll(teacherRepo, request.teacherIds(), "Teacher")
-            : teacherRepo.findAll();
+        List<Room> rooms;
+        if (request.roomIds() != null && !request.roomIds().isEmpty()) {
+            rooms = resolveAll(roomRepo, request.roomIds(), "Room");
+        } else if (request.instituteId() != null) {
+            rooms = roomRepo.findByBuildingInstituteId(request.instituteId());
+        } else {
+            rooms = roomRepo.findAll();
+        }
 
         List<Subject> scoped = request.departmentId() != null
             ? subjectRepo.findByDepartmentId(request.departmentId())
             : request.instituteId() != null
                 ? subjectRepo.findByDepartmentInstituteId(request.instituteId())
                 : subjectRepo.findAll();
-        // Institute-wide subjects (no owning department) are eligible in every
-        // scope: they can be offered to any batch via SubjectOffering.
+        /**
+         * Institute-wide subjects (no owning department) are eligible in every
+         * scope: they can be offered to any batch via SubjectOffering.
+         */
         List<Subject> subjects = new ArrayList<>(scoped);
         subjectRepo.findInstituteWide().forEach(instWide -> {
             if (subjects.stream().noneMatch(s -> s.getId().equals(instWide.getId()))) {
                 subjects.add(instWide);
             }
         });
+
+        List<Teacher> teachers;
+        if (request.teacherIds() != null && !request.teacherIds().isEmpty()) {
+            teachers = resolveAll(teacherRepo, request.teacherIds(), "Teacher");
+        } else if (request.instituteId() != null && !subjects.isEmpty()) {
+            List<Long> subjectIds = subjects.stream().map(Subject::getId).toList();
+            teachers = teacherRepo.findDistinctBySubjectsIdIn(subjectIds);
+        } else {
+            teachers = teacherRepo.findAll();
+        }
 
         List<Batch> batches = request.departmentId() != null
             ? batchRepo.findByDepartmentId(request.departmentId())
@@ -100,8 +113,10 @@ public class JpaProblemDataGateway implements ProblemDataGateway {
         );
     }
 
-    // Resolves every requested ID, rejecting unknown ones instead of silently
-    // building a problem from a partial set.
+    /**
+     * Resolves every requested ID, rejecting unknown ones instead of silently
+     * building a problem from a partial set.
+     */
     private <T> List<T> resolveAll(JpaRepository<T, Long> repo, List<Long> ids, String type) {
         List<T> found = repo.findAllById(ids);
         if (found.size() != new HashSet<>(ids).size()) {

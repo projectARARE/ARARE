@@ -1,7 +1,9 @@
 package com.arare.features.teacherassignment;
 
-// Read model returned by the API. batchLabel/sectionLabel are human-readable
-// keys (e.g. "CSE-2A", "CSE-2A-A") so the UI never has to join across tables.
+/**
+ * Read model returned by the API. batchLabel/sectionLabel are human-readable
+ * keys (e.g. "CSE-2A", "CSE-2A-A") so the UI never has to join across tables.
+ */
 public record TeacherAssignmentResponse(
     Long id,
     Long teacherId,

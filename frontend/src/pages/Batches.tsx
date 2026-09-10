@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, MultiSelect, SearchableSelect } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, MultiSelect, SearchableSelect, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { batchApi, departmentApi, roomApi, subjectApi, instituteApi } from '../services/api'
 import type { Batch, BatchRequest, Department, Room, SchoolDay, Subject, Institute } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
@@ -25,6 +26,7 @@ export default function Batches() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [institutes, setInstitutes] = useState<Institute[]>([])
   const [instituteFilter, setInstituteFilter] = useState<number | null>(null)
+  const [departmentFilter, setDepartmentFilter] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Batch | null>(null)
@@ -115,6 +117,11 @@ export default function Batches() {
   const deptOptions = depts
     .filter((d) => !instituteFilter || d.instituteId === instituteFilter)
     .map((d) => ({ value: d.id, label: `${d.name}${d.instituteName ? ` (${d.instituteName})` : ''}` }))
+
+  const deptFilterOptions = depts
+    .filter((d) => !instituteFilter || d.instituteId === instituteFilter)
+    .map((d) => ({ value: d.id, label: d.name }))
+
   const homeRoomOptions = [
     { value: '', label: '- No home room -' },
     ...rooms.map((r) => ({ value: r.id, label: `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''} [${r.type}]` })),
@@ -124,9 +131,14 @@ export default function Batches() {
     ...DAYS.map((d) => ({ value: d, label: d })),
   ]
   const instituteOptions = institutes.map((i) => ({ value: i.id, label: i.name }))
-  const visibleItems = instituteFilter
-    ? items.filter((b) => b.instituteId === instituteFilter)
-    : items
+  const curriculumOptions = subjects
+    .filter((s) => !form.departmentId || s.departmentId == null || s.departmentId === form.departmentId)
+    .map((s) => ({ value: s.id, label: s.name }))
+  const visibleItems = items.filter((b) => {
+    if (instituteFilter != null && b.instituteId !== instituteFilter) return false
+    if (departmentFilter != null && b.departmentId !== departmentFilter) return false
+    return true
+  })
 
   const columns: Column<Batch>[] = [
     {
@@ -138,6 +150,14 @@ export default function Batches() {
           <p className="text-xs text-gray-500">{b.departmentName ?? `Dept #${b.departmentId}`}</p>
         </div>
       ),
+    },
+    {
+      key: 'institute', header: 'Institute',
+      sortValue: (b) => depts.find((d) => d.id === b.departmentId)?.instituteName ?? '',
+      render: (b) => {
+        const dept = depts.find((d) => d.id === b.departmentId)
+        return dept?.instituteName ? <span className="text-gray-600">{dept.instituteName}</span> : <span className="text-gray-400">—</span>
+      },
     },
     { key: 'year', header: 'Year', render: (b) => `Year ${b.year}` },
     { key: 'students', header: 'Students', render: (b) => b.studentCount },
@@ -154,8 +174,8 @@ export default function Batches() {
       key: 'actions', header: '', width: '96px',
       render: (b) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(b)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(b.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(b)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(b.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -166,13 +186,46 @@ export default function Batches() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(b.id) },
   ]
 
+  const bulk = useBulkDelete<Batch>({
+    getKey: (x) => x.id,
+    deleteFn: batchApi.delete,
+    reload: load,
+    noun: 'batch',
+  })
+
   return (
     <>
       <Card
         title="Batches"
         description="Manage student batches (classes)"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Batch</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Batch</Button></div>}
       >
+        {institutes.length > 0 && (
+          <FilterPanel activeCount={(instituteFilter != null ? 1 : 0) + (departmentFilter != null ? 1 : 0)} persistKey="arare.batches.filters.open">
+            <div className="flex items-center gap-3">
+              <SearchableSelect
+                label="Institute filter"
+                value={instituteFilter}
+                onChange={(v) => { setInstituteFilter(v == null ? null : +v); setDepartmentFilter(null) }}
+                options={instituteOptions}
+                placeholder="All institutes"
+                allowClear
+                className="w-72"
+              />
+              {depts.length > 0 && (
+                <SearchableSelect
+                  label="Department filter"
+                  value={departmentFilter}
+                  onChange={(v) => setDepartmentFilter(v == null ? null : +v)}
+                  options={deptFilterOptions}
+                  placeholder="All departments"
+                  allowClear
+                  className="w-72"
+                />
+              )}
+            </div>
+          </FilterPanel>
+        )}
         <Table
           columns={columns}
           data={visibleItems}
@@ -183,21 +236,11 @@ export default function Batches() {
           exportFilename="batches"
           searchKeys={[(b) => b.section, (b) => b.departmentName ?? '', (b) => `Year ${b.year}`]}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.batches.density"
         />
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="text-xs text-gray-500">{visibleItems.length} batch{visibleItems.length === 1 ? '' : 'es'}</p>
-          {institutes.length > 0 && (
-            <SearchableSelect
-              label="Institute filter"
-              value={instituteFilter}
-              onChange={(v) => setInstituteFilter(v == null ? null : +v)}
-              options={instituteOptions}
-              placeholder="All institutes"
-              allowClear
-              className="w-72"
-            />
-          )}
-        </div>
       </Card>
 
       <Modal
@@ -224,7 +267,7 @@ export default function Batches() {
 
           <MultiSelect
             label="Curriculum"
-            options={subjects.map((s) => ({ value: s.id, label: s.name }))}
+            options={curriculumOptions}
             selected={form.subjectIds ?? []}
             onChange={(ids) => setForm({ ...form, subjectIds: ids })}
             placeholder="Search and select subjects…"
@@ -263,6 +306,7 @@ export default function Batches() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

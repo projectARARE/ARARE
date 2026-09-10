@@ -65,20 +65,27 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             minimizeBatchBuildingChanges(factory),
             roomStability(factory),
             minimizeMovedSessions(factory),
-            // Same-day density is intentionally owned by avoidSameSubjectMultipleTimesPerDay
-            // (gated by Subject.maxSessionsPerDay). The previous spreadSubjectAcrossWeek
-            // constraint duplicated that same-day penalty and double-counted the cap, so it
-            // was removed in favour of the single configurable rule.
+            /**
+             * Same-day density is intentionally owned by avoidSameSubjectMultipleTimesPerDay
+             * (gated by Subject.maxSessionsPerDay). The previous spreadSubjectAcrossWeek
+             * constraint duplicated that same-day penalty and double-counted the cap, so it
+             * was removed in favour of the single configurable rule.
+             */
             preferNonLabMultiSlotConsecutive(factory),
         };
     }
 
 
     Constraint teacherConflict(ConstraintFactory factory) {
-        return factory.forEachUniquePair(
-                ClassSession.class,
+        // Above: forEachUniquePair wraps forEach, which skips uninitialized
+        // sessions (e.g. a session missing its teacher). Overlaps involving
+        // such sessions were silently invisible to the score. Rebuild the
+        // unique pair via forEachIncludingUnassigned + id-ordered join.
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .join(factory.forEachIncludingUnassigned(ClassSession.class),
                 Joiners.equal(ClassSession::getTeacher),
-                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null))
+                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null),
+                Joiners.lessThan(ClassSession::getId))
             .filter((s1, s2) -> s1.getTeacher() != null
                 && s1.getTimeslot() != null
                 && s2.getTimeslot() != null
@@ -88,10 +95,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint roomConflict(ConstraintFactory factory) {
-        return factory.forEachUniquePair(
-                ClassSession.class,
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .join(factory.forEachIncludingUnassigned(ClassSession.class),
                 Joiners.equal(ClassSession::getRoom),
-                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null))
+                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null),
+                Joiners.lessThan(ClassSession::getId))
             .filter((s1, s2) -> s1.getRoom() != null
                 && s1.getTimeslot() != null
                 && s2.getTimeslot() != null
@@ -101,10 +109,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint batchConflict(ConstraintFactory factory) {
-        return factory.forEachUniquePair(
-                ClassSession.class,
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .join(factory.forEachIncludingUnassigned(ClassSession.class),
                 Joiners.equal(TimetableConstraintProvider::effectiveBatch),
-                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null))
+                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null),
+                Joiners.lessThan(ClassSession::getId))
             .filter((s1, s2) -> effectiveBatch(s1) != null
                 && s1.getTimeslot() != null
                 && s2.getTimeslot() != null
@@ -132,10 +141,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint sectionConflict(ConstraintFactory factory) {
-        return factory.forEachUniquePair(
-                ClassSession.class,
+        return factory.forEachIncludingUnassigned(ClassSession.class)
+            .join(factory.forEachIncludingUnassigned(ClassSession.class),
                 Joiners.equal(ClassSession::getSection),
-                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null))
+                Joiners.equal(s -> s.getTimeslot() != null ? s.getTimeslot().getDay() : null),
+                Joiners.lessThan(ClassSession::getId))
             .filter((s1, s2) -> s1.getSection() != null
                 && s1.getTimeslot() != null
                 && s2.getTimeslot() != null
@@ -155,12 +165,14 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint teacherNotAssignedToClass(ConstraintFactory factory) {
-        // HARD: when a term teacher-allotment exists for a (subject, class),
-        // only the allotted teacher may be assigned. allowedTeacherIds is
-        // populated by TimetableProblemBuilder from TeacherAssignment facts;
-        // null/empty means no allotment (qualified-teacher fallback applies).
-        // Locked (pre-allocated/pinned) sessions are exempt: the solver cannot
-        // move them, so pre-allocation pins stay authoritative over allotments.
+        /**
+         * HARD: when a term teacher-allotment exists for a (subject, class),
+         * only the allotted teacher may be assigned. allowedTeacherIds is
+         * populated by TimetableProblemBuilder from TeacherAssignment facts;
+         * null/empty means no allotment (qualified-teacher fallback applies).
+         * Locked (pre-allocated/pinned) sessions are exempt: the solver cannot
+         * move them, so pre-allocation pins stay authoritative over allotments.
+         */
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> !s.isLocked()
                 && s.getTeacher() != null
@@ -363,10 +375,12 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint singleTeacherPerSubjectSection(ConstraintFactory factory) {
-        // HARD: exactly one teacher teaches a given subject for a given
-        // batch/section. Grouping uses effectiveBatch so section-based lab
-        // sessions (batch == null, resolved via section -> batch) are grouped
-        // with their parent batch's lectures.
+        /**
+         * HARD: exactly one teacher teaches a given subject for a given
+         * batch/section. Grouping uses effectiveBatch so section-based lab
+         * sessions (batch == null, resolved via section -> batch) are grouped
+         * with their parent batch's lectures.
+         */
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> s.getTeacher() != null && s.getSubject() != null
                 && effectiveBatch(s) != null)
@@ -571,9 +585,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint preAllocationViolation(ConstraintFactory factory) {
-        // Teacher/room pins from pre-allocations that did NOT fix a timeslot.
-        // The pinned session must keep the pre-assigned teacher and room while
-        // the solver remains free to pick a compatible slot.
+        /**
+         * Teacher/room pins from pre-allocations that did NOT fix a timeslot.
+         * The pinned session must keep the pre-assigned teacher and room while
+         * the solver remains free to pick a compatible slot.
+         */
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> s.getId() != null)
             .join(PreAllocationConstraintFact.class,
@@ -587,9 +603,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint teacherBusyCrossSchedule(ConstraintFactory factory) {
-        // A teacher already teaching in another ACTIVE schedule must never be
-        // double-booked here. Feeds cross-schedule availability as a problem
-        // fact so the solver routes around it instead of failing afterwards.
+        /**
+         * A teacher already teaching in another ACTIVE schedule must never be
+         * double-booked here. Feeds cross-schedule availability as a problem
+         * fact so the solver routes around it instead of failing afterwards.
+         */
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> s.getTeacher() != null
                 && s.getTimeslot() != null
@@ -603,9 +621,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint roomBusyCrossSchedule(ConstraintFactory factory) {
-        // A room already in use in another ACTIVE schedule must never be
-        // double-booked here. Mirrors teacherBusyCrossSchedule but for the
-        // physical room resource.
+        /**
+         * A room already in use in another ACTIVE schedule must never be
+         * double-booked here. Mirrors teacherBusyCrossSchedule but for the
+         * physical room resource.
+         */
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> s.getRoom() != null
                 && s.getTimeslot() != null
@@ -619,10 +639,12 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint homeRoomViolation(ConstraintFactory factory) {
-        // When a batch declares a home lecture room, every non-lab session of
-        // that batch MUST use it. Lab sessions (and subjects requiring a
-        // non-LECTURE room) are exempt -- they legitimately need specialised
-        // rooms.
+        /**
+         * When a batch declares a home lecture room, every non-lab session of
+         * that batch MUST use it. Lab sessions (and subjects requiring a
+         * non-LECTURE room) are exempt -- they legitimately need specialised
+         * rooms.
+         */
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> s.getRoom() != null
                 && s.getSubject() != null
@@ -636,10 +658,12 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint disruptionViolation(ConstraintFactory factory) {
-        // On a partial resolve triggered by a disruption, the solver must NOT
-        // leave impacted sessions where they are. Each fact forces sessions out
-        // of the blocked teacher/room/timeslot/day so "apply disruption"
-        // genuinely changes the timetable instead of reporting a no-op success.
+        /**
+         * On a partial resolve triggered by a disruption, the solver must NOT
+         * leave impacted sessions where they are. Each fact forces sessions out
+         * of the blocked teacher/room/timeslot/day so "apply disruption"
+         * genuinely changes the timetable instead of reporting a no-op success.
+         */
         return factory.forEach(DisruptionConstraintFact.class)
             .join(factory.forEachIncludingUnassigned(ClassSession.class))
             .filter((fact, session) -> violatesDisruption(fact, session))
@@ -668,9 +692,11 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     }
 
     Constraint minimizeMovedSessions(ConstraintFactory factory) {
-        // Soft: on a regenerate from a parent schedule, nudge sessions to keep
-        // the teacher/room/timeslot they had in the parent timetable so a
-        // re-solve does not reshuffle the whole institution.
+        /**
+         * Soft: on a regenerate from a parent schedule, nudge sessions to keep
+         * the teacher/room/timeslot they had in the parent timetable so a
+         * re-solve does not reshuffle the whole institution.
+         */
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> s.getId() != null
                 && s.getTeacher() != null && s.getRoom() != null && s.getTimeslot() != null
@@ -822,11 +848,13 @@ private static boolean areBackToBackBySlotNumber(ClassSession a, ClassSession b)
             return aStartSlot < bEndExclusive && bStartSlot < aEndExclusive;
         }
 
-        // Fallback when slot_number is unavailable: compare by the actual
-        // scheduled start/end times. This is correct on the P1 backfilled
-        // data (slot_number is populated) and avoids the old "always
-        // conflict" branch that fired for any multi-slot session missing
-        // its slot number.
+        /**
+         * Fallback when slot_number is unavailable: compare by the actual
+         * scheduled start/end times. This is correct on the P1 backfilled
+         * data (slot_number is populated) and avoids the old "always
+         * conflict" branch that fired for any multi-slot session missing
+         * its slot number.
+         */
         var aStart = a.getTimeslot().getStartTime();
         var aEnd = a.getTimeslot().getEndTime();
         var bStart = b.getTimeslot().getStartTime();

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, ConfirmDialog } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, SearchableSelect, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { departmentApi, buildingApi, instituteApi } from '../services/api'
 import type { Department, DepartmentRequest, Building, Institute } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const EMPTY: DepartmentRequest = { name: '', code: '', instituteId: 0, buildingIds: [] }
 
@@ -21,6 +22,7 @@ export default function Departments() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [instituteFilter, setInstituteFilter] = useState<number | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -103,6 +105,12 @@ export default function Departments() {
 
   const instituteOptions = institutes.map((i) => ({ value: i.id, label: i.name }))
 
+  const formBuildingOptions = form.instituteId
+    ? buildings.filter((b) => b.instituteId === form.instituteId)
+    : buildings
+
+  const filteredItems = instituteFilter != null ? items.filter((d) => d.instituteId === instituteFilter) : items
+
   const columns: Column<Department>[] = [
     {
       key: 'name', header: 'Name',
@@ -129,8 +137,8 @@ export default function Departments() {
       key: 'actions', header: '', width: '96px',
       render: (d) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(d)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(d.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(d)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(d.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -141,16 +149,36 @@ export default function Departments() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(d.id) },
   ]
 
+  const bulk = useBulkDelete<Department>({
+    getKey: (x) => x.id,
+    deleteFn: departmentApi.delete,
+    reload: load,
+    noun: 'department',
+  })
+
   return (
     <>
       <Card
         title="Departments"
         description="Manage academic departments"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Department</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Department</Button></div>}
       >
+        {institutes.length > 0 && (
+          <FilterPanel activeCount={instituteFilter != null ? 1 : 0} persistKey="arare.departments.filters.open">
+            <SearchableSelect
+              label="Institute filter"
+              value={instituteFilter}
+              onChange={(v) => setInstituteFilter(v == null ? null : +v)}
+              options={instituteOptions}
+              placeholder="All institutes"
+              allowClear
+              className="w-72"
+            />
+          </FilterPanel>
+        )}
         <Table
           columns={columns}
-          data={items}
+          data={filteredItems}
           loading={loading}
           keyExtractor={(d) => d.id}
           searchable
@@ -158,6 +186,10 @@ export default function Departments() {
           exportFilename="departments"
           searchKeys={[(d) => d.name, (d) => d.code]}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.departments.density"
         />
       </Card>
 
@@ -182,7 +214,7 @@ export default function Departments() {
               Allowed Buildings <span className="font-normal text-gray-500">(used in scheduling to prefer department buildings)</span>
             </p>
             <div className="grid grid-cols-2 gap-2 border border-gray-200 rounded-md p-3">
-              {buildings.map((b) => (
+              {formBuildingOptions.map((b) => (
                 <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
                     type="checkbox"
@@ -192,7 +224,7 @@ export default function Departments() {
                   {b.name}{b.location ? ` (${b.location})` : ''}
                 </label>
               ))}
-              {buildings.length === 0 && <p className="text-sm text-gray-400 col-span-2">No buildings configured yet.</p>}
+              {formBuildingOptions.length === 0 && <p className="text-sm text-gray-400 col-span-2">No buildings configured yet.</p>}
             </div>
           </div>
         </div>
@@ -208,6 +240,7 @@ export default function Departments() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

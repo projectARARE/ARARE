@@ -10,23 +10,41 @@ import java.util.List;
 @Repository
 public interface TeacherRepository extends JpaRepository<Teacher, Long> {
 
-    // Find teachers qualified for a given subject. 
+    /**
+     * Find teachers qualified for a given subject.
+     */
     @Query("SELECT t FROM Teacher t JOIN t.subjects s WHERE s.id = :subjectId")
     List<Teacher> findBySubjectId(@Param("subjectId") Long subjectId);
 
-    // Find teachers who prefer a given building. 
+    /**
+     * Find teachers who prefer a given building.
+     */
     @Query("SELECT t FROM Teacher t JOIN t.preferredBuildings b WHERE b.id = :buildingId")
     List<Teacher> findByPreferredBuildingId(@Param("buildingId") Long buildingId);
 
-    // List endpoint: the three collections carry @Fetch(SUBSELECT), so the
-    // fetch cost is flat (1 + 3 queries) instead of 1 + 3N.
+    /**
+     * List endpoint: the three collections carry @Fetch(SUBSELECT), so the
+     * fetch cost is flat (1 + 3 queries) instead of 1 + 3N.
+     */
     @Query("SELECT t FROM Teacher t")
     List<Teacher> findAllWithDetails();
 
-    // Natural-key lookup used by the CSV import service.
+    /**
+     * Find teachers bound to a given institute (null institute = global).
+     */
+    List<Teacher> findByInstituteId(Long instituteId);
+
+    /**
+     * Natural-key lookup used by the CSV import service.
+     */
     java.util.Optional<Teacher> findByEmployeeId(String employeeId);
 
-    // Delete from teacher_availability join table where timeslot_id = :timeslotId
+    /**
+     * Delete from teacher_availability join table where timeslot_id = :timeslotId
+     */
     @Query("DELETE FROM Teacher t JOIN t.availableTimeslots ts WHERE ts.id = :timeslotId")
     void deleteTeacherAvailabilityByTimeslotId(@Param("timeslotId") Long timeslotId);
+
+    @Query("SELECT DISTINCT t FROM Teacher t JOIN t.subjects s WHERE s.id IN :subjectIds")
+    List<Teacher> findDistinctBySubjectsIdIn(@Param("subjectIds") java.util.Collection<Long> subjectIds);
 }

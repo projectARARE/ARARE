@@ -61,9 +61,15 @@ public class TimeslotServiceImpl implements TimeslotService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
-        sessionRepo.clearTimeslotById(id);  // Unassign timeslot from sessions, keep sessions
+        /**
+         * Unassign timeslot from sessions, keep sessions
+         */
+        sessionRepo.clearTimeslotById(id);  
         cascadeDeletionService.purgePreAllocationsForTimeslot(id);
-        cascadeDeletionService.detachTimeslot(id);  // Clean availability + event join rows
+        /**
+         * Clean availability + event join rows
+         */
+        cascadeDeletionService.detachTimeslot(id);  
         repo.deleteById(id);
     }
 

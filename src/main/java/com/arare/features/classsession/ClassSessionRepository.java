@@ -13,14 +13,23 @@ import java.util.List;
 @Repository
 public interface ClassSessionRepository extends JpaRepository<ClassSession, Long> {
 
-    // List endpoints: fetch the association chain (batch.department,
-    // section.batch.department, room.building) in one round trip to avoid
-    // per-row lazy loads.
+    /**
+     * List endpoints: fetch the association chain (batch.department,
+     * section.batch.department, room.building) in one round trip to avoid
+     * per-row lazy loads.
+     */
     @EntityGraph(attributePaths = {
         "subject", "batch.department", "section.batch.department",
         "teacher", "room.building", "timeslot"
     })
     List<ClassSession> findByScheduleId(Long scheduleId);
+
+    /**
+     * Lightweight variant for bulk operations that only touch the lock flag:
+     * avoids loading the full association graph for every row.
+     */
+    @Query("SELECT cs FROM ClassSession cs WHERE cs.schedule.id = :scheduleId")
+    List<ClassSession> findBulkByScheduleId(@Param("scheduleId") Long scheduleId);
 
     @EntityGraph(attributePaths = {
         "subject", "batch.department", "section.batch.department",
@@ -50,11 +59,13 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
         @Param("teacherId") Long teacherId
     );
 
-    // Cross-schedule availability
-    // Sessions that already book a teacher in some OTHER ACTIVE (live)
-    // schedule. Both the manual-PATCH gate and the solver busy-interval facts
-    // feed off these two queries so a teacher is never double-booked across
-    // independently generated timetables.
+    /**
+     * Cross-schedule availability
+     * Sessions that already book a teacher in some OTHER ACTIVE (live)
+     * schedule. Both the manual-PATCH gate and the solver busy-interval facts
+     * feed off these two queries so a teacher is never double-booked across
+     * independently generated timetables.
+     */
 
     @Query("SELECT cs FROM ClassSession cs JOIN cs.schedule sch " +
            "WHERE cs.teacher.id = :teacherId " +
@@ -117,7 +128,9 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
         @Param("roomId") Long roomId
     );
 
-    // Cascade-delete helpers
+    /**
+     * Cascade-delete helpers
+     */
 
     @Transactional @Modifying
     @Query("DELETE FROM ClassSession cs WHERE cs.schedule.id = :scheduleId")
@@ -145,7 +158,9 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
            "(SELECT b.id FROM Batch b WHERE b.department.id = :departmentId)")
     void deleteByDepartmentIdViaBatch(@Param("departmentId") Long departmentId);
 
-    // SET NULL helpers (keeps sessions, unassigns the planning variable)
+    /**
+     * SET NULL helpers (keeps sessions, unassigns the planning variable)
+     */
 
     @Transactional @Modifying
     @Query("UPDATE ClassSession cs SET cs.teacher = null WHERE cs.teacher.id = :teacherId")

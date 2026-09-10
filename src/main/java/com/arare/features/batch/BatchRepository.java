@@ -13,8 +13,10 @@ import java.util.List;
 @Repository
 public interface BatchRepository extends JpaRepository<Batch, Long> {
 
-    // subjects fetched via @Fetch(SUBSELECT); workingDays (bag) + to-one graph
-    // are joined eagerly. No multiple-bag fetch is triggered.
+    /**
+     * subjects fetched via @Fetch(SUBSELECT); workingDays (bag) + to-one graph
+     * are joined eagerly. No multiple-bag fetch is triggered.
+     */
     @EntityGraph(attributePaths = {"department", "department.institute", "homeRoom", "workingDays"})
     @Query("SELECT b FROM Batch b")
     List<Batch> findAllWithDetails();
@@ -40,8 +42,10 @@ public interface BatchRepository extends JpaRepository<Batch, Long> {
     @Query("DELETE FROM Batch b WHERE b.department.id = :departmentId")
     void deleteByDepartmentId(@Param("departmentId") Long departmentId);
 
-    // Null out Batch.homeRoom before a Room (or its Building) is deleted, since
-    // Batch.homeRoom is a plain @ManyToOne with no cascade/@OnDelete.
+    /**
+     * Null out Batch.homeRoom before a Room (or its Building) is deleted, since
+     * Batch.homeRoom is a plain @ManyToOne with no cascade/@OnDelete.
+     */
     @Transactional @Modifying
     @Query("UPDATE Batch b SET b.homeRoom = null WHERE b.homeRoom.id = :roomId")
     void clearHomeRoomByRoomId(@Param("roomId") Long roomId);

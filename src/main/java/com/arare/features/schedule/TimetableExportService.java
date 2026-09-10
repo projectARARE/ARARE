@@ -24,11 +24,13 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-// Exports a solved schedule to CSV. The output is a flat list of assigned
-// sessions ordered by day-of-week then start time, with a UTF-8 BOM so Excel opens
-// it correctly. When a BATCH/TEACHER/ROOM view is active with no single entity,
-// one CSV file per entity is returned inside a ZIP so each batch (or teacher, or
-// room) gets its own schedule file.
+/**
+ * Exports a solved schedule to CSV. The output is a flat list of assigned
+ * sessions ordered by day-of-week then start time, with a UTF-8 BOM so Excel opens
+ * it correctly. When a BATCH/TEACHER/ROOM view is active with no single entity,
+ * one CSV file per entity is returned inside a ZIP so each batch (or teacher, or
+ * room) gets its own schedule file.
+ */
 @Service
 @RequiredArgsConstructor
 public class TimetableExportService {
@@ -37,8 +39,10 @@ public class TimetableExportService {
         ALL, TEACHER, BATCH, ROOM
     }
 
-    // Sentinel key for sessions that have no applicable entity in the active view
-    // dimension (e.g. a session with no teacher in a TEACHER split).
+    /**
+     * Sentinel key for sessions that have no applicable entity in the active view
+     * dimension (e.g. a session with no teacher in a TEACHER split).
+     */
     private static final long UNASSIGNED = -1L;
 
     private final ScheduleRepository     scheduleRepo;
@@ -143,11 +147,13 @@ public class TimetableExportService {
         )).append('\n');
     }
 
-    // Buckets placed sessions by the entity's database id (teacher id, room id,
-    // batch id) so that distinct entities with identical display labels — e.g.
-    // two teachers with the same name, or the same "CSE Yr1-A" in two campuses —
-    // still get their own separate CSV file. Sessions with no entity in the
-    // active view fall into a single "Unassigned" bucket.
+    /**
+     * Buckets placed sessions by the entity's database id (teacher id, room id,
+     * batch id) so that distinct entities with identical display labels — e.g.
+     * two teachers with the same name, or the same "CSE Yr1-A" in two campuses —
+     * still get their own separate CSV file. Sessions with no entity in the
+     * active view fall into a single "Unassigned" bucket.
+     */
     private Map<Long, List<ClassSession>> groupByEntityId(List<ClassSession> sessions, View view) {
         Map<Long, List<ClassSession>> map = new LinkedHashMap<>();
         for (ClassSession s : sessions) {
@@ -208,8 +214,10 @@ public class TimetableExportService {
         return null;
     }
 
-    // Keeps a per-entity CSV file name short and free of filesystem-hostile
-    // characters while staying readable (e.g. "CSE Yr1-A.csv").
+    /**
+     * Keeps a per-entity CSV file name short and free of filesystem-hostile
+     * characters while staying readable (e.g. "CSE Yr1-A.csv").
+     */
     private String safeFileName(String label) {
         String cleaned = label.replaceAll("[\\\\/*?:\\[\\]<>|\"]", "-").trim();
         if (cleaned.isEmpty()) cleaned = "timetable";

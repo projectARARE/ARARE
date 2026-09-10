@@ -31,11 +31,13 @@ export interface Building {
   id: number
   name: string
   location?: string
+  instituteId?: number
   createdAt?: string
 }
 export interface BuildingRequest {
   name: string
   location?: string
+  instituteId?: number
 }
 
 // Institute (constituent unit within the university)
@@ -108,6 +110,7 @@ export interface Teacher {
   maxConsecutiveClasses: number
   movementPenalty: number
   preferredFreeDay?: SchoolDay
+  instituteId?: number
 }
 export interface TeacherRequest {
   employeeId?: string
@@ -120,6 +123,7 @@ export interface TeacherRequest {
   maxConsecutiveClasses: number
   movementPenalty?: number
   preferredFreeDay?: SchoolDay
+  instituteId?: number
 }
 
 // Subject
@@ -447,6 +451,7 @@ export interface ConstraintBreakdown {
   level: 'HARD' | 'MEDIUM' | 'SOFT'
   matchCount: number
   scoreImpact: string
+  sessionIds?: number[]
 }
 
 export interface ScoreExplanation {
@@ -522,6 +527,13 @@ export interface SessionCreateRequest {
   timeslotId?: number | null
   duration?: number
   locked?: boolean
+}
+
+// Bulk lock toggle (lock-all / unlock-all / release solver-induced locks)
+
+export interface SessionsBulkLockRequest {
+  locked: boolean
+  sessionIds?: number[]
 }
 
 // AcademicTerm

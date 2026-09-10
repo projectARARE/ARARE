@@ -28,16 +28,18 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 import java.util.stream.Collectors;
 
-// Pre-solve feasibility validator — the Constraint Propagation layer.
-// <p>Runs lightweight checks before the Timefold solver is invoked to:
-// <ol>
-// <li>Detect hard errors that guarantee solver infeasibility (e.g. a subject
-// with no qualified teacher).</li>
-// <li>Surface warnings that typically produce a poor score (e.g. more sessions
-// than available teacher-timeslot slots).</li>
-// </ol>
-// <p>This is O(batches × subjects) — fast enough to run interactively
-// in the UI before clicking "Generate Schedule".</p>
+/**
+ * Pre-solve feasibility validator — the Constraint Propagation layer.
+ * <p>Runs lightweight checks before the Timefold solver is invoked to:
+ * <ol>
+ * <li>Detect hard errors that guarantee solver infeasibility (e.g. a subject
+ * with no qualified teacher).</li>
+ * <li>Surface warnings that typically produce a poor score (e.g. more sessions
+ * than available teacher-timeslot slots).</li>
+ * </ol>
+ * <p>This is O(batches × subjects) — fast enough to run interactively
+ * in the UI before clicking "Generate Schedule".</p>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -57,10 +59,10 @@ public class FeasibilityCheckService {
     public FeasibilityCheckResult check(ScheduleRequest req) {
         List<FeasibilityIssue> issues = new ArrayList<>();
 
-        //  1. Load entities scoped to the request 
+        /**
+         * 1. Load entities scoped to the request
+         */
         List<Batch>   batches  = loadBatches(req);
-        List<Teacher> teachers = loadTeachers(req);
-        List<Room>    rooms    = loadRooms(req);
         List<Timeslot> classTimeslots = timeslotRepo.findByType(TimeslotType.CLASS);
         int classTimeslotCount = classTimeslots.size();
 
@@ -68,12 +70,14 @@ public class FeasibilityCheckService {
             issues.add(error("BATCH",
                     "No batches found for the selected scope. Configure batches before generating a schedule.",
                     null, null));
-            return result(issues, 0, classTimeslotCount, teachers.size(), rooms.size());
+            return result(issues, 0, classTimeslotCount,
+                    loadTeachers(req, List.of()).size(), loadRooms(req).size());
         }
 
-        // Force-load lazy associations used in the checks below
+        /**
+         * Force-load lazy associations used in the checks below
+         */
         batches.forEach(b -> b.getDepartment().getId());
-        teachers.forEach(t -> t.getSubjects().size());
 
         Set<Long> deptIds = batches.stream()
                 .map(b -> b.getDepartment().getId())
@@ -87,8 +91,10 @@ public class FeasibilityCheckService {
                                 .filter(s -> s.getDepartment() == null
                                         || deptIds.contains(s.getDepartment().getId()))
                                 .toList();
-        // Institute-wide subjects (no owning department) are eligible in every
-        // scope: they can be offered to any batch via SubjectOffering.
+        /**
+         * Institute-wide subjects (no owning department) are eligible in every
+         * scope: they can be offered to any batch via SubjectOffering.
+         */
         List<Subject> subjects = new ArrayList<>(scoped);
         for (Subject instWide : subjectRepo.findInstituteWide()) {
             if (subjects.stream().noneMatch(s -> s.getId().equals(instWide.getId()))) {
@@ -96,13 +102,27 @@ public class FeasibilityCheckService {
             }
         }
 
+        /**
+         * Teacher/room pools mirror {@code JpaProblemDataGateway.loadFacts} so the
+         * feasibility verdict uses the exact pool the solver will use:
+         * institute scope -> teachers qualified for at least one scoped subject
+         * ({@code findDistinctBySubjectsIdIn}) and rooms in the institute's
+         * buildings ({@code findByBuildingInstituteId}); university scope -> all
+         * teachers and all rooms.
+         */
+        List<Teacher> teachers = loadTeachers(req, subjects);
+        List<Room>    rooms    = loadRooms(req);
+        teachers.forEach(t -> t.getSubjects().size());
+
         if (subjects.isEmpty()) {
             issues.add(warn("SUBJECT",
                     "No subjects found for the selected batches' departments. Add subjects to enable scheduling.",
                     null, null));
         }
 
-        //  2. No CLASS timeslots 
+        /**
+         * 2. No CLASS timeslots
+         */
         if (classTimeslotCount == 0) {
             issues.add(error("TIMESLOT",
                     "No CLASS-type timeslots are configured. Add timeslots before generating a schedule.",
@@ -110,7 +130,9 @@ public class FeasibilityCheckService {
             return result(issues, 0, 0, teachers.size(), rooms.size());
         }
 
-        //  3. Subject → teacher qualification check (ERROR if none) 
+        /**
+         * 3. Subject → teacher qualification check (ERROR if none)
+         */
         for (Subject s : subjects) {
             if (s.getChunkHours() <= 0) {
             issues.add(error("SUBJECT",
@@ -136,7 +158,9 @@ public class FeasibilityCheckService {
             }
         }
 
-        //  3b. Multi-slot subjects need deterministic slot ordering 
+        /**
+         * 3b. Multi-slot subjects need deterministic slot ordering
+         */
         int maxChunkUnits = subjects.stream().mapToInt(Subject::getChunkHours).max().orElse(1);
         if (maxChunkUnits > 1) {
             boolean hasSlotNumbers = classTimeslots.stream().anyMatch(t -> t.getSlotNumber() != null);
@@ -149,11 +173,13 @@ public class FeasibilityCheckService {
 
             int maxConsecutive = longestConsecutiveClassRun(classTimeslots);
 
-            // chunkHours (maxChunkUnits) is a duration in HOURS, but
-            // longestConsecutiveClassRun is a SLOT COUNT. Convert the slot run to
-            // hours using the per-slot length. Use the MAX slot length so we don't
-            // under-report capacity when slots have variable durations. A single
-            // slot shorter than 1h is treated as 1h to stay conservative.
+            /**
+             * chunkHours (maxChunkUnits) is a duration in HOURS, but
+             * longestConsecutiveClassRun is a SLOT COUNT. Convert the slot run to
+             * hours using the per-slot length. Use the MAX slot length so we don't
+             * under-report capacity when slots have variable durations. A single
+             * slot shorter than 1h is treated as 1h to stay conservative.
+             */
             long hoursPerSlot = classTimeslots.stream()
                 .mapToLong(t -> java.time.Duration.between(t.getStartTime(), t.getEndTime()).toHours())
                 .max()
@@ -170,7 +196,9 @@ public class FeasibilityCheckService {
             }
         }
 
-        //  4. Lab subject → room type check (ERROR if no room of required type)
+        /**
+         * 4. Lab subject → room type check (ERROR if no room of required type)
+         */
         for (Subject s : subjects) {
             if (!s.isLab() || !s.isRequiresRoom()) continue;
             boolean hasRoom = rooms.stream()
@@ -182,18 +210,31 @@ public class FeasibilityCheckService {
             }
         }
 
-        //  5. Estimate total sessions & global capacity 
+        /**
+         * 5. Estimate total sessions & global capacity
+         */
         List<Long> batchIds = batches.stream().map(Batch::getId).toList();
         List<ClassSection> sections = batchIds.isEmpty()
                 ? Collections.emptyList()
                 : sectionRepo.findByBatchIdIn(batchIds);
-        sections.forEach(sec -> sec.getBatch().getId()); // force-load section→batch
-        batches.forEach(b -> b.getSubjects().size());    // force-load batch curriculum
-        sections.forEach(sec -> sec.getSubjects().size()); // force-load section curriculum
+        /**
+         * force-load section→batch
+         */
+        sections.forEach(sec -> sec.getBatch().getId()); 
+        /**
+         * force-load batch curriculum
+         */
+        batches.forEach(b -> b.getSubjects().size());    
+        /**
+         * force-load section curriculum
+         */
+        sections.forEach(sec -> sec.getSubjects().size()); 
 
         int totalSessions = computeSessionCount(batches, subjects, sections);
 
-        // A single batch cannot occupy more sessions than available class slots.
+        /**
+         * A single batch cannot occupy more sessions than available class slots.
+         */
         for (Batch batch : batches) {
             int batchSessions = computeSessionCountForBatch(batch, subjects, sections);
             if (batchSessions > classTimeslotCount) {
@@ -216,11 +257,13 @@ public class FeasibilityCheckService {
                     null, null));
         }
 
-        //  6. Subjects with more required sessions than available timeslots 
-        //  A LAB subject is generated once PER SECTION, so its required session
-        //  count must be multiplied by the number of sections in the batch before
-        //  comparing against the available timeslots (otherwise a lab needing more
-        //  per-week sessions than section-level timeslots passes incorrectly).
+        /**
+         * 6. Subjects with more required sessions than available timeslots
+         * A LAB subject is generated once PER SECTION, so its required session
+         * count must be multiplied by the number of sections in the batch before
+         * comparing against the available timeslots (otherwise a lab needing more
+         * per-week sessions than section-level timeslots passes incorrectly).
+         */
         Map<Long, Long> sectionsByBatch = sections.stream()
                 .collect(Collectors.groupingBy(
                         sec -> sec.getBatch().getId(),
@@ -229,8 +272,10 @@ public class FeasibilityCheckService {
             for (Subject s : subjects) {
                 if (s.getDepartment() != null
                         && !s.getDepartment().getId().equals(batch.getDepartment().getId())) {
-                    // Institute-wide subjects (null department) are eligible for
-                    // every batch; only skip subjects owned by a different dept.
+                    /**
+                     * Institute-wide subjects (null department) are eligible for
+                     * every batch; only skip subjects owned by a different dept.
+                     */
                     continue;
                 }
                 int sessionsPerBatch = s.getWeeklyHours() / s.getChunkHours();
@@ -250,14 +295,18 @@ public class FeasibilityCheckService {
             }
         }
 
-    // 7. Pre-assignments from the wizard must be individually schedulable
-    // (qualified teacher, usable room, CLASS slot, no cross-schedule clash),
-    // otherwise the solver would be asked to run on an infeasible request.
+    /**
+     * 7. Pre-assignments from the wizard must be individually schedulable
+     * (qualified teacher, usable room, CLASS slot, no cross-schedule clash),
+     * otherwise the solver would be asked to run on an infeasible request.
+     */
     checkPreAllocations(req, issues, teachers, rooms);
 
-    //  8. Term teacher allotments: the solver HARD-rejects any non-allotted
-    //  teacher, so an allotment must resolve to exactly one teacher who is
-    //  actually inside the schedule's teacher scope.
+    /**
+     * 8. Term teacher allotments: the solver HARD-rejects any non-allotted
+     * teacher, so an allotment must resolve to exactly one teacher who is
+     * actually inside the schedule's teacher scope.
+     */
     checkTeacherAllotments(issues, batches, sections, subjects, teachers);
 
         int recommended = SolvingTimeRecommender.recommend(totalSessions, teachers.size(), rooms.size(), classTimeslotCount);
@@ -331,8 +380,10 @@ public class FeasibilityCheckService {
             }
             int duration = subject.getChunkHours();
 
-            // Exactly one teacher per (subject, effectiveBatch) -- mirrors the
-            // singleTeacherPerSubjectSection HARD constraint.
+            /**
+             * Exactly one teacher per (subject, effectiveBatch) -- mirrors the
+             * singleTeacherPerSubjectSection HARD constraint.
+             */
             for (int j = 0; j < specs.size(); j++) {
                 if (i == j) {
                     continue;
@@ -352,7 +403,9 @@ public class FeasibilityCheckService {
             if (slot == null || teacher == null) {
                 continue;
             }
-            // Two pre-allocations of the same teacher cannot overlap.
+            /**
+             * Two pre-allocations of the same teacher cannot overlap.
+             */
             for (int j = i + 1; j < specs.size(); j++) {
                 PreAllocationSpec other = specs.get(j);
                 if (!Objects.equals(other.teacherId(), spec.teacherId()) || other.timeslotId() == null) {
@@ -370,8 +423,10 @@ public class FeasibilityCheckService {
                         spec.teacherId(), teacher.getName()));
                 }
             }
-            // Cross-schedule gate: the teacher must not be booked in another
-            // ACTIVE timetable at the pre-assigned slot.
+            /**
+             * Cross-schedule gate: the teacher must not be booked in another
+             * ACTIVE timetable at the pre-assigned slot.
+             */
             for (ClassSession busy : sessionRepo.findActiveCrossScheduleSessions(teacher.getId(), -1L, req.instituteId())) {
                 if (busy.getTimeslot() != null
                     && busy.getTimeslot().getDay() == slot.getDay()
@@ -383,9 +438,11 @@ public class FeasibilityCheckService {
                         spec.teacherId(), teacher.getName()));
                 }
             }
-            // Cross-schedule gate for rooms: the room must not be booked in
-            // another ACTIVE timetable at the pre-assigned slot (mirrors the
-            // teacher gate above).
+            /**
+             * Cross-schedule gate for rooms: the room must not be booked in
+             * another ACTIVE timetable at the pre-assigned slot (mirrors the
+             * teacher gate above).
+             */
             if (spec.roomId() != null) {
                 for (ClassSession busy : sessionRepo.findActiveCrossScheduleSessionsByRoom(spec.roomId(), -1L, req.instituteId())) {
                     if (busy.getTimeslot() != null
@@ -435,10 +492,12 @@ public class FeasibilityCheckService {
                 .collect(Collectors.toMap(Teacher::getId, t -> t));
         Set<Long> requestedTeacherIds = teacherById.keySet();
 
-        // Group by (batch, subject): the singleTeacherPerSubjectSection HARD
-        // constraint groups every session of a subject under one effectiveBatch,
-        // so all section- and batch-level allotments for a batch+subject must
-        // resolve to exactly one teacher.
+        /**
+         * Group by (batch, subject): the singleTeacherPerSubjectSection HARD
+         * constraint groups every session of a subject under one effectiveBatch,
+         * so all section- and batch-level allotments for a batch+subject must
+         * resolve to exactly one teacher.
+         */
         Map<Batch, Map<Long, List<TeacherAssignment>>> byBatchSubject = new HashMap<>();
         for (TeacherAssignment a : assignments) {
             Batch b = a.getBatch();
@@ -513,15 +572,21 @@ public class FeasibilityCheckService {
         return batchRepo.findAll();
     }
 
-    private List<Teacher> loadTeachers(ScheduleRequest req) {
+    private List<Teacher> loadTeachers(ScheduleRequest req, List<Subject> scopedSubjects) {
         if (req.teacherIds() != null && !req.teacherIds().isEmpty())
             return teacherRepo.findAllById(req.teacherIds());
+        if (req.instituteId() != null && !scopedSubjects.isEmpty()) {
+            List<Long> subjectIds = scopedSubjects.stream().map(Subject::getId).toList();
+            return teacherRepo.findDistinctBySubjectsIdIn(subjectIds);
+        }
         return teacherRepo.findAll();
     }
 
     private List<Room> loadRooms(ScheduleRequest req) {
         if (req.roomIds() != null && !req.roomIds().isEmpty())
             return roomRepo.findAllById(req.roomIds());
+        if (req.instituteId() != null)
+            return roomRepo.findByBuildingInstituteId(req.instituteId());
         return roomRepo.findAll();
     }
 
@@ -537,9 +602,11 @@ public class FeasibilityCheckService {
     private int computeSessionCountForBatch(Batch batch, List<Subject> subjects,
                                             List<ClassSection> sections) {
         int total = 0;
-        // Preload offerings for this batch and its sections (mirrors
-        // StandardSessionGenerator: an explicit offering list wins over the
-        // legacy join-table curriculum).
+        /**
+         * Preload offerings for this batch and its sections (mirrors
+         * StandardSessionGenerator: an explicit offering list wins over the
+         * legacy join-table curriculum).
+         */
         Map<Long, List<SubjectOffering>> batchOfferings = indexOfferings(
             offeringRepo.findByBatchId(batch.getId()));
         Map<Long, List<SubjectOffering>> sectionOfferings = indexOfferings(
@@ -550,11 +617,15 @@ public class FeasibilityCheckService {
                         .map(ClassSection::getId).toList()));
 
         for (Subject s : subjects) {
-            // Institute-wide subjects have no owning department.
+            /**
+             * Institute-wide subjects have no owning department.
+             */
             if (s.getDepartment() != null
                 && !s.getDepartment().getId().equals(batch.getDepartment().getId())) continue;
-            // Curriculum scoping mirrors StandardSessionGenerator: a batch with
-            // its own curriculum only schedules the subjects it offers.
+            /**
+             * Curriculum scoping mirrors StandardSessionGenerator: a batch with
+             * its own curriculum only schedules the subjects it offers.
+             */
             if (!batchTakesSubject(batch, s, batchOfferings)) continue;
             int weeklyHours = effectiveWeeklyHours(batch, s, batchOfferings);
             int perOccurrence = weeklyHours / s.getChunkHours();
@@ -564,8 +635,10 @@ public class FeasibilityCheckService {
                     .filter(sec -> sectionTakesSubject(sec, s, sectionOfferings))
                     .count();
                 if (sectionCount == 0) {
-                    // No section offers the lab split: the generator falls back
-                    // to whole-batch lab sessions.
+                    /**
+                     * No section offers the lab split: the generator falls back
+                     * to whole-batch lab sessions.
+                     */
                     total += perOccurrence;
                 } else {
                     total += (int) (perOccurrence * sectionCount);
@@ -586,9 +659,11 @@ public class FeasibilityCheckService {
         }));
     }
 
-    // Curriculum fallback chain: explicit SubjectOffering list -> section
-    // curriculum -> batch curriculum -> department-offered (all subjects).
-    // Empty curriculum means "inherit".
+    /**
+     * Curriculum fallback chain: explicit SubjectOffering list -> section
+     * curriculum -> batch curriculum -> department-offered (all subjects).
+     * Empty curriculum means "inherit".
+     */
     private boolean batchTakesSubject(Batch batch, Subject subject,
                                       Map<Long, List<SubjectOffering>> batchOfferings) {
         List<SubjectOffering> offerings = batchOfferings.get(batch.getId());
@@ -684,7 +759,9 @@ public class FeasibilityCheckService {
     private static FeasibilityCheckResult result(List<FeasibilityIssue> issues,
                                                   int totalSessions, int timeslots,
                                                   int teacherCount, int roomCount) {
-        // Sort: errors first, then warnings
+        /**
+         * Sort: errors first, then warnings
+         */
         issues.sort(Comparator.comparing(i -> i.severity() == FeasibilityIssue.Severity.ERROR ? 0 : 1));
         long errors   = issues.stream().filter(i -> i.severity() == FeasibilityIssue.Severity.ERROR).count();
         long warnings = issues.stream().filter(i -> i.severity() == FeasibilityIssue.Severity.WARNING).count();

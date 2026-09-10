@@ -45,7 +45,7 @@ Conventions:
 ## Buildings — `/api/v1/buildings`
 | Method | Path | Purpose | Body |
 | --- | --- | --- | --- |
-| POST | `/buildings` | Create | `BuildingRequest{name, location}` |
+| POST | `/buildings` | Create | `BuildingRequest{name, location?, instituteId}` |
 | PUT | `/buildings/{id}` | Update | `BuildingRequest` |
 | GET | `/buildings/{id}` | Get by id | — |
 | GET | `/buildings` | List all | — |
@@ -90,7 +90,7 @@ Unique on (`department_id`, `year`, `section`).
 ## Teachers — `/api/v1/teachers`
 | Method | Path | Purpose | Body |
 | --- | --- | --- | --- |
-| POST | `/teachers` | Create | `TeacherRequest{employeeId?, name, subjectIds[], availableTimeslotIds[], preferredBuildingIds[], maxDailyHours, maxWeeklyHours, maxConsecutiveClasses, movementPenalty, preferredFreeDay?}` |
+| POST | `/teachers` | Create | `TeacherRequest{employeeId?, name, instituteId?, subjectIds[], availableTimeslotIds[], preferredBuildingIds[], maxDailyHours, maxWeeklyHours, maxConsecutiveClasses, movementPenalty, preferredFreeDay?}` |
 | PUT | `/teachers/{id}` | Update | `TeacherRequest` |
 | GET | `/teachers/{id}` | Get by id | — |
 | GET | `/teachers` | List all | — |
@@ -209,6 +209,13 @@ availableTimeslots, teacherCount, roomCount, recommendedSolvingTimeSeconds, issu
 `recommendedSolvingTimeSeconds` is the solve wall-clock derived from the exact
 scope (see [FEASIBILITY_CHECK.md §9](algorithms/FEASIBILITY_CHECK.md)) and is what
 the frontend pre-fills into the Solve Time control.
+
+`ScoreExplanationResponse`: `{score, feasible, hardScore, mediumScore, softScore,
+constraints[]}` where each `constraints` entry is
+`{constraintName, level (HARD/MEDIUM/SOFT), matchCount, scoreImpact, sessionIds[]}`.
+`sessionIds` lists the `ClassSession` ids implicated in that constraint (empty for
+non-session constraints) so the frontend can point, highlight, and open the
+conflicted sessions directly from the score panel.
 
 ## Pre-Allocations — `/api/v1/pre-allocations`
 | Method | Path | Purpose | Body |

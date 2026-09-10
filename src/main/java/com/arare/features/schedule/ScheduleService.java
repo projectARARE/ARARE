@@ -12,6 +12,7 @@ public interface ScheduleService {
     List<ScheduleResponse> findAll();
     ScheduleResponse activate(Long id);
     ScheduleResponse archive(Long id);
+    ScheduleResponse revalidate(Long id);
     SolveJobResponse partialResolve(Long scheduleId, List<Long> impactedSessionIds);
     ScoreExplanationResponse explainScore(Long scheduleId);
     String getExplanation(Long id);

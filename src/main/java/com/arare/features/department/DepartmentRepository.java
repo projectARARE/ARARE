@@ -17,6 +17,10 @@ public interface DepartmentRepository extends JpaRepository<Department, Long> {
 
     boolean existsByCode(String code);
 
+    boolean existsByInstituteIdAndCode(Long instituteId, String code);
+
+    boolean existsByInstituteIdAndName(Long instituteId, String name);
+
     long countByInstituteId(Long instituteId);
 
     @Query("SELECT d.institute.id, COUNT(d) FROM Department d GROUP BY d.institute.id")
@@ -24,7 +28,9 @@ public interface DepartmentRepository extends JpaRepository<Department, Long> {
 
     List<Department> findByInstituteId(Long instituteId);
 
-    // List endpoint: fetch buildingsAllowed in one round trip to avoid 1+N.
+    /**
+     * List endpoint: fetch buildingsAllowed in one round trip to avoid 1+N.
+     */
     @EntityGraph(attributePaths = {"buildingsAllowed"})
     @Query("SELECT DISTINCT d FROM Department d")
     List<Department> findAllWithBuildings();

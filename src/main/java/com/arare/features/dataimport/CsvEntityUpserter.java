@@ -73,9 +73,9 @@ public class CsvEntityUpserter {
         };
     }
 
-    // 
-    // Entity upserts
-    // 
+    /**
+     * Entity upserts
+     */
 
     private boolean upsertTimeslot(Map<String, String> row, int rowNumber, ImportContext context) {
         SchoolDay day = CsvUtils.parseEnum(SchoolDay.class, CsvUtils.required(row, "day", rowNumber));
@@ -104,13 +104,34 @@ public class CsvEntityUpserter {
     private boolean upsertBuilding(Map<String, String> row, int rowNumber, ImportContext context) {
         String name = CsvUtils.required(row, "name", rowNumber);
 
-        Building entity = context.buildingByName(name);
+        /**
+         * Ambiguity is tracked server-side by ImportContext.loadFromDatabase:
+         * if the DB already holds same-named buildings in different institutes,
+         * name-only targeting is unsafe and must not silently pick one.
+         */
+        Building existingByName = context.buildingByName(name);
+        if (context.isAmbiguousBuildingName(name)) {
+            throw new IllegalArgumentException(
+                "Ambiguous building name: '" + name + "' at row " + rowNumber
+                    + " (name exists in multiple institutes; add an explicit institute column to target one)");
+        }
+        Building entity = existingByName;
         boolean created = entity == null;
         if (created) entity = new Building();
 
         entity.setName(name);
         String location = CsvUtils.blankToNull(row.get("location"));
         if (location != null || created) entity.setLocation(location);
+
+        if (entity.getInstitute() == null) {
+            Institute inst = resolveInstituteFromRow(row, rowNumber);
+            if (inst == null) {
+                inst = instituteRepository.findAllByOrderByNameAsc().stream().findFirst().orElse(null);
+            }
+            if (inst != null) {
+                entity.setInstitute(inst);
+            }
+        }
 
         buildingRepository.save(entity);
         context.register(entity);
@@ -121,12 +142,17 @@ public class CsvEntityUpserter {
         String code = CsvUtils.key(CsvUtils.required(row, "code", rowNumber));
         String name = CsvUtils.required(row, "name", rowNumber);
 
-        // Resolve/validate every reference BEFORE touching the (possibly managed)
-        // entity so a failure cannot leave a partial dirty-update on commit.
+        /**
+         * Resolve/validate every reference BEFORE touching the (possibly managed)
+         * entity so a failure cannot leave a partial dirty-update on commit.
+         */
+        Institute rowInst = resolveInstituteFromRow(row, rowNumber);
         Institute inst = null;
         Department existing = context.departmentByCode(code);
         if (existing == null || existing.getInstitute() == null) {
-            inst = instituteRepository.findAllByOrderByNameAsc().stream().findFirst().orElse(null);
+            inst = rowInst != null
+                ? rowInst
+                : instituteRepository.findAllByOrderByNameAsc().stream().findFirst().orElse(null);
         }
         Set<String> buildingNames = CsvUtils.splitTokens(row.get("buildingnames"));
         List<Building> buildingsAllowed = buildingNames.isEmpty()
@@ -139,9 +165,12 @@ public class CsvEntityUpserter {
 
         entity.setCode(code);
         entity.setName(name);
-        // New departments need a home institute. The CSV has no institute
-        // column; default to the single/default institute (index 0 by name),
-        // which is correct for the common single-institute deployment.
+        /**
+         * New departments need a home institute. An explicit institute column
+         * targets the right institute; otherwise default to the single/default
+         * institute (index 0 by name), correct for the common single-institute
+         * deployment.
+         */
         if (entity.getInstitute() == null && inst != null) {
             entity.setInstitute(inst);
         }
@@ -162,8 +191,10 @@ public class CsvEntityUpserter {
             "Unknown building: " + buildingName + " (import buildings first)"
         );
 
-        // Resolve/validate every reference and scalar BEFORE mutating the
-        // (possibly managed) entity so a failure cannot flush a partial update.
+        /**
+         * Resolve/validate every reference and scalar BEFORE mutating the
+         * (possibly managed) entity so a failure cannot flush a partial update.
+         */
         String type = CsvUtils.required(row, "type", rowNumber);
         RoomType roomType = CsvUtils.parseEnum(RoomType.class, type);
         String labSubtype = CsvUtils.blankToNull(row.get("labsubtype"));
@@ -205,8 +236,10 @@ public class CsvEntityUpserter {
         String code = CsvUtils.required(row, "code", rowNumber);
         String name = CsvUtils.required(row, "name", rowNumber);
 
-        // Resolve/validate every scalar BEFORE mutating the (possibly managed)
-        // entity so a failure cannot flush a partial update.
+        /**
+         * Resolve/validate every scalar BEFORE mutating the (possibly managed)
+         * entity so a failure cannot flush a partial update.
+         */
         int weeklyHours = parseRequiredInt(row, "weeklyhours", rowNumber);
         int chunkHours = parseRequiredInt(row, "chunkhours", rowNumber);
         String roomType = CsvUtils.required(row, "roomtyperequired", rowNumber);
@@ -254,8 +287,10 @@ public class CsvEntityUpserter {
         boolean created = entity == null;
         if (created) entity = new Teacher();
 
-        // Resolve/validate every scalar and reference BEFORE mutating the
-        // (possibly managed) entity so a failure cannot flush a partial update.
+        /**
+         * Resolve/validate every scalar and reference BEFORE mutating the
+         * (possibly managed) entity so a failure cannot flush a partial update.
+         */
         int maxDailyHours = CsvUtils.parseIntOrDefault(row.get("maxdailyhours"), created ? 6 : entity.getMaxDailyHours());
         int maxWeeklyHours = CsvUtils.parseIntOrDefault(row.get("maxweeklyhours"), created ? 20 : entity.getMaxWeeklyHours());
         int maxConsecutiveClasses = CsvUtils.parseIntOrDefault(row.get("maxconsecutiveclasses"), created ? 3 : entity.getMaxConsecutiveClasses());
@@ -295,8 +330,10 @@ public class CsvEntityUpserter {
         int year = Integer.parseInt(CsvUtils.required(row, "year", rowNumber));
         String section = CsvUtils.required(row, "section", rowNumber);
 
-        // Resolve/validate every scalar BEFORE mutating the (possibly managed)
-        // entity so a failure cannot flush a partial update.
+        /**
+         * Resolve/validate every scalar BEFORE mutating the (possibly managed)
+         * entity so a failure cannot flush a partial update.
+         */
         String studentCount = CsvUtils.blankToNull(row.get("studentcount"));
         int studentCountVal = CsvUtils.parseIntOrDefault(studentCount, 60);
         String preferredFreeDay = CsvUtils.blankToNull(row.get("preferredfreeday"));
@@ -324,9 +361,9 @@ public class CsvEntityUpserter {
         return created;
     }
 
-    // 
-    // Value resolvers (token columns → managed entity references)
-    // 
+    /**
+     * Value resolvers (token columns → managed entity references)
+     */
 
     private List<Building> resolveBuildings(Set<String> names, ImportContext context) {
         List<Building> resolved = new ArrayList<>();
@@ -392,9 +429,9 @@ public class CsvEntityUpserter {
         return "DEPT:" + subjectCode;
     }
 
-    // 
-    // Small helpers
-    // 
+    /**
+     * Small helpers
+     */
 
     private static int parseRequiredInt(Map<String, String> row, String column, int rowNumber) {
         return Integer.parseInt(CsvUtils.required(row, column, rowNumber));
@@ -403,5 +440,25 @@ public class CsvEntityUpserter {
     private static <T> T requireEntity(T entity, String message) {
         if (entity == null) throw new IllegalArgumentException(message);
         return entity;
+    }
+
+    /**
+     * Resolves an optional institute column from a row. The column may be
+     * {@code institute}, {@code instituteCode} or {@code instituteName}
+     * (header-normalised keys). Returns {@code null} when the column is
+     * absent or blank; otherwise resolves by code first, then by name, and
+     * throws with row context when the token is unknown so a bad reference
+     * never silently creates an orphaned entity.
+     */
+    private Institute resolveInstituteFromRow(Map<String, String> row, int rowNumber) {
+        String token = CsvUtils.blankToNull(row.get("institute"));
+        if (token == null) token = CsvUtils.blankToNull(row.get("institutecode"));
+        if (token == null) token = CsvUtils.blankToNull(row.get("instituename"));
+        if (token == null) return null;
+        final String resolvedToken = token;
+        return instituteRepository.findByCode(CsvUtils.key(resolvedToken))
+            .or(() -> instituteRepository.findByName(resolvedToken))
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Unknown institute: '" + resolvedToken + "' at row " + rowNumber));
     }
 }

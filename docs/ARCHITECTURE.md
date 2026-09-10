@@ -20,7 +20,7 @@ app.
 | Language / runtime | Java 21, Spring Boot 3.3.0 |
 | Constraint solver | Timefold Solver 1.14.0 (`timefold-solver-spring-boot-starter`, `timefold-solver-core`) — the community successor to OptaPlanner |
 | Persistence | Spring Data JPA (Hibernate), PostgreSQL in production, H2 in tests |
-| Migrations | Flyway (SQL scripts in `src/main/resources/db/migration`, `V1`…`V13`; V7 is split into `V7_1`/`V7_2`) |
+| Migrations | Flyway (SQL scripts in `src/main/resources/db/migration`, `V1`…`V15`; V7 is split into `V7_1`/`V7_2`) |
 | DTO mapping | **Hand-written** mapping in service classes. A `mapstruct` dependency is declared in `pom.xml` and its annotation processor is registered, but **no `@Mapper` interface exists** in the codebase — mapping is done manually (see the many `toResponse(...)` methods). |
 | Scheduling / async | Spring `@Async` on a dedicated `ThreadPoolTaskExecutor` (`solveTaskExecutor`) |
 | Excel export | Apache POI 5.2.5 (`poi-ooxml`) |
@@ -68,7 +68,7 @@ flowchart LR
     end
     JOB["SolveJobRunner\n@Async solveTaskExecutor"]
     TF["Timefold Solver\n(in-memory, no DB)"]
-    DB[("PostgreSQL\nFlyway V1–V13")]
+    DB[("PostgreSQL\nFlyway V1–V15")]
     FE --> API
     API --> MD
     API --> IO

@@ -100,6 +100,45 @@ export default function AnalyticsDashboard() {
         )}
       </Card>
 
+      <Card title="Constraint score — what the solver is actually optimizing"
+        description="The live score from the timetable itself, not an approximation. Lower penalties are better.">
+        {(() => {
+          const selected = schedules.find((s) => s.id === selectedScheduleId)
+          if (!selected) return <p className="text-gray-500 text-sm">Select a schedule to see its real score.</p>
+          const scoreMatch = selected.score?.match(/(-?\d+)hard\/(-?\d+)medium\/(-?\d+)soft/)
+          return (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-xs text-gray-500">Raw score</span>
+                <code className="px-2 py-1 rounded bg-gray-100 text-sm font-mono">{selected.score ?? '—'}</code>
+                {selected.scoreExplanation && (
+                  <span className="text-xs text-gray-400 break-all font-mono">{selected.scoreExplanation}</span>
+                )}
+              </div>
+              {scoreMatch && (
+                <div className="grid sm:grid-cols-3 gap-3 text-sm">
+                  {[
+                    { label: 'Hard penalties', value: Number(scoreMatch[1]), tone: Number(scoreMatch[1]) > 0 ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+                    { label: 'Medium penalties', value: Number(scoreMatch[2]), tone: 'text-amber-700 bg-amber-50 border-amber-200' },
+                    { label: 'Soft penalties', value: Number(scoreMatch[3]), tone: Number(scoreMatch[3]) > 0 ? 'text-gray-700 bg-gray-50 border-gray-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+                  ].map((item) => (
+                    <div key={item.label} className={`rounded-lg border px-3 py-2.5 ${item.tone}`}>
+                      <p className="text-xs opacity-80">{item.label}</p>
+                      <p className="text-lg font-semibold">{Math.abs(item.value)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-gray-500">
+                Hard constraints must be satisfied before anything else: a teacher assigned twice at once, two classes in
+                the same room at the same time, or a batch double-booked. Medium penalties cover daily-load balance and
+                duration issues; soft penalties cover the remaining preferences last.
+              </p>
+            </div>
+          )
+        })()}
+      </Card>
+
       {loadingSessions ? (
         <div className="h-72 bg-gray-100 rounded-lg animate-pulse" />
       ) : schedules.length === 0 ? null : (

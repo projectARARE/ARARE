@@ -41,9 +41,11 @@ public class DisruptionServiceImpl implements DisruptionService {
         validateRequest(request);
         List<ClassSession> sessions = sessionRepo.findByScheduleId(scheduleId);
 
-        // For SESSION_CANCELLED, applyDisruption only cancels the directly
-        // targeted session (a single-session no-op); it does NOT run the BFS
-        // expansion. Keep the preview consistent with that actual behaviour.
+        /**
+         * For SESSION_CANCELLED, applyDisruption only cancels the directly
+         * targeted session (a single-session no-op); it does NOT run the BFS
+         * expansion. Keep the preview consistent with that actual behaviour.
+         */
         Set<Long> impactedIds;
         if (request.type() == DisruptionType.SESSION_CANCELLED) {
             impactedIds = request.affectedEntityId() != null
@@ -81,10 +83,12 @@ public class DisruptionServiceImpl implements DisruptionService {
         validateSchedule(scheduleId);
         validateRequest(request);
 
-        // A cancelled session is removed from the timetable directly — the
-        // solver cannot express "leave this session unplaced" because timeslot
-        // is a mandatory planning variable, so routing it through a partial
-        // resolve would always come back INFEASIBLE.
+        /**
+         * A cancelled session is removed from the timetable directly — the
+         * solver cannot express "leave this session unplaced" because timeslot
+         * is a mandatory planning variable, so routing it through a partial
+         * resolve would always come back INFEASIBLE.
+         */
         if (request.type() == DisruptionType.SESSION_CANCELLED) {
             return cancelSession(scheduleId, request.affectedEntityId());
         }
@@ -123,9 +127,9 @@ public class DisruptionServiceImpl implements DisruptionService {
         return solveJobService.completedNoop(scheduleId);
     }
 
-    // 
-    // Private helpers
-    // 
+    /**
+     * Private helpers
+     */
 
     private void validateSchedule(Long scheduleId) {
         scheduleRepo.findById(scheduleId)
@@ -153,7 +157,10 @@ public class DisruptionServiceImpl implements DisruptionService {
                 if (day == null) return List.of();
                 return List.of(new DisruptionConstraintFact(
                     DisruptionType.SPECIAL_EVENT, null, day));
-            default: // TEACHER_UNAVAILABLE, ROOM_UNAVAILABLE
+            /**
+             * TEACHER_UNAVAILABLE, ROOM_UNAVAILABLE
+             */
+            default: 
                 if (day == null || request.affectedEntityId() == null) return List.of();
                 return List.of(new DisruptionConstraintFact(
                     request.type(), request.affectedEntityId(), day));
@@ -167,8 +174,10 @@ public class DisruptionServiceImpl implements DisruptionService {
                     throw new IllegalArgumentException(
                             "affectedEntityId is required for disruption type " + request.type());
                 }
-                // Teacher/room unavailability only has meaning on a specific day; a
-                // null date would silently match nothing and degrade to a no-op.
+                /**
+                 * Teacher/room unavailability only has meaning on a specific day; a
+                 * null date would silently match nothing and degrade to a no-op.
+                 */
                 if (request.date() == null) {
                     throw new IllegalArgumentException(
                             request.type() + " requires a date");
@@ -198,7 +207,9 @@ public class DisruptionServiceImpl implements DisruptionService {
                         .orElseThrow(() -> new ResourceNotFoundException("ClassSession", request.affectedEntityId()));
             }
             default -> {
-                // SPECIAL_EVENT needs no entity and works dayless (facts are suppressed).
+                /**
+                 * SPECIAL_EVENT needs no entity and works dayless (facts are suppressed).
+                 */
             }
         }
     }

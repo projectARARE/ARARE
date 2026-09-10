@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2, Layers } from 'lucide-react'
-import { Card, Button, Modal, Input, Table, ConfirmDialog, MultiSelect, SearchableSelect } from '../components/ui'
+import { Card, Button, Modal, Input, Table, ConfirmDialog, MultiSelect, SearchableSelect, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { classSectionApi, batchApi, subjectApi, instituteApi, departmentApi } from '../services/api'
 import type { ClassSection, ClassSectionRequest, Batch, Subject, Institute, Department } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const EMPTY: ClassSectionRequest = { label: '', batchId: 0, size: 30, subjectIds: [] }
 
@@ -18,6 +19,7 @@ export default function ClassSections() {
   const [departments, setDepartments] = useState<Department[]>([])
   const [instituteFilter, setInstituteFilter] = useState<number | null>(null)
   const [departmentFilter, setDepartmentFilter] = useState<number | null>(null)
+  const [batchFilter, setBatchFilter] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<ClassSection | null>(null)
@@ -131,6 +133,11 @@ export default function ClassSections() {
     return true
   })
 
+  const batchFilterOptions = filteredBatches.map((b) => ({
+    value: b.id,
+    label: `${b.departmentName ?? ''} Yr ${b.year} – ${b.section}`.trim(),
+  }))
+
   const batchOptions = filteredBatches.map((b) => ({
     value: b.id,
     label: `${b.departmentName ?? ''} Yr ${b.year} – ${b.section}`.trim(),
@@ -141,6 +148,7 @@ export default function ClassSections() {
     if (!batch) return true
     if (instituteFilter && batch.instituteId !== instituteFilter) return false
     if (departmentFilter && batch.departmentId !== departmentFilter) return false
+    if (batchFilter && s.batchId !== batchFilter) return false
     return true
   })
 
@@ -148,6 +156,13 @@ export default function ClassSections() {
   const departmentOptions = departments
     .filter((d) => !instituteFilter || d.instituteId === instituteFilter)
     .map((d) => ({ value: d.id, label: d.name }))
+
+  const overrideOptions = subjects
+    .filter((s) => {
+      const batch = batches.find((b) => b.id === form.batchId)
+      return !batch || s.departmentId == null || s.departmentId === batch.departmentId
+    })
+    .map((s) => ({ value: s.id, label: s.name }))
 
   const columns: Column<ClassSection>[] = [
     {
@@ -159,6 +174,21 @@ export default function ClassSections() {
       key: 'batch', header: 'Batch',
       sortValue: (s) => s.batchName ?? '',
       render: (s) => s.batchName ?? `Batch #${s.batchId}`,
+    },
+    {
+      key: 'institute', header: 'Institute',
+      sortValue: (s) => {
+        const batch = batches.find((b) => b.id === s.batchId)
+        const dept = batch ? departments.find((d) => d.id === batch.departmentId) : undefined
+        const inst = dept?.instituteId != null ? institutes.find((i) => i.id === dept.instituteId) : undefined
+        return inst?.name ?? ''
+      },
+      render: (s) => {
+        const batch = batches.find((b) => b.id === s.batchId)
+        const dept = batch ? departments.find((d) => d.id === batch.departmentId) : undefined
+        const inst = dept?.instituteId != null ? institutes.find((i) => i.id === dept.instituteId) : undefined
+        return inst?.name ? <span className="text-gray-600">{inst.name}</span> : null
+      },
     },
     { key: 'size', header: 'Size', render: (s) => s.size },
     {
@@ -172,8 +202,8 @@ export default function ClassSections() {
       key: 'actions', header: '', width: '96px',
       render: (s) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(s)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(s.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(s)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(s.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -184,35 +214,30 @@ export default function ClassSections() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(s.id) },
   ]
 
+  const bulk = useBulkDelete<ClassSection>({
+    getKey: (x) => x.id,
+    deleteFn: classSectionApi.delete,
+    reload: load,
+    noun: 'section',
+  })
+
   return (
     <>
       <Card title="Class Sections" description="Lab sub-groups within a batch"
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">{bulk.Bar}
             <Button variant="secondary" icon={<Layers size={16} />} onClick={openBulk}>Generate Sections</Button>
             <Button icon={<Plus size={16} />} onClick={openAdd}>Add Section</Button>
           </div>
         }
       >
-        <Table
-          columns={columns}
-          data={visibleItems}
-          loading={loading}
-          keyExtractor={(s) => s.id}
-          searchable
-          exportable
-          exportFilename="class-sections"
-          searchKeys={[(s) => s.label, (s) => s.batchName ?? '']}
-          onRowContextMenu={getContextItems}
-        />
-        <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-xs text-gray-500">{visibleItems.length} section{visibleItems.length === 1 ? '' : 's'}</p>
+        <FilterPanel activeCount={(instituteFilter != null ? 1 : 0) + (departmentFilter != null ? 1 : 0) + (batchFilter != null ? 1 : 0)} persistKey="arare.classSections.filters.open">
           <div className="flex items-center gap-3">
             {institutes.length > 0 && (
               <SearchableSelect
                 label="Institute filter"
                 value={instituteFilter}
-                onChange={(v) => { setInstituteFilter(v == null ? null : +v); setDepartmentFilter(null) }}
+                onChange={(v) => { setInstituteFilter(v == null ? null : +v); setDepartmentFilter(null); setBatchFilter(null) }}
                 options={instituteOptions}
                 placeholder="All institutes"
                 allowClear
@@ -223,15 +248,41 @@ export default function ClassSections() {
               <SearchableSelect
                 label="Department filter"
                 value={departmentFilter}
-                onChange={(v) => setDepartmentFilter(v == null ? null : +v)}
+                onChange={(v) => { setDepartmentFilter(v == null ? null : +v); setBatchFilter(null) }}
                 options={departmentOptions}
                 placeholder="All departments"
                 allowClear
                 className="w-64"
               />
             )}
+            {departmentFilter != null && batchFilterOptions.length > 0 && (
+              <SearchableSelect
+                label="Batch filter"
+                value={batchFilter}
+                onChange={(v) => setBatchFilter(v == null ? null : +v)}
+                options={batchFilterOptions}
+                placeholder="All batches"
+                allowClear
+                className="w-64"
+              />
+            )}
           </div>
-        </div>
+        </FilterPanel>
+        <Table
+          columns={columns}
+          data={visibleItems}
+          loading={loading}
+          keyExtractor={(s) => s.id}
+          searchable
+          exportable
+          exportFilename="class-sections"
+          searchKeys={[(s) => s.label, (s) => s.batchName ?? '']}
+          onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.sections.density"
+        />
       </Card>
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Section' : 'Add Section'}
@@ -248,7 +299,7 @@ export default function ClassSections() {
           <Input label="Size" type="number" min={1} value={form.size} onChange={(e) => setForm({ ...form, size: +e.target.value })} />
           <MultiSelect
             label="Curriculum Override"
-            options={subjects.map((s) => ({ value: s.id, label: s.name }))}
+            options={overrideOptions}
             selected={form.subjectIds ?? []}
             onChange={(ids) => setForm({ ...form, subjectIds: ids })}
             placeholder="Search and select subjects…"
@@ -284,6 +335,7 @@ export default function ClassSections() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

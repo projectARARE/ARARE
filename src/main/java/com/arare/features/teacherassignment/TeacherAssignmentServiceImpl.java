@@ -115,8 +115,10 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
         if (req.sectionId() != null) {
             section = sectionRepo.findById(req.sectionId())
                 .orElseThrow(() -> new ResourceNotFoundException("ClassSection", req.sectionId()));
-            // A section always belongs to exactly one batch; when the request
-            // only names a section the batch is inferred from it.
+            /**
+             * A section always belongs to exactly one batch; when the request
+             * only names a section the batch is inferred from it.
+             */
             batch = section.getBatch();
         }
 
@@ -124,6 +126,8 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
         if (priority < 0) {
             throw new IllegalArgumentException("priority must be >= 0");
         }
+
+        validateDepartmentPairing(subject, batch);
 
         return TeacherAssignment.builder()
             .teacher(teacher)
@@ -134,6 +138,22 @@ public class TeacherAssignmentServiceImpl implements TeacherAssignmentService {
             .priority(priority)
             .notes(req.notes())
             .build();
+    }
+
+    /**
+     * Ensures a department-scoped subject is only assigned to batches of the
+     * same department. Institute-wide subjects (department == null) may pair
+     * with any batch.
+     */
+    private void validateDepartmentPairing(Subject subject, Batch batch) {
+        if (batch == null) return;
+        if (subject.getDepartment() == null) return;
+        if (batch.getDepartment() == null) return;
+        if (!subject.getDepartment().getId().equals(batch.getDepartment().getId())) {
+            throw new ResourceConflictException(
+                "Subject belongs to department '" + subject.getDepartment().getCode()
+                    + "' but batch belongs to department '" + batch.getDepartment().getCode() + "'");
+        }
     }
 
     /**

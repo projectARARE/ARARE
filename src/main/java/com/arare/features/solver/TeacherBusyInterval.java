@@ -5,10 +5,12 @@ import com.arare.common.enums.SchoolDay;
 import java.time.LocalTime;
 import java.util.Objects;
 
-// A (teacher, day, slot-range) combination already booked in another ACTIVE
-// (live) schedule. Fed into the solver as a problem fact so sessions are never
-// assigned to a slot where that teacher is already teaching elsewhere — the
-// equivalent of a resource-availability fact, not a post-solve rejection.
+/**
+ * A (teacher, day, slot-range) combination already booked in another ACTIVE
+ * (live) schedule. Fed into the solver as a problem fact so sessions are never
+ * assigned to a slot where that teacher is already teaching elsewhere — the
+ * equivalent of a resource-availability fact, not a post-solve rejection.
+ */
 public record TeacherBusyInterval(
     Long teacherId,
     SchoolDay day,

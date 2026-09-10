@@ -1,22 +1,22 @@
 {
   "scale": "small",
   "seedMode": "sequence",
-  "solverBudgetSeconds": 1050,
-  "timestamp": "2026-09-06T16:28:29+0530",
+  "solverBudgetSeconds": 656,
+  "timestamp": "2026-09-09T21:32:10+0530",
   "scope": {
     "teacherIds": 20,
     "roomIds": 12,
-    "resolveMs": 142
+    "resolveMs": 159
   },
   "capacityMath": {
     "rows": [
-      "D01-S1: 8x6h -> demand=48h vs 3 teachers x 2ch = 90h",
-      "D01-S2: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
-      "D01-S3: 8x6h -> demand=48h vs 3 teachers x 2ch = 90h",
-      "D01-S4: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
-      "D01-S5: 8x4h -> demand=32h vs 3 teachers x 1ch = 90h",
-      "D01-S6: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
-      "D01-L1: 8x2h -> demand=16h vs 2 teachers x 2ch = 60h"
+      "ARARE-D01-S1: 8x6h -> demand=48h vs 3 teachers x 2ch = 90h",
+      "ARARE-D01-S2: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
+      "ARARE-D01-S3: 8x6h -> demand=48h vs 3 teachers x 2ch = 90h",
+      "ARARE-D01-S4: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
+      "ARARE-D01-S5: 8x4h -> demand=32h vs 3 teachers x 1ch = 90h",
+      "ARARE-D01-S6: 8x5h -> demand=40h vs 3 teachers x 1ch = 90h",
+      "ARARE-D01-L1: 8x2h -> demand=16h vs 2 teachers x 2ch = 60h"
     ],
     "shortSubjects": []
   },
@@ -28,21 +28,21 @@
     "availableTimeslots": 42,
     "teacherCount": 20,
     "roomCount": 12,
-    "recommendedSolvingTimeSeconds": 525
+    "recommendedSolvingTimeSeconds": 656
   },
   "solveJob": {
     "status": "SUCCEEDED",
-    "bestScore": "0hard/-680medium/-802soft",
-    "elapsedMillis": 1050113,
-    "scheduleId": 5
+    "bestScore": "-1hard/-683medium/-789soft",
+    "elapsedMillis": 656003,
+    "scheduleId": 29
   },
   "schedule": {
-    "status": "DRAFT",
-    "score": "0hard/-680medium/-802soft"
+    "status": "INFEASIBLE",
+    "score": "-1hard/-683medium/-789soft"
   },
   "sessions": {
     "total": 208,
-    "assignedTeacher": 208,
+    "assignedTeacher": 207,
     "assignedRoom": 208,
     "assignedTimeslot": 208
   },
@@ -52,15 +52,21 @@
     "ofWeekSlots": 35
   },
   "scoreExplanation": {
-    "score": "0hard/-680medium/-802soft",
-    "feasible": true,
-    "hardScore": 0,
+    "score": "-1hard/-683medium/-789soft",
+    "feasible": false,
+    "hardScore": -1,
     "breakdown": [
+      {
+        "constraint": "Teacher required but not assigned",
+        "level": "HARD",
+        "matchCount": 1,
+        "impact": "-1hard/0medium/0soft"
+      },
       {
         "constraint": "Batch missing midday break",
         "level": "MEDIUM",
-        "matchCount": 6,
-        "impact": "0hard/-6medium/0soft"
+        "matchCount": 9,
+        "impact": "0hard/-9medium/0soft"
       },
       {
         "constraint": "Cognitive load: same subject too many times per day",
@@ -77,58 +83,58 @@
       {
         "constraint": "Student idle gap",
         "level": "MEDIUM",
-        "matchCount": 319,
-        "impact": "0hard/-319medium/0soft"
+        "matchCount": 312,
+        "impact": "0hard/-312medium/0soft"
       },
       {
         "constraint": "Teacher building change between consecutive classes",
         "level": "MEDIUM",
-        "matchCount": 32,
-        "impact": "0hard/-32medium/0soft"
+        "matchCount": 38,
+        "impact": "0hard/-38medium/0soft"
       },
       {
         "constraint": "Teacher idle gap",
         "level": "MEDIUM",
-        "matchCount": 114,
-        "impact": "0hard/-114medium/0soft"
+        "matchCount": 115,
+        "impact": "0hard/-115medium/0soft"
       },
       {
         "constraint": "Batch building change between consecutive classes",
         "level": "SOFT",
-        "matchCount": 139,
-        "impact": "0hard/0medium/-139soft"
+        "matchCount": 140,
+        "impact": "0hard/0medium/-140soft"
       },
       {
         "constraint": "Non-lab multi-slot should be consecutive",
         "level": "SOFT",
-        "matchCount": 38,
-        "impact": "0hard/0medium/-38soft"
+        "matchCount": 39,
+        "impact": "0hard/0medium/-39soft"
       },
       {
         "constraint": "Room stability for subject and batch",
         "level": "SOFT",
-        "matchCount": 209,
-        "impact": "0hard/0medium/-209soft"
+        "matchCount": 196,
+        "impact": "0hard/0medium/-196soft"
       },
       {
         "constraint": "Session moved from previous timetable",
         "level": "SOFT",
-        "matchCount": 208,
-        "impact": "0hard/0medium/-208soft"
+        "matchCount": 207,
+        "impact": "0hard/0medium/-207soft"
       },
       {
         "constraint": "Teacher building preference violated",
         "level": "SOFT",
-        "matchCount": 208,
-        "impact": "0hard/0medium/-208soft"
+        "matchCount": 207,
+        "impact": "0hard/0medium/-207soft"
       }
     ]
   },
   "exports": {
-    "csv": 25028,
-    "pdf": 32020,
-    "excel": 6048,
-    "relationalZip": 34668
+    "csv": 27485,
+    "pdf": 33212,
+    "excel": 6065,
+    "relationalZip": 44830
   },
-  "totalElapsedSeconds": 1057.782
+  "totalElapsedSeconds": 666.792
 }

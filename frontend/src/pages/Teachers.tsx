@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, MultiSelect } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, MultiSelect, SearchableSelect, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
-import { teacherApi, subjectApi, timeslotApi, buildingApi } from '../services/api'
-import type { Teacher, TeacherRequest, Subject, Timeslot, Building, SchoolDay } from '../types'
+import { teacherApi, subjectApi, timeslotApi, buildingApi, instituteApi } from '../services/api'
+import type { Teacher, TeacherRequest, Subject, Timeslot, Building, SchoolDay, Institute } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 
@@ -19,6 +20,7 @@ const EMPTY: TeacherRequest = {
   maxWeeklyHours: 20,
   maxConsecutiveClasses: 3,
   movementPenalty: 1,
+  instituteId: undefined,
 }
 
 export default function Teachers() {
@@ -27,6 +29,7 @@ export default function Teachers() {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [timeslots, setTimeslots] = useState<Timeslot[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [institutes, setInstitutes] = useState<Institute[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Teacher | null>(null)
@@ -34,6 +37,8 @@ export default function Teachers() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [subjectFilter, setSubjectFilter] = useState<number | null>(null)
+  const [freeDayFilter, setFreeDayFilter] = useState<string | null>(null)
 
   const subjectNameById = useMemo(
     () => new Map(subjects.map((s) => [s.id, s.name])),
@@ -47,21 +52,22 @@ export default function Teachers() {
 
   const load = () => {
     setLoading(true)
-    Promise.allSettled([teacherApi.getAll(), subjectApi.getAll(), timeslotApi.getAll(), buildingApi.getAll()])
-      .then(([t, s, ts, b]) => {
+    Promise.allSettled([teacherApi.getAll(), subjectApi.getAll(), timeslotApi.getAll(), buildingApi.getAll(), instituteApi.getAll()])
+      .then(([t, s, ts, b, i]) => {
         if (t.status === 'fulfilled') setItems(t.value)
         if (s.status === 'fulfilled') setSubjects(s.value)
         if (ts.status === 'fulfilled') setTimeslots(ts.value)
         if (b.status === 'fulfilled') setBuildings(b.value)
-        const failed = [t, s, ts, b].filter((x) => x.status === 'rejected').length
-        if (failed > 0) toast.error(`Some teacher data failed to refresh (${failed}/4)`)
+        if (i.status === 'fulfilled') setInstitutes(i.value)
+        const failed = [t, s, ts, b, i].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some teacher data failed to refresh (${failed}/5)`)
       })
       .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [])
 
-  const openAdd = () => { setEditing(null); setForm(EMPTY); setOpen(true) }
+  const openAdd = () => { setEditing(null); setForm({ ...EMPTY, instituteId: institutes.length === 1 ? institutes[0].id : undefined }); setOpen(true) }
   const openEdit = (t: Teacher) => {
     setEditing(t)
     setForm({
@@ -75,6 +81,7 @@ export default function Teachers() {
       maxConsecutiveClasses: t.maxConsecutiveClasses,
       movementPenalty: t.movementPenalty,
       preferredFreeDay: t.preferredFreeDay,
+      instituteId: t.instituteId,
     })
     setOpen(true)
   }
@@ -88,6 +95,7 @@ export default function Teachers() {
         subjectIds: (form.subjectIds ?? []).map(Number),
         availableTimeslotIds: (form.availableTimeslotIds ?? []).map(Number),
         preferredBuildingIds: (form.preferredBuildingIds ?? []).map(Number),
+        instituteId: form.instituteId ?? undefined,
       }
       if (editing) {
         const updated = await teacherApi.update(editing.id, payload)
@@ -144,6 +152,15 @@ export default function Teachers() {
     return acc
   }, {} as Record<SchoolDay, Timeslot[]>)
 
+  const subjectOptions = subjects.map((s) => ({ value: s.id, label: s.name }))
+  const freeDayFilterOptions = DAYS.map((d) => ({ value: d, label: d }))
+
+  const filteredItems = items.filter((t) => {
+    if (subjectFilter != null && !(t.subjectIds ?? []).includes(subjectFilter)) return false
+    if (freeDayFilter != null && t.preferredFreeDay !== freeDayFilter) return false
+    return true
+  })
+
   const columns: Column<Teacher>[] = [
     {
       key: 'employeeId', header: 'ID',
@@ -156,6 +173,10 @@ export default function Teachers() {
       render: (t) => <span className="font-medium">{t.name}</span>,
     },
     {
+      key: 'institute', header: 'Institute',
+      render: (t) => <span className="text-sm text-gray-600">{institutes.find((i) => i.id === t.instituteId)?.name ?? '—'}</span>,
+    },
+    {
       key: 'subjects', header: 'Subjects',
       render: (t) => <span className="text-sm text-gray-600">{getTeacherSubjectNames(t).join(', ') || '—'}</span>,
     },
@@ -166,8 +187,8 @@ export default function Teachers() {
       key: 'actions', header: '', width: '96px',
       render: (t) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(t)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(t.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(t)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(t.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -178,14 +199,42 @@ export default function Teachers() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(t.id) },
   ]
 
+  const bulk = useBulkDelete<Teacher>({
+    getKey: (x) => x.id,
+    deleteFn: teacherApi.delete,
+    reload: load,
+    noun: 'teacher',
+  })
+
   return (
     <>
       <Card title="Teachers" description="Manage teaching staff"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Teacher</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Teacher</Button></div>}
       >
+        <FilterPanel activeCount={(subjectFilter != null ? 1 : 0) + (freeDayFilter != null ? 1 : 0)} persistKey="arare.teachers.filters.open">
+          <div className="flex items-center gap-3">
+            {subjects.length > 0 && (
+              <SearchableSelect
+                label="Subject"
+                value={subjectFilter}
+                onChange={(v) => setSubjectFilter(v == null ? null : +v)}
+                options={subjectOptions}
+                placeholder="All subjects"
+                allowClear
+                className="w-72"
+              />
+            )}
+            <Select
+              label="Preferred free day"
+              value={freeDayFilter ?? ''}
+              onChange={(e) => setFreeDayFilter(e.target.value || null)}
+              options={[{ value: '', label: 'All days' }, ...freeDayFilterOptions]}
+            />
+          </div>
+        </FilterPanel>
         <Table
           columns={columns}
-          data={items}
+          data={filteredItems}
           loading={loading}
           keyExtractor={(t) => t.id}
           searchable
@@ -193,6 +242,10 @@ export default function Teachers() {
           exportFilename="teachers"
           searchKeys={[(t) => t.name, (t) => getTeacherSubjectNames(t).join(' ')]}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.teachers.density"
         />
       </Card>
 
@@ -208,6 +261,18 @@ export default function Teachers() {
           <div className="grid grid-cols-2 gap-4">
             <Input label="Employee ID" value={form.employeeId ?? ''} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} placeholder="EMP001" helpText="Unique natural key" />
             <Input label="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Dr. Jane Smith" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <SearchableSelect
+              label="Institute"
+              value={form.instituteId ?? null}
+              onChange={(v) => setForm({ ...form, instituteId: v == null ? undefined : +v })}
+              options={institutes.map((i) => ({ value: i.id, label: i.name }))}
+              placeholder="No institute"
+              allowClear
+            />
+            <div />
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -312,6 +377,7 @@ export default function Teachers() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

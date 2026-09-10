@@ -42,6 +42,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class SolveJobRunner {
 
     private static final int DEFAULT_SOLVING_TIME_SECONDS = 30;
+    private static final long MAX_REPAIR_ROUNDS = 2;
+    private static final long REPAIR_SLICE_MILLIS = 45_000;
+    private static final long MIN_REPAIR_SLICE_MILLIS = 5_000;
 
     private final SolveJobRepository jobRepo;
     private final ScheduleRepository scheduleRepo;
@@ -64,11 +67,13 @@ public class SolveJobRunner {
 
         long startedMillis = System.currentTimeMillis();
         UUID problemId = UUID.randomUUID();
-        // Guarded transition: only flips QUEUED -> RUNNING (writing problemId)
-        // and wins if the job is still QUEUED. A concurrent cancel() issues a
-        // guarded terminal UPDATE that leaves the row no longer QUEUED, so this
-        // UPDATE matches 0 rows and we bail — the job is never resurrected to
-        // RUNNING, and no results are persisted for a job the user cancelled.
+        /**
+         * Guarded transition: only flips QUEUED -> RUNNING (writing problemId)
+         * and wins if the job is still QUEUED. A concurrent cancel() issues a
+         * guarded terminal UPDATE that leaves the row no longer QUEUED, so this
+         * UPDATE matches 0 rows and we bail — the job is never resurrected to
+         * RUNNING, and no results are persisted for a job the user cancelled.
+         */
         int updated = jobRepo.transitionTerminal(
             jobId,
             List.of(SolveJobStatus.QUEUED),
@@ -79,7 +84,10 @@ public class SolveJobRunner {
             null,
             problemId);
         if (updated == 0) {
-            return; // cancelled/changed before we started
+            /**
+             * cancelled/changed before we started
+             */
+            return; 
         }
         final SolveJob workJob = jobRepo.findById(jobId).orElse(null);
         if (workJob == null) {
@@ -96,15 +104,63 @@ public class SolveJobRunner {
                 ? workJob.getSolvingTimeSeconds()
                 : DEFAULT_SOLVING_TIME_SECONDS;
 
+            /**
+             * Reserve a repair slice so that a near-feasible result (a tiny
+             * residual hard score) gets a second chance instead of conceding
+             * INFEASIBLE: annealing often stalls on the last violation, and a
+             * fresh solver over the existing best normally closes it.
+             */
+            long totalBudgetMillis = timeLimitSeconds * 1000L;
+            long repairReserve = Math.min(60_000L, Math.max(5_000L, totalBudgetMillis / 4));
+            long mainBudgetMillis = Math.max(1_000L, totalBudgetMillis - repairReserve);
+
             Solver<TimetableSolution> solver = solverFactory.buildSolver(
                 new SolverConfigOverride<TimetableSolution>()
                     .withTerminationConfig(new TerminationConfig()
-                        .withSecondsSpentLimit((long) timeLimitSeconds)));
+                        .withMillisecondsSpentLimit(mainBudgetMillis)));
 
             solverRegistry.register(problemId, solver);
             solver.addEventListener(new BestScoreListener(workJob, jobRepo));
 
             TimetableSolution solution = solver.solve(problem);
+            solverRegistry.unregister(problemId);
+
+            /**
+             * Repair pass: re-solve from the best-with-a-residual-hard solution
+             * with a fresh solver (fresh tabu memory / move ordering). Keep the
+             * best of each round; stop early once feasible.
+             */
+            if (solution.getScore() != null && solution.getScore().hardScore() < 0) {
+                long rounds = 0;
+                while (rounds < MAX_REPAIR_ROUNDS
+                    && solution.getScore().hardScore() < 0) {
+                    long remaining = Math.max(0L, totalBudgetMillis - (System.currentTimeMillis() - startedMillis));
+                    long slice = Math.min(remaining, REPAIR_SLICE_MILLIS);
+                    if (slice < MIN_REPAIR_SLICE_MILLIS) {
+                        break;
+                    }
+                    SolveJob duringRepair = jobRepo.findById(jobId).orElse(workJob);
+                    if (duringRepair.getStatus() == SolveJobStatus.CANCELLED) {
+                        break;
+                    }
+                    Solver<TimetableSolution> repairSolver = solverFactory.buildSolver(
+                        new SolverConfigOverride<TimetableSolution>()
+                            .withTerminationConfig(new TerminationConfig()
+                                .withMillisecondsSpentLimit(slice)));
+                    solverRegistry.register(problemId, repairSolver);
+                    try {
+                        repairSolver.addEventListener(new BestScoreListener(workJob, jobRepo));
+                        TimetableSolution candidate = repairSolver.solve(solution);
+                        if (candidate.getScore() != null
+                            && candidate.getScore().compareTo(solution.getScore()) > 0) {
+                            solution = candidate;
+                        }
+                    } finally {
+                        solverRegistry.unregister(problemId);
+                    }
+                    rounds++;
+                }
+            }
             long elapsedMillis = System.currentTimeMillis() - startedMillis;
 
             SolveJob fresh = jobRepo.findById(jobId).orElse(workJob);
@@ -122,18 +178,25 @@ public class SolveJobRunner {
                 throw new IllegalStateException("Schedule not found: " + workJob.getScheduleId());
             }
 
-            // Close the cancel/persist race: attempt the QUEUED/RUNNING →
-            // SUCCEEDED transition FIRST, inside the same transaction as the
-            // persist. If the operator cancelled concurrently, the transition
-            // loses (0 rows), so we must not persist — the schedule data would
-            // otherwise be written for a job the user just cancelled.
+            /**
+             * Close the cancel/persist race: attempt the QUEUED/RUNNING →
+             * SUCCEEDED transition FIRST, inside the same transaction as the
+             * persist. If the operator cancelled concurrently, the transition
+             * loses (0 rows), so we must not persist — the schedule data would
+             * otherwise be written for a job the user just cancelled.
+             * Capture effectively-final snapshots for the lambda: the repair
+             * pass above reassigns solution/elapsedMillis, which would break
+             * the "effectively final" capture rule otherwise.
+             */
+            final TimetableSolution finalSolution = solution;
+            final long finalElapsedMillis = elapsedMillis;
             boolean committed = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
                 int persisted = jobRepo.transitionTerminal(
                     jobId,
                     List.of(SolveJobStatus.QUEUED, SolveJobStatus.RUNNING),
                     SolveJobStatus.SUCCEEDED,
-                    solution.getScore() != null ? solution.getScore().toString() : null,
-                    elapsedMillis,
+                    finalSolution.getScore() != null ? finalSolution.getScore().toString() : null,
+                    finalElapsedMillis,
                     LocalDateTime.now(),
                     null,
                     workJob.getProblemId());
@@ -141,7 +204,7 @@ public class SolveJobRunner {
                     log.info("Solve job {} finished but was cancelled concurrently; result not persisted", jobId);
                     return false;
                 }
-                solutionPersister.persist(schedule, solution);
+                solutionPersister.persist(schedule, finalSolution);
                 return true;
             }));
 
@@ -206,8 +269,10 @@ public class SolveJobRunner {
             try {
                 ids.add(Long.parseLong(part.trim()));
             } catch (NumberFormatException ignored) {
-                // Skip malformed tokens in a persisted snapshot; they are
-                // never produced by the submit path.
+                /**
+                 * Skip malformed tokens in a persisted snapshot; they are
+                 * never produced by the submit path.
+                 */
             }
         }
         return ids.isEmpty() ? null : ids;
@@ -243,14 +308,18 @@ public class SolveJobRunner {
                 return;
             }
             try {
-                // Guarded update: only applies while the job is QUEUED/RUNNING.
-                // Never merges the detached entity, so a concurrent cancel can
-                // never be resurrected to RUNNING by a stale telemetry write.
+                /**
+                 * Guarded update: only applies while the job is QUEUED/RUNNING.
+                 * Never merges the detached entity, so a concurrent cancel can
+                 * never be resurrected to RUNNING by a stale telemetry write.
+                 */
                 jobRepo.updateBestScoreIfActive(jobId, scoreText);
                 lastPersistedScore = scoreText;
             } catch (RuntimeException ex) {
-                // Telemetry only: a transient DB failure must never abort the
-                // solve. The next best-score change will retry the save.
+                /**
+                 * Telemetry only: a transient DB failure must never abort the
+                 * solve. The next best-score change will retry the save.
+                 */
                 log.warn("Failed to persist best score {} for job {}: {}",
                     scoreText, jobId, ex.getMessage());
             }

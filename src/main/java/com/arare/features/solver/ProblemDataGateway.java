@@ -17,21 +17,29 @@ public interface ProblemDataGateway {
 
     List<PreAllocation> findLockedPreAllocations(Long scheduleId);
 
-    // Term teacher allotments scoped to the batches/sections in the problem.
-    // Used to derive each session's allowedTeacherIds (teacherNotAssignedToClass).
+    /**
+     * Term teacher allotments scoped to the batches/sections in the problem.
+     * Used to derive each session's allowedTeacherIds (teacherNotAssignedToClass).
+     */
     List<TeacherAssignment> loadAssignments(List<Long> batchIds, List<Long> sectionIds);
 
-    // (teacher, day, slot-range) already claimed in OTHER ACTIVE schedules.
-    // instituteId (nullable) restricts the scan to schedules of that
-    // institute; null scans university-wide for shared teachers.
+    /**
+     * (teacher, day, slot-range) already claimed in OTHER ACTIVE schedules.
+     * instituteId (nullable) restricts the scan to schedules of that
+     * institute; null scans university-wide for shared teachers.
+     */
     List<TeacherBusyInterval> findTeacherBusyIntervals(Long scheduleId, Long instituteId, List<Long> teacherIds);
 
-    // Room equivalents of the teacher busy-interval scan: the same (room, day,
-    // slot) combination already used in another ACTIVE schedule. instituteId
-    // scopes the scan exactly like the teacher query.
+    /**
+     * Room equivalents of the teacher busy-interval scan: the same (room, day,
+     * slot) combination already used in another ACTIVE schedule. instituteId
+     * scopes the scan exactly like the teacher query.
+     */
     List<RoomBusyInterval> findRoomBusyIntervals(Long scheduleId, Long instituteId, List<Long> roomIds);
 
-    // Assignments from a parent schedule, keyed by PreviousAssignment.keyFor,
-    // used by the soft minimizeMovedSessions constraint on regenerate.
+    /**
+     * Assignments from a parent schedule, keyed by PreviousAssignment.keyFor,
+     * used by the soft minimizeMovedSessions constraint on regenerate.
+     */
     List<PreviousAssignment> findPreviousAssignments(Long parentScheduleId);
 }

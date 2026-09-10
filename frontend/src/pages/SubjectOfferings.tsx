@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, Toggle, SearchableSelect, MultiSelect } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, Toggle, SearchableSelect, MultiSelect, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
-import { subjectOfferingApi, subjectApi, batchApi, classSectionApi, instituteApi } from '../services/api'
-import type { SubjectOffering, SubjectOfferingRequest, Subject, Batch, ClassSection, Institute } from '../types'
+import { subjectOfferingApi, subjectApi, batchApi, classSectionApi, instituteApi, departmentApi } from '../services/api'
+import type { SubjectOffering, SubjectOfferingRequest, Subject, Batch, ClassSection, Institute, Department } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 type ScopeMode = 'batch' | 'section'
 
@@ -23,11 +24,16 @@ export default function SubjectOfferings() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [sections, setSections] = useState<ClassSection[]>([])
   const [institutes, setInstitutes] = useState<Institute[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [instituteFilter, setInstituteFilter] = useState<number | null>(null)
+  const [departmentFilter, setDepartmentFilter] = useState<number | null>(null)
+  const [batchFilter, setBatchFilter] = useState<number | null>(null)
+  const [sectionFilter, setSectionFilter] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<SubjectOffering | null>(null)
   const [form, setForm] = useState<SubjectOfferingRequest & { sectionIds: number[] }>({ ...EMPTY, sectionIds: [] })
+  const [formDeptId, setFormDeptId] = useState<number | null>(null)
   const [scopeMode, setScopeMode] = useState<ScopeMode>('batch')
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
@@ -41,15 +47,17 @@ export default function SubjectOfferings() {
       batchApi.getAll(),
       classSectionApi.getAll(),
       instituteApi.getAll(),
+      departmentApi.getAll(),
     ])
-      .then(([o, s, b, cs, i]) => {
+      .then(([o, s, b, cs, i, d]) => {
         if (o.status === 'fulfilled') setItems(o.value)
         if (s.status === 'fulfilled') setSubjects(s.value)
         if (b.status === 'fulfilled') setBatches(b.value)
         if (cs.status === 'fulfilled') setSections(cs.value)
         if (i.status === 'fulfilled') setInstitutes(i.value)
-        const failed = [o, s, b, cs, i].filter((x) => x.status === 'rejected').length
-        if (failed > 0) toast.error(`Some offering data failed to refresh (${failed}/5)`)
+        if (d.status === 'fulfilled') setDepartments(d.value)
+        const failed = [o, s, b, cs, i, d].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some offering data failed to refresh (${failed}/6)`)
       })
       .finally(() => setLoading(false))
   }
@@ -59,8 +67,10 @@ export default function SubjectOfferings() {
   const openAdd = () => {
     setEditing(null)
     setScopeMode('batch')
-    const firstBatch = batches.find((b) => !instituteFilter || b.instituteId === instituteFilter) ?? batches[0]
-    setForm({ ...EMPTY, subjectId: subjects[0]?.id ?? 0, batchId: firstBatch?.id ?? 0, sectionIds: [] })
+    const firstSubject = subjects[0]
+    const firstBatch = batches.find((b) => (!firstSubject?.departmentId || b.departmentId === firstSubject.departmentId) && (!instituteFilter || b.instituteId === instituteFilter)) ?? batches.find((b) => !instituteFilter || b.instituteId === instituteFilter) ?? batches[0]
+    setForm({ ...EMPTY, subjectId: firstSubject?.id ?? 0, batchId: firstBatch?.id ?? 0, sectionIds: [] })
+    setFormDeptId(firstSubject?.departmentId ?? null)
     setOpen(true)
   }
 
@@ -76,6 +86,9 @@ export default function SubjectOfferings() {
       weeklyHours: o.weeklyHours,
       elective: o.elective,
     })
+    const subject = subjects.find((s) => s.id === o.subjectId)
+    const batch = batches.find((b) => b.id === (o.batchId ?? (o.sectionId ? sections.find(s => s.id === o.sectionId)?.batchId : 0)))
+    setFormDeptId(subject?.departmentId ?? batch?.departmentId ?? null)
     setOpen(true)
   }
 
@@ -83,6 +96,13 @@ export default function SubjectOfferings() {
     if (!form.subjectId) { toast.error('Please select a subject'); return }
     if (scopeMode === 'section' && form.sectionIds.length === 0) { toast.error('Please select at least one section'); return }
     if (scopeMode === 'batch' && !form.batchId) { toast.error('Please select a batch'); return }
+    
+    const subject = subjects.find((s) => s.id === form.subjectId)
+    const batch = batches.find((b) => b.id === form.batchId)
+    if (subject?.departmentId != null && batch?.departmentId != null && subject.departmentId !== batch.departmentId) {
+      toast.error(`Subject belongs to ${subject.departmentName ?? `dept #${subject.departmentId}`}, batch to ${batch.departmentName ?? `dept #${batch.departmentId}`} — pick matching department/${batch.departmentName ?? `dept #${batch.departmentId}`}`)
+      return
+    }
     
     const payload: SubjectOfferingRequest = {
       subjectId: form.subjectId,
@@ -138,23 +158,60 @@ export default function SubjectOfferings() {
     }
   }
 
-  const subjectOptions = subjects
-    .filter((s) => !instituteFilter || s.instituteId === instituteFilter)
+  const deptFilterOptions = departments
+    .filter((d) => !instituteFilter || d.instituteId === instituteFilter)
+    .map((d) => ({ value: d.id, label: d.name }))
+
+  const filteredBatches = batches
+    .filter((b) => !instituteFilter || b.instituteId === instituteFilter)
+    .filter((b) => !departmentFilter || b.departmentId === departmentFilter)
+
+  const batchFilterOptions = filteredBatches.map((b) => ({
+    value: b.id,
+    label: `${b.departmentName ?? ''} Yr ${b.year} – ${b.section}`.trim(),
+  }))
+
+  const filterSectionOptions = (() => {
+    const batchIds = new Set(filteredBatches.map((b) => b.id))
+    const seen = new Map<number, string>()
+    for (const o of items) {
+      const sid = o.sectionId
+      if (sid == null) continue
+      const bid = o.batchId ?? batches.find((b) => b.id === sections.find((s) => s.id === sid)?.batchId)?.id
+      if (bid != null && !batchIds.has(bid)) continue
+      if (batchFilter != null && o.batchId !== batchFilter && o.batchId == null) {
+        const sec = sections.find((s) => s.id === sid)
+        if (sec?.batchId !== batchFilter) continue
+      } else if (batchFilter != null && o.batchId !== batchFilter) continue
+      if (!seen.has(sid)) seen.set(sid, o.sectionLabel ?? sections.find((s) => s.id === sid)?.label ?? `#${sid}`)
+    }
+    return Array.from(seen.entries()).map(([value, label]) => ({ value, label }))
+  })()
+
+  const formSubjectOptions = subjects
+    .filter((s) => formDeptId == null || s.departmentId == null || s.departmentId === formDeptId)
     .map((s) => ({
       value: s.id,
       label: `${s.name}${s.departmentName ? ` — ${s.departmentName}` : ' — Institute-wide'}`,
     }))
-  const batchOptions = batches
-    .filter((b) => !instituteFilter || b.instituteId === instituteFilter)
+
+  const formBatchOptions = batches
+    .filter((b) => formDeptId == null || b.departmentId === formDeptId)
     .map((b) => ({
       value: b.id,
       label: `${b.departmentName ?? ''} Yr ${b.year} – ${b.section}`.trim(),
     }))
+
   const sectionOptions = sections
     .filter((s) => {
       if (!instituteFilter) return true
       const batch = batches.find((b) => b.id === s.batchId)
       return batch?.instituteId === instituteFilter
+    })
+    .filter((s) => {
+      if (!departmentFilter) return true
+      const batch = batches.find((b) => b.id === s.batchId)
+      return batch?.departmentId === departmentFilter
     })
     .map((s) => ({
       value: s.id,
@@ -162,14 +219,29 @@ export default function SubjectOfferings() {
     }))
 
   const visibleItems = items.filter((o) => {
-    if (!instituteFilter) return true
-    if (o.batchId) {
-      const batch = batches.find((b) => b.id === o.batchId)
-      return batch?.instituteId === instituteFilter
+    if (instituteFilter != null) {
+      if (o.batchId) {
+        const batch = batches.find((b) => b.id === o.batchId)
+        if (batch?.instituteId !== instituteFilter) return false
+      } else if (o.sectionId) {
+        const section = sections.find((s) => s.id === o.sectionId)
+        const batch = section ? batches.find((b) => b.id === section.batchId) : undefined
+        if (batch?.instituteId !== instituteFilter) return false
+      }
     }
-    const section = sections.find((s) => s.id === o.sectionId)
-    const batch = section ? batches.find((b) => b.id === section.batchId) : undefined
-    return batch?.instituteId === instituteFilter
+    if (departmentFilter != null) {
+      if (o.batchId) {
+        const batch = batches.find((b) => b.id === o.batchId)
+        if (batch?.departmentId !== departmentFilter) return false
+      } else if (o.sectionId) {
+        const section = sections.find((s) => s.id === o.sectionId)
+        const batch = section ? batches.find((b) => b.id === section.batchId) : undefined
+        if (batch?.departmentId !== departmentFilter) return false
+      }
+    }
+    if (batchFilter != null && o.batchId !== batchFilter) return false
+    if (sectionFilter != null && o.sectionId !== sectionFilter) return false
+    return true
   })
   const instituteOptions = institutes.map((i) => ({ value: i.id, label: i.name }))
 
@@ -195,6 +267,20 @@ export default function SubjectOfferings() {
           : <span>Batch {o.batchLabel ?? `#${o.batchId}`}</span>,
     },
     {
+      key: 'institute', header: 'Institute',
+      sortValue: (o) => {
+        const bid = o.batchId ?? (o.sectionId ? sections.find((s) => s.id === o.sectionId)?.batchId : undefined)
+        const batch = bid ? batches.find((b) => b.id === bid) : undefined
+        return batch?.departmentName ?? ''
+      },
+      render: (o) => {
+        const bid = o.batchId ?? (o.sectionId ? sections.find((s) => s.id === o.sectionId)?.batchId : undefined)
+        const batch = bid ? batches.find((b) => b.id === bid) : undefined
+        const dept = batch ? departments.find((d) => d.id === batch.departmentId) : undefined
+        return dept?.instituteName ? <span className="text-gray-600">{dept.instituteName}</span> : <span className="text-gray-400">—</span>
+      },
+    },
+    {
       key: 'hours', header: 'Weekly Hours',
       sortValue: (o) => o.weeklyHours ?? 0,
       render: (o) => o.weeklyHours ? <span>{o.weeklyHours}</span> : <span className="text-gray-400">catalogue</span>,
@@ -203,8 +289,8 @@ export default function SubjectOfferings() {
       key: 'actions', header: '', width: '96px',
       render: (o) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(o)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(o.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(o)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(o.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -215,13 +301,68 @@ export default function SubjectOfferings() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(o.id) },
   ]
 
+  const bulk = useBulkDelete<SubjectOffering>({
+    getKey: (x) => x.id,
+    deleteFn: subjectOfferingApi.delete,
+    reload: load,
+    noun: 'subject offering',
+  })
+
   return (
     <>
       <Card
         title="Subject Offerings"
         description="What is actually taught this term — one subject offered to many batches/sections (electives, shared, institute-wide)"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Offering</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Offering</Button></div>}
       >
+        {institutes.length > 0 && (
+          <FilterPanel activeCount={(instituteFilter != null ? 1 : 0) + (departmentFilter != null ? 1 : 0) + (batchFilter != null ? 1 : 0) + (sectionFilter != null ? 1 : 0)} persistKey="arare.subjectOfferings.filters.open">
+            <div className="flex items-center gap-3">
+              <SearchableSelect
+                label="Institute filter"
+                value={instituteFilter}
+                onChange={(v) => { setInstituteFilter(v == null ? null : +v); setDepartmentFilter(null); setBatchFilter(null); setSectionFilter(null) }}
+                options={instituteOptions}
+                placeholder="All institutes"
+                allowClear
+                className="w-72"
+              />
+              {deptFilterOptions.length > 0 && (
+                <SearchableSelect
+                  label="Department filter"
+                  value={departmentFilter}
+                  onChange={(v) => { setDepartmentFilter(v == null ? null : +v); setBatchFilter(null); setSectionFilter(null) }}
+                  options={deptFilterOptions}
+                  placeholder="All departments"
+                  allowClear
+                  className="w-72"
+                />
+              )}
+              {batchFilterOptions.length > 0 && (
+                <SearchableSelect
+                  label="Batch filter"
+                  value={batchFilter}
+                  onChange={(v) => { setBatchFilter(v == null ? null : +v); setSectionFilter(null) }}
+                  options={batchFilterOptions}
+                  placeholder="All batches"
+                  allowClear
+                  className="w-72"
+                />
+              )}
+              {filterSectionOptions.length > 0 && (
+                <SearchableSelect
+                  label="Section filter"
+                  value={sectionFilter}
+                  onChange={(v) => setSectionFilter(v == null ? null : +v)}
+                  options={filterSectionOptions}
+                  placeholder="All sections"
+                  allowClear
+                  className="w-72"
+                />
+              )}
+            </div>
+          </FilterPanel>
+        )}
         <Table
           columns={columns}
           data={visibleItems}
@@ -232,21 +373,11 @@ export default function SubjectOfferings() {
           exportFilename="subject-offerings"
           searchKeys={[(o) => o.subjectName ?? '', (o) => o.batchLabel ?? '', (o) => o.sectionLabel ?? '']}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.offerings.density"
         />
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="text-xs text-gray-500">{visibleItems.length} offering{visibleItems.length === 1 ? '' : 's'}</p>
-          {institutes.length > 0 && (
-            <SearchableSelect
-              label="Institute filter"
-              value={instituteFilter}
-              onChange={(v) => setInstituteFilter(v == null ? null : +v)}
-              options={instituteOptions}
-              placeholder="All institutes"
-              allowClear
-              className="w-72"
-            />
-          )}
-        </div>
       </Card>
 
       <Modal
@@ -262,7 +393,7 @@ export default function SubjectOfferings() {
         }
       >
         <div className="space-y-4">
-          <SearchableSelect label="Subject" value={form.subjectId || null} onChange={(v) => setForm({ ...form, subjectId: v == null ? 0 : +v })} options={subjectOptions} placeholder="Select subject…" helpText="Institute-wide subjects (no department) can be offered to any batch" allowClear />
+          <SearchableSelect label="Subject" value={form.subjectId || null} onChange={(v) => { const id = v == null ? 0 : +v; setForm({ ...form, subjectId: id }); const s = subjects.find((x) => x.id === id); setFormDeptId(s?.departmentId ?? null) }} options={formSubjectOptions} placeholder="Select subject…" helpText="Institute-wide subjects (no department) can be offered to any batch" allowClear />
 
           <div className={`grid ${scopeMode === 'section' ? 'grid-cols-3' : 'grid-cols-2'} gap-4`}>
             <Select
@@ -279,10 +410,10 @@ export default function SubjectOfferings() {
               ]}
             />
             {scopeMode === 'batch' ? (
-              <SearchableSelect label="Batch" value={form.batchId || null} onChange={(v) => setForm({ ...form, batchId: v == null ? 0 : +v })} options={batchOptions} placeholder="Select batch…" allowClear />
+              <SearchableSelect label="Batch" value={form.batchId || null} onChange={(v) => { const id = v == null ? 0 : +v; setForm({ ...form, batchId: id }); const b = batches.find((x) => x.id === id); setFormDeptId(b?.departmentId ?? null) }} options={formBatchOptions} placeholder="Select batch…" allowClear />
             ) : (
               <>
-                <SearchableSelect label="Batch" value={form.batchId || null} onChange={(v) => setForm({ ...form, batchId: v == null ? 0 : +v, sectionIds: [] })} options={batchOptions} placeholder="Select batch first…" allowClear />
+                <SearchableSelect label="Batch" value={form.batchId || null} onChange={(v) => { const id = v == null ? 0 : +v; setForm({ ...form, batchId: id, sectionIds: [] }); const b = batches.find((x) => x.id === id); setFormDeptId(b?.departmentId ?? null) }} options={formBatchOptions} placeholder="Select batch first…" allowClear />
                 {form.batchId ? (
                   editing ? (
                     <SearchableSelect label="Section" value={form.sectionIds[0] ?? null} onChange={(v) => setForm({ ...form, sectionIds: v == null ? [] : [+v] })} options={sectionOptions.filter(s => sections.find(sec => sec.id === s.value)?.batchId === form.batchId)} placeholder="Select section…" allowClear />
@@ -319,6 +450,7 @@ export default function SubjectOfferings() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

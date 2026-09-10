@@ -18,15 +18,17 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 
-// Physical room available for scheduling.
-// <p>Hard constraints enforced by the solver:
-// <ul>
-// <li>Room cannot host multiple sessions at the same timeslot.</li>
-// <li>Room capacity must be >= class/section student count.</li>
-// <li>Room type must match the subject's required room type.</li>
-// <li>Lab subtype must match when the subject requires a specific lab.</li>
-// </ul>
-// </p>
+/**
+ * Physical room available for scheduling.
+ * <p>Hard constraints enforced by the solver:
+ * <ul>
+ * <li>Room cannot host multiple sessions at the same timeslot.</li>
+ * <li>Room capacity must be >= class/section student count.</li>
+ * <li>Room type must match the subject's required room type.</li>
+ * <li>Lab subtype must match when the subject requires a specific lab.</li>
+ * </ul>
+ * </p>
+ */
 @Entity
 @Table(
     name = "rooms",
@@ -54,8 +56,10 @@ public class Room extends BaseEntity {
     @Column(nullable = false)
     private RoomType type;
 
-// Populated only when type == LAB.
-// Allows matching subject.labSubtypeRequired against room.labSubtype.
+/**
+ * Populated only when type == LAB.
+ * Allows matching subject.labSubtypeRequired against room.labSubtype.
+ */
     @Enumerated(EnumType.STRING)
     @Column
     private LabSubtype labSubtype;
@@ -64,9 +68,11 @@ public class Room extends BaseEntity {
     @Column(nullable = false)
     private int capacity;
 
-// Timeslots during which this room is available.
-    // If empty, the room is assumed available for all CLASS-type timeslots.
-    // Hard constraint: room must not be scheduled in an unavailable timeslot.
+/**
+ * Timeslots during which this room is available.
+ * If empty, the room is assumed available for all CLASS-type timeslots.
+ * Hard constraint: room must not be scheduled in an unavailable timeslot.
+ */
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "room_availability",
@@ -83,9 +89,11 @@ public class Room extends BaseEntity {
         if (roomNumber != null) {
             roomNumber = roomNumber.trim().toUpperCase();
         }
-        // In-place dedupe: replacing the collection reference (rather than
-        // clear+addAll) makes Hibernate lose the ManyToMany join-table dirty
-        // tracking, so room_availability changes silently vanish on update.
+        /**
+         * In-place dedupe: replacing the collection reference (rather than
+         * clear+addAll) makes Hibernate lose the ManyToMany join-table dirty
+         * tracking, so room_availability changes silently vanish on update.
+         */
         if (availableTimeslots != null && !availableTimeslots.isEmpty()) {
             List<Timeslot> unique = new ArrayList<>(new LinkedHashSet<>(availableTimeslots));
             availableTimeslots.clear();

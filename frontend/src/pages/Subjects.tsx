@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog, SearchableSelect } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog, SearchableSelect, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
-import { subjectApi, departmentApi } from '../services/api'
-import type { Subject, SubjectRequest, Department, LabSubtype, RoomType } from '../types'
+import { subjectApi, departmentApi, instituteApi } from '../services/api'
+import type { Subject, SubjectRequest, Department, Institute, LabSubtype, RoomType } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const LAB_SUBTYPES: LabSubtype[] = [
   'COMPUTER_LAB', 'ELECTRONICS_LAB', 'CHEMISTRY_LAB', 'PHYSICS_LAB',
@@ -35,6 +36,7 @@ export default function Subjects() {
   const { toast } = useToast()
   const [items, setItems] = useState<Subject[]>([])
   const [depts, setDepts] = useState<Department[]>([])
+  const [institutes, setInstitutes] = useState<Institute[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Subject | null>(null)
@@ -42,15 +44,20 @@ export default function Subjects() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [instituteFilter, setInstituteFilter] = useState<number | null>(null)
+  const [departmentFilter, setDepartmentFilter] = useState<number | null>(null)
+  const [levelFilter, setLevelFilter] = useState<string | null>(null)
+  const [roomTypeFilter, setRoomTypeFilter] = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
-    Promise.allSettled([subjectApi.getAll(), departmentApi.getAll()])
-      .then(([subs, d]) => {
+    Promise.allSettled([subjectApi.getAll(), departmentApi.getAll(), instituteApi.getAll()])
+      .then(([subs, d, i]) => {
         if (subs.status === 'fulfilled') setItems(subs.value)
         if (d.status === 'fulfilled') setDepts(d.value)
-        const failed = [subs, d].filter((x) => x.status === 'rejected').length
-        if (failed > 0) toast.error(`Some subject data failed to refresh (${failed}/2)`)
+        if (i.status === 'fulfilled') setInstitutes(i.value)
+        const failed = [subs, d, i].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some subject data failed to refresh (${failed}/3)`)
       })
       .finally(() => setLoading(false))
   }
@@ -133,6 +140,25 @@ export default function Subjects() {
   ]
   const subtypeOptions = LAB_SUBTYPES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))
 
+  const deptFilterOptions = depts
+    .filter((d) => !instituteFilter || d.instituteId === instituteFilter)
+    .map((d) => ({ value: d.id, label: d.name }))
+  const instituteOptions = institutes.map((i) => ({ value: i.id, label: i.name }))
+
+  const levelFilterOptions = [
+    { value: 'LAB', label: 'Lab' },
+    { value: 'THEORY', label: 'Theory' },
+  ]
+
+  const filteredItems = items.filter((s) => {
+    if (instituteFilter != null && s.instituteId !== instituteFilter) return false
+    if (departmentFilter != null && s.departmentId !== departmentFilter) return false
+    if (levelFilter === 'LAB' && !s.isLab) return false
+    if (levelFilter === 'THEORY' && s.isLab) return false
+    if (roomTypeFilter != null && s.roomTypeRequired !== roomTypeFilter) return false
+    return true
+  })
+
   const columns: Column<Subject>[] = [
     {
       key: 'name', header: 'Subject',
@@ -149,6 +175,14 @@ export default function Subjects() {
       sortValue: (s) => s.departmentName ?? '',
       render: (s) => s.departmentName ?? (s.departmentId ? `#${s.departmentId}` : <Badge label="Institute-wide" variant="green" />),
     },
+    {
+      key: 'institute', header: 'Institute',
+      sortValue: (s) => institutes.find((i) => i.id === s.instituteId)?.name ?? '',
+      render: (s) => {
+        const inst = institutes.find((i) => i.id === s.instituteId)
+        return inst ? <span className="text-gray-600">{inst.name}</span> : <span className="text-gray-400">—</span>
+      },
+    },
     { key: 'hours', header: 'Weekly / Chunk', render: (s) => `${s.weeklyHours} slots / ${s.chunkHours} slots` },
     {
       key: 'lab', header: 'Type',
@@ -158,8 +192,8 @@ export default function Subjects() {
       key: 'actions', header: '', width: '96px',
       render: (s) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(s)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(s.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(s)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(s.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -170,14 +204,59 @@ export default function Subjects() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(s.id) },
   ]
 
+  const bulk = useBulkDelete<Subject>({
+    getKey: (x) => x.id,
+    deleteFn: subjectApi.delete,
+    reload: load,
+    noun: 'subject',
+  })
+
   return (
     <>
       <Card title="Subjects" description="Manage courses and lab sessions"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Subject</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Subject</Button></div>}
       >
+        <FilterPanel activeCount={(instituteFilter != null ? 1 : 0) + (departmentFilter != null ? 1 : 0) + (levelFilter != null ? 1 : 0) + (roomTypeFilter != null ? 1 : 0)} persistKey="arare.subjects.filters.open">
+          <div className="flex items-center gap-3">
+            {institutes.length > 0 && (
+              <SearchableSelect
+                label="Institute"
+                value={instituteFilter}
+                onChange={(v) => { setInstituteFilter(v == null ? null : +v); setDepartmentFilter(null) }}
+                options={instituteOptions}
+                placeholder="All institutes"
+                allowClear
+                className="w-72"
+              />
+            )}
+            {depts.length > 0 && (
+              <SearchableSelect
+                label="Department"
+                value={departmentFilter}
+                onChange={(v) => setDepartmentFilter(v == null ? null : +v)}
+                options={deptFilterOptions}
+                placeholder="All departments"
+                allowClear
+                className="w-72"
+              />
+            )}
+            <Select
+              label="Level"
+              value={levelFilter ?? ''}
+              onChange={(e) => setLevelFilter(e.target.value || null)}
+              options={[{ value: '', label: 'All' }, ...levelFilterOptions]}
+            />
+            <Select
+              label="Room type"
+              value={roomTypeFilter ?? ''}
+              onChange={(e) => setRoomTypeFilter(e.target.value || null)}
+              options={[{ value: '', label: 'All room types' }, ...ROOM_TYPE_OPTIONS]}
+            />
+          </div>
+        </FilterPanel>
         <Table
           columns={columns}
-          data={items}
+          data={filteredItems}
           loading={loading}
           keyExtractor={(s) => s.id}
           searchable
@@ -185,6 +264,10 @@ export default function Subjects() {
           exportFilename="subjects"
           searchKeys={[(s) => s.name, (s) => s.code, (s) => s.departmentName ?? '']}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.subjects.density"
         />
       </Card>
 
@@ -274,6 +357,7 @@ export default function Subjects() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

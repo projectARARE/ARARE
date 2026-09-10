@@ -6,7 +6,7 @@ interface ScoreBreakdownPanelProps {
   rawExplanation: string | null
   sessions: ClassSession[]
   highlightedSessionIds: Set<number>
-  onViolationClick: (text: string) => void
+  onViolationClick: (constraintName: string, sessionIds?: number[]) => void
   onClearHighlight: () => void
 }
 
@@ -70,7 +70,7 @@ export default function ScoreBreakdownPanel({
         <div className="space-y-1.5">
           {grouped.hard.length === 0 && <p className="text-xs text-rose-700/70">No hard violations.</p>}
           {grouped.hard.map((c) => (
-            <button key={`${c.constraintName}-hard`} onClick={() => onViolationClick(c.constraintName)} className="w-full text-left text-xs rounded-md border border-rose-200 bg-white px-2 py-1.5 hover:border-rose-300">
+            <button key={`${c.constraintName}-hard`} onClick={() => onViolationClick(c.constraintName, c.sessionIds)} className="w-full text-left text-xs rounded-md border border-rose-200 bg-white px-2 py-1.5 hover:border-rose-300">
               <div className="font-medium text-slate-800">{c.constraintName}</div>
               <div className="text-slate-500">{c.matchCount} matches • {c.scoreImpact}</div>
             </button>
@@ -83,7 +83,7 @@ export default function ScoreBreakdownPanel({
         <div className="space-y-1.5">
           {grouped.medium.length === 0 && <p className="text-xs text-amber-700/70">No medium penalties.</p>}
           {grouped.medium.map((c) => (
-            <button key={`${c.constraintName}-medium`} onClick={() => onViolationClick(c.constraintName)} className="w-full text-left text-xs rounded-md border border-amber-200 bg-white px-2 py-1.5 hover:border-amber-300">
+            <button key={`${c.constraintName}-medium`} onClick={() => onViolationClick(c.constraintName, c.sessionIds)} className="w-full text-left text-xs rounded-md border border-amber-200 bg-white px-2 py-1.5 hover:border-amber-300">
               <div className="font-medium text-slate-800">{c.constraintName}</div>
               <div className="text-slate-500">{c.matchCount} matches • {c.scoreImpact}</div>
             </button>
@@ -96,7 +96,7 @@ export default function ScoreBreakdownPanel({
         <div className="space-y-1.5">
           {grouped.soft.length === 0 && <p className="text-xs text-indigo-700/70">No soft penalties.</p>}
           {grouped.soft.map((c) => (
-            <button key={`${c.constraintName}-soft`} onClick={() => onViolationClick(c.constraintName)} className="w-full text-left text-xs rounded-md border border-indigo-200 bg-white px-2 py-1.5 hover:border-indigo-300">
+            <button key={`${c.constraintName}-soft`} onClick={() => onViolationClick(c.constraintName, c.sessionIds)} className="w-full text-left text-xs rounded-md border border-indigo-200 bg-white px-2 py-1.5 hover:border-indigo-300">
               <div className="font-medium text-slate-800">{c.constraintName}</div>
               <div className="text-slate-500">{c.matchCount} matches • {c.scoreImpact}</div>
             </button>

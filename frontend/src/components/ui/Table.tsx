@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback, type ReactNode, type ChangeEvent } from 'react'
-import { ChevronUp, ChevronDown, ChevronsUpDown, Search, Download, FileSpreadsheet } from 'lucide-react'
+import { useState, useMemo, useCallback, useEffect, type ReactNode, type ChangeEvent } from 'react'
+import { ChevronUp, ChevronDown, ChevronsUpDown, Search, Download, FileSpreadsheet, Rows3, Rows2 } from 'lucide-react'
 import type { ContextMenuItem } from './ContextMenu'
 import ContextMenu from './ContextMenu'
 import { exportCsv, exportExcel, type ExportColumn } from '../../utils/exportUtils'
@@ -33,6 +33,11 @@ interface TableProps<T> {
   /** Enable checkbox row-selection */
   selectable?: boolean
   onSelectionChange?: (selected: T[]) => void
+  /** Bump this number to externally clear the internally-held selection
+   *  (e.g. after a bulk delete reloads the data). */
+  clearSignal?: number
+  /** localStorage key used to persist the row-density preference for this table. */
+  densityStorageKey?: string
   /** Build a right-click context menu for a given row */
   onRowContextMenu?: (row: T) => ContextMenuItem[]
   /** Show CSV/Excel export buttons; exports the currently filtered+sorted rows */
@@ -65,6 +70,8 @@ export default function Table<T>({
   searchKeys,
   selectable = false,
   onSelectionChange,
+  clearSignal,
+  densityStorageKey,
   onRowContextMenu,
   exportable = false,
   exportFilename = 'table-export',
@@ -77,6 +84,23 @@ export default function Table<T>({
   const [selected, setSelected] = useState<Set<string | number>>(new Set())
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [density, setDensity] = useState<'comfortable' | 'compact'>(
+    () => (densityStorageKey && localStorage.getItem(densityStorageKey) === 'compact' ? 'compact' : 'comfortable'),
+  )
+
+  useEffect(() => {
+    if (clearSignal) setSelected(new Set())
+  }, [clearSignal])
+
+  const toggleDensity = () => {
+    setDensity((d) => {
+      const next = d === 'comfortable' ? 'compact' : 'comfortable'
+      if (densityStorageKey) localStorage.setItem(densityStorageKey, next)
+      return next
+    })
+  }
+
+  const cellPadding = density === 'compact' ? 'px-3 py-1' : 'px-4 py-3'
 
   // Search
 
@@ -194,7 +218,7 @@ export default function Table<T>({
 
   return (
     <div className="space-y-3">
-      {(searchable || exportable) && (
+      {(searchable || exportable || selectable) && (
         <div className="flex flex-wrap items-center gap-2">
           {searchable && (
             <div className="relative flex-1 min-w-[180px] max-w-xs">
@@ -217,8 +241,17 @@ export default function Table<T>({
               )}
             </div>
           )}
-          {exportable && sorted.length > 0 && (
-            <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={toggleDensity}
+              title={density === 'comfortable' ? 'Switch to compact rows' : 'Switch to comfortable rows'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+            >
+              {density === 'comfortable' ? <Rows3 size={13} /> : <Rows2 size={13} />}
+              {density === 'comfortable' ? 'Comfortable' : 'Compact'}
+            </button>
+            {exportable && sorted.length > 0 && (
+              <div className="flex items-center gap-2">
               <button
                 onClick={handleExportCsv}
                 disabled={exporting}
@@ -236,6 +269,7 @@ export default function Table<T>({
             </div>
           )}
         </div>
+      </div>
       )}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -243,7 +277,7 @@ export default function Table<T>({
           <thead className="bg-gray-50">
             <tr>
               {selectable && (
-                <th className="px-4 py-3 w-10">
+                <th className="px-4 w-10">
                   <input
                     type="checkbox"
                     checked={allSelected}
@@ -301,7 +335,7 @@ export default function Table<T>({
                     className={`transition-colors ${isSelected ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
                   >
                     {selectable && (
-                      <td className="px-4 py-3 w-10">
+                      <td className={`px-4 w-10 ${cellPadding}`}>
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -311,7 +345,7 @@ export default function Table<T>({
                       </td>
                     )}
                     {columns.map((col) => (
-                      <td key={col.key} className="px-4 py-3 text-gray-700">
+                      <td key={col.key} className={`${cellPadding} text-gray-700`}>
                         {col.render(row, i)}
                       </td>
                     ))}

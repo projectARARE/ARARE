@@ -8,6 +8,35 @@ import SettingsPanel from './SettingsPanel'
 export default function Layout() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('arare.sidebarCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((collapsed) => {
+      const next = !collapsed
+      try {
+        window.localStorage.setItem('arare.sidebarCollapsed', next ? '1' : '0')
+      } catch {
+      }
+      return next
+    })
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+        e.preventDefault()
+        toggleSidebar()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -30,9 +59,9 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
+      <Sidebar collapsed={sidebarCollapsed} />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header />
+        <Header sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} />
         <main className="flex-1 p-8">
           <Outlet />
         </main>

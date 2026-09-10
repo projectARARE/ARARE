@@ -1,6 +1,8 @@
 package com.arare.features.subjectoffering;
 
-// Response DTO for a SubjectOffering.
+/**
+ * Response DTO for a SubjectOffering.
+ */
 public record SubjectOfferingResponse(
     Long id,
     Long subjectId,

@@ -10,9 +10,11 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-// Generic spreadsheet export for master-data tables. The frontend renders any
-// data table to plain columns/rows and asks for an .xlsx here, so CSV + Excel
-// export works on every page without per-entity backend endpoints.
+/**
+ * Generic spreadsheet export for master-data tables. The frontend renders any
+ * data table to plain columns/rows and asks for an .xlsx here, so CSV + Excel
+ * export works on every page without per-entity backend endpoints.
+ */
 @RestController
 @RequestMapping("/api/v1/export")
 @RequiredArgsConstructor

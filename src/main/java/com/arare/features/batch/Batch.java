@@ -18,9 +18,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 
-// <p>Examples: CSE-2A, CSE-2B, IT-3A.</p>
-// <p>Hard constraint: no two sessions can be assigned to the same batch
-// at the same timeslot.</p>
+/**
+ * <p>Examples: CSE-2A, CSE-2B, IT-3A.</p>
+ * <p>Hard constraint: no two sessions can be assigned to the same batch
+ * at the same timeslot.</p>
+ */
 
 @Entity
 @Table(
@@ -39,12 +41,16 @@ public class Batch extends BaseEntity {
     @JoinColumn(name = "department_id", nullable = false)
     private Department department;
 
-    // Academic year (1ΓÇô4 for a 4-year program). 
+    /**
+     * Academic year (1ΓÇô4 for a 4-year program).
+     */
     @Min(1)
     @Column(nullable = false)
     private int year;
 
-    // Section label, e.g. "A", "B", "C". 
+    /**
+     * Section label, e.g. "A", "B", "C".
+     */
     @NotBlank
     @Size(max = 10)
     @Column(nullable = false)
@@ -55,8 +61,10 @@ public class Batch extends BaseEntity {
     @Column(nullable = false)
     private int studentCount;
 
-// Days this batch attends college.
-// Used to filter valid timeslots during scheduling.
+/**
+ * Days this batch attends college.
+ * Used to filter valid timeslots during scheduling.
+ */
     @ElementCollection(targetClass = SchoolDay.class, fetch = FetchType.EAGER)
     @CollectionTable(name = "batch_working_days", joinColumns = @JoinColumn(name = "batch_id"))
     @Enumerated(EnumType.STRING)
@@ -64,24 +72,30 @@ public class Batch extends BaseEntity {
     @Builder.Default
     private List<SchoolDay> workingDays = new ArrayList<>();
 
-// Preferred free day for this batch.
-// Soft constraint: no sessions should be scheduled on this day.
+/**
+ * Preferred free day for this batch.
+ * Soft constraint: no sessions should be scheduled on this day.
+ */
     @Enumerated(EnumType.STRING)
     @Column
     private SchoolDay preferredFreeDay;
 
-    // Home lecture classroom this batch MUST use for non-lab lectures
-    // (homeRoomViolation HARD constraint). Lab sessions and subjects that
-    // require a LAB-type room are exempt -- they legitimately need
-    // specialised rooms.
+    /**
+     * Home lecture classroom this batch MUST use for non-lab lectures
+     * (homeRoomViolation HARD constraint). Lab sessions and subjects that
+     * require a LAB-type room are exempt -- they legitimately need
+     * specialised rooms.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "home_room_id")
     private Room homeRoom;
 
-    // Curriculum for this batch: the subjects it actually offers this term
-    // (choice-based specialisation). Empty = inherit every subject the
-    // department offers (backward compatible). The session generator scopes
-    // to this list and the solver uses it for teacher-allotment lookup.
+    /**
+     * Curriculum for this batch: the subjects it actually offers this term
+     * (choice-based specialisation). Empty = inherit every subject the
+     * department offers (backward compatible). The session generator scopes
+     * to this list and the solver uses it for teacher-allotment lookup.
+     */
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "batch_subjects",

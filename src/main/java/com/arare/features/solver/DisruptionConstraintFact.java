@@ -63,8 +63,10 @@ public record DisruptionConstraintFact(
                 String day = tokens[2].isEmpty() ? null : tokens[2];
                 facts.add(new DisruptionConstraintFact(type, id, day));
             } catch (IllegalArgumentException ignored) {
-                // Skip malformed tokens from a persisted snapshot; never
-                // produced by the submit path.
+                /**
+                 * Skip malformed tokens from a persisted snapshot; never
+                 * produced by the submit path.
+                 */
             }
         }
         return facts;

@@ -95,7 +95,10 @@ public class EventServiceImpl implements EventService {
         List<LocalDate> dates = eventDates(event);
 
         for (LocalDate date : dates) {
-            if (date == null) continue; // dayless event: teacher/room/timeslot facts are skipped (see buildFacts)
+            /**
+             * dayless event: teacher/room/timeslot facts are skipped (see buildFacts)
+             */
+            if (date == null) continue; 
             for (var room : event.getAffectedRooms()) {
                 impacted.addAll(disruptionService.previewImpact(scheduleId,
                         new DisruptionRequest(DisruptionType.ROOM_UNAVAILABLE, room.getId(), date, event.getDescription()))
@@ -113,7 +116,9 @@ public class EventServiceImpl implements EventService {
             }
         }
 
-        // If event is broad (no specific entities), treat it as a special event impact.
+        /**
+         * If event is broad (no specific entities), treat it as a special event impact.
+         */
         if (event.getAffectedRooms().isEmpty()
             && event.getAffectedTeachers().isEmpty()
             && event.getAffectedTimeslots().isEmpty()) {
@@ -161,7 +166,9 @@ public class EventServiceImpl implements EventService {
             facts.add(new DisruptionConstraintFact(
                 DisruptionType.TIMESLOT_BLOCKED, timeslot.getId(), null));
         }
-        // Broad event (no specific entities): a special event on each date.
+        /**
+         * Broad event (no specific entities): a special event on each date.
+         */
         if (event.getAffectedRooms().isEmpty()
             && event.getAffectedTeachers().isEmpty()
             && event.getAffectedTimeslots().isEmpty()) {

@@ -20,6 +20,11 @@ public class PreAllocationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(req));
     }
 
+    @GetMapping
+    public ResponseEntity<List<PreAllocationResponse>> findAll() {
+        return ResponseEntity.ok(service.findAll());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<PreAllocationResponse> findById(@PathVariable Long id) {
         return ResponseEntity.ok(service.findById(id));

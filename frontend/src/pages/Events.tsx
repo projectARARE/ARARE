@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, Pencil, Trash2, Zap } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog, FilterPanel } from '../components/ui'
 import type { Column, ContextMenuItem } from '../components/ui'
 import { eventApi, scheduleApi, teacherApi, roomApi } from '../services/api'
 import { waitForJob } from '../hooks/useSolveJob'
 import type { Event, EventRequest, EventType, Schedule, Teacher, Room } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const EVENT_TYPES: EventType[] = [
   'EXAM', 'MAINTENANCE', 'FESTIVAL', 'TEACHER_LEAVE',
@@ -43,6 +44,7 @@ export default function Events() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [applyTarget, setApplyTarget] = useState<{ eventId: number; scheduleId: string }>({ eventId: 0, scheduleId: '' })
   const [applyError, setApplyError] = useState<string | null>(null)
   const [applying, setApplying] = useState(false)
@@ -166,11 +168,24 @@ export default function Events() {
     .map((s) => ({ value: s.id, label: `${s.name} (${s.status})` }))
   const typeOptions = EVENT_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))
 
+  const eventTypeFilterOptions = [
+    { value: 'EXAM', label: 'EXAM' },
+    { value: 'MAINTENANCE', label: 'MAINTENANCE' },
+  ]
+  const filteredItems = typeFilter != null ? items.filter((ev) => ev.type === typeFilter) : items
+
   const getContextItems = (e: Event): ContextMenuItem[] => [
     { label: 'Edit', icon: <Pencil size={13} />, onClick: () => openEdit(e) },
     { label: 'Apply to Schedule', icon: <Zap size={13} />, onClick: () => { setApplyTarget({ eventId: e.id, scheduleId: '' }); setApplyError(null) } },
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(e.id) },
   ]
+
+  const bulk = useBulkDelete<Event>({
+    getKey: (x) => x.id,
+    deleteFn: eventApi.delete,
+    reload: load,
+    noun: 'event',
+  })
 
   const columns: Column<Event>[] = [
     { key: 'title', header: 'Title', sortValue: (e) => e.title, render: (e) => <span className="font-medium">{e.title}</span> },
@@ -192,12 +207,11 @@ export default function Events() {
       key: 'actions', header: '', width: '180px',
       render: (e) => (
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" icon={<Zap size={14} />}
-            onClick={() => { setApplyTarget({ eventId: e.id, scheduleId: '' }); setApplyError(null) }}>
-            Apply
-          </Button>
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(e)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(e.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Zap size={14} />} className="px-1.5"
+            onClick={() => { setApplyTarget({ eventId: e.id, scheduleId: '' }); setApplyError(null) }}
+            title="Apply" aria-label="Apply" />
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(e)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(e.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -206,13 +220,25 @@ export default function Events() {
   return (
     <>
       <Card title="Events" description="Manage disruptions and special events"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Event</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Event</Button></div>}
       >
+        <FilterPanel activeCount={typeFilter != null ? 1 : 0} persistKey="arare.events.filters.open">
+          <Select
+            label="Type"
+            value={typeFilter ?? ''}
+            onChange={(e) => setTypeFilter(e.target.value || null)}
+            options={[{ value: '', label: 'All types' }, ...eventTypeFilterOptions]}
+          />
+        </FilterPanel>
         <Table
-          columns={columns} data={items} loading={loading} keyExtractor={(e) => e.id}
+          columns={columns} data={filteredItems} loading={loading} keyExtractor={(e) => e.id}
           searchable searchKeys={[(e) => e.title, (e) => e.type]}
           exportable exportFilename="events"
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.events.density"
         />
       </Card>
 
@@ -294,6 +320,7 @@ export default function Events() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

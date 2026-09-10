@@ -4,6 +4,7 @@ import ai.timefold.solver.core.api.score.buildin.hardmediumsoft.HardMediumSoftSc
 import ai.timefold.solver.core.api.score.constraint.ConstraintMatchTotal;
 import ai.timefold.solver.core.api.solver.SolutionManager;
 import com.arare.exception.ResourceNotFoundException;
+import com.arare.features.classsession.ClassSession;
 import com.arare.features.schedule.Schedule;
 import com.arare.features.schedule.ScheduleRepository;
 import com.arare.features.solvejob.SolveJob;
@@ -36,16 +37,20 @@ public class TimetableSolverService {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
 
-        // Recompute the explanation with the SAME disruption facts as the last
-        // partial-resolve that produced this schedule, so the breakdown matches
-        // the persisted score. Without this, an infeasible partial resolve would
-        // be re-scored without its disruption constraints and reported feasible.
+        /**
+         * Recompute the explanation with the SAME disruption facts as the last
+         * partial-resolve that produced this schedule, so the breakdown matches
+         * the persisted score. Without this, an infeasible partial resolve would
+         * be re-scored without its disruption constraints and reported feasible.
+         */
         List<DisruptionConstraintFact> disruptionFacts = latestPartialResolveFacts(scheduleId);
 
-        // Read-only explain path: do NOT generate/persist sessions for a schedule
-        // that has none yet, otherwise this write would fail on a read-only
-        // transaction. Passing generateIfMissing=false analyses the existing
-        // facts (an empty session set) without writing.
+        /**
+         * Read-only explain path: do NOT generate/persist sessions for a schedule
+         * that has none yet, otherwise this write would fail on a read-only
+         * transaction. Passing generateIfMissing=false analyses the existing
+         * facts (an empty session set) without writing.
+         */
         TimetableSolution solution = problemBuilder.build(new ProblemBuildRequest(
             schedule,
             null,
@@ -73,7 +78,8 @@ public class TimetableSolverService {
                     t.getConstraintRef().constraintName(),
                     level,
                     t.getConstraintMatchCount(),
-                    cs.toString()
+                    cs.toString(),
+                    sessionIdsOf(t)
                 );
             })
             .sorted(java.util.Comparator.comparing(ScoreExplanationResponse.ConstraintBreakdown::level))
@@ -94,5 +100,20 @@ public class TimetableSolverService {
             .map(SolveJob::getDisruptionFactsCsv)
             .map(DisruptionConstraintFact::decode)
             .orElseGet(List::of);
+    }
+
+    /**
+     * Ids of the planning entities (ClassSession) a constraint match implicates.
+     * Timefold exposes each match's justification list, which for entity-based
+     * constraints contains the affected ClassSession(s).
+     */
+    private static List<Long> sessionIdsOf(ConstraintMatchTotal<HardMediumSoftScore> total) {
+        return total.getConstraintMatchSet().stream()
+            .flatMap(m -> m.getJustificationList().stream())
+            .filter(ClassSession.class::isInstance)
+            .map(j -> ((ClassSession) j).getId())
+            .distinct()
+            .sorted()
+            .toList();
     }
 }

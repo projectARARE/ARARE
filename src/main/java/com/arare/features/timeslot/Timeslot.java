@@ -10,11 +10,13 @@ import lombok.*;
 
 import java.time.LocalTime;
 
-// A fixed time period on a given school day.
-// <p>The scheduler assigns ClassSessions to CLASS-type timeslots only.
-// BREAK and BLOCKED timeslots act as hard-constraint fences.</p>
-// <p>Timeslots are global (shared by all departments/rooms). Availability
-// per teacher/room is modelled as a ManyToMany relationship in those entities.</p>
+/**
+ * A fixed time period on a given school day.
+ * <p>The scheduler assigns ClassSessions to CLASS-type timeslots only.
+ * BREAK and BLOCKED timeslots act as hard-constraint fences.</p>
+ * <p>Timeslots are global (shared by all departments/rooms). Availability
+ * per teacher/room is modelled as a ManyToMany relationship in those entities.</p>
+ */
 @Entity
 @Table(
     name = "timeslots",

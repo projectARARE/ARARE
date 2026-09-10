@@ -3,6 +3,7 @@ package com.arare.features.schedule;
 import com.arare.common.enums.ScheduleScope;
 import com.arare.common.enums.ScheduleStatus;
 import com.arare.exception.InfeasibleScheduleException;
+import com.arare.exception.ResourceConflictException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.Batch;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
@@ -70,12 +71,16 @@ public class ScheduleServiceImpl implements ScheduleService {
             .build();
         schedule = repo.save(schedule);
 
-        // Prevent two concurrent GENERATEs from clobbering each other before
-        // the solve job is persisted.
+        /**
+         * Prevent two concurrent GENERATEs from clobbering each other before
+         * the solve job is persisted.
+         */
         solveJobService.ensureNoActiveJobForSchedule(schedule.getId());
 
-        // Wizard pre-assignments are persisted here, BEFORE the solve job runs,
-        // so the solver reads them as locked/partial pre-allocations.
+        /**
+         * Wizard pre-assignments are persisted here, BEFORE the solve job runs,
+         * so the solver reads them as locked/partial pre-allocations.
+         */
         if (req.preAllocations() != null && !req.preAllocations().isEmpty()) {
             preAllocationService.createAll(schedule.getId(), req.preAllocations());
         }
@@ -83,10 +88,12 @@ public class ScheduleServiceImpl implements ScheduleService {
         return solveJobService.submitGenerate(schedule.getId(), r);
     }
 
-    // Department-scoped requests always carry departmentId but historically not
-    // instituteId. The cross-schedule teacher-conflict scan treats a null
-    // instituteId as "university-wide", so derive it from the department to keep
-    // scope isolation correct regardless of what the caller sends.
+    /**
+     * Department-scoped requests always carry departmentId but historically not
+     * instituteId. The cross-schedule teacher-conflict scan treats a null
+     * instituteId as "university-wide", so derive it from the department to keep
+     * scope isolation correct regardless of what the caller sends.
+     */
     private ScheduleRequest withResolvedInstitute(ScheduleRequest req) {
         if (req.instituteId() != null || req.departmentId() == null) {
             return req;
@@ -117,6 +124,49 @@ public class ScheduleServiceImpl implements ScheduleService {
 
     @Override
     @Transactional
+    public ScheduleResponse revalidate(Long id) {
+        Schedule schedule = findEntity(id);
+        /**
+         * Restore/unarchive: archived schedules may be re-validated to bring
+         * them back to an editable DRAFT (or INFEASIBLE if hard conflicts
+         * remain). Only ACTIVE schedules are frozen against revalidation —
+         * unpublishing an active one must go through archive() + revalidate().
+         */
+        if (schedule.getStatus() == ScheduleStatus.ACTIVE) {
+            throw new ResourceConflictException(
+                "Only draft, infeasible or archived schedules can be revalidated. Activate a schedule to freeze it.");
+        }
+        solveJobService.ensureNoActiveJobForSchedule(id);
+
+        /**
+         * Re-scores the CURRENT persisted sessions (with the same disruption
+         * facts as the last partial resolve) without running the solver, so a
+         * manually fixed schedule can be brought back to a publishable DRAFT.
+         */
+        ScoreExplanationResponse explanation = solverService.explainSchedule(id);
+        String scoreText = explanation.score();
+        if (scoreText == null || "N/A".equals(scoreText)) {
+            throw new ResourceConflictException(
+                "Schedule has no solution yet — generate a schedule before revalidating.");
+        }
+
+        schedule.setScore(scoreText);
+        schedule.setScoreExplanation(revalidateExplanation(explanation));
+        schedule.setStatus(explanation.feasible() ? ScheduleStatus.DRAFT : ScheduleStatus.INFEASIBLE);
+        return toResponse(repo.save(schedule));
+    }
+
+    private static String revalidateExplanation(ScoreExplanationResponse explanation) {
+        String summary = explanation.constraints().stream()
+            .filter(c -> !"0".equals(c.scoreImpact()))
+            .map(c -> c.constraintName() + "=" + c.scoreImpact())
+            .reduce((a, b) -> a + "; " + b)
+            .orElse("No constraint violations");
+        return explanation.score() + (explanation.feasible() ? " — feasible" : " — INFEASIBLE (partial result kept)") + " [" + summary + "]";
+    }
+
+    @Override
+    @Transactional
     public ScheduleResponse activate(Long id) {
         Schedule schedule = findEntity(id);
         solveJobService.ensureNoActiveJobForSchedule(id);
@@ -125,17 +175,19 @@ public class ScheduleServiceImpl implements ScheduleService {
             return toResponse(schedule);
         }
         if (schedule.getStatus() == ScheduleStatus.ARCHIVED) {
-            throw new IllegalStateException("Archived schedules cannot be activated. Create a new schedule instead.");
+            throw new ResourceConflictException("Archived schedules cannot be activated. Create a new schedule instead.");
         }
         if (schedule.getStatus() == ScheduleStatus.INFEASIBLE) {
-            throw new IllegalStateException("Infeasible schedules cannot be activated. Regenerate before activating.");
+            throw new ResourceConflictException("Infeasible schedules cannot be activated. Regenerate before activating.");
         }
         if (schedule.getScore() == null) {
-            throw new IllegalStateException("Schedule has no solution yet. Generate before activating.");
+            throw new ResourceConflictException("Schedule has no solution yet. Generate before activating.");
         }
 
-        // Single active schedule per institute scope. Any other active schedule
-        // for the same institute (null = university-wide) is superseded.
+        /**
+         * Single active schedule per institute scope. Any other active schedule
+         * for the same institute (null = university-wide) is superseded.
+         */
         List<Schedule> actives = repo.findByStatus(ScheduleStatus.ACTIVE);
         for (Schedule other : actives) {
             if (other.getId().equals(id)) {
@@ -171,7 +223,10 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     @Transactional
     public SolveJobResponse partialResolve(Long scheduleId, List<Long> impactedSessionIds) {
-        findEntity(scheduleId); // validate exists
+        /**
+         * validate exists
+         */
+        findEntity(scheduleId); 
         solveJobService.ensureNoActiveJobForSchedule(scheduleId);
         return solveJobService.submitPartialResolve(scheduleId, impactedSessionIds);
     }
@@ -179,7 +234,10 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     @Transactional(readOnly = true)
     public ScoreExplanationResponse explainScore(Long scheduleId) {
-        findEntity(scheduleId); // validate exists
+        /**
+         * validate exists
+         */
+        findEntity(scheduleId); 
         return solverService.explainSchedule(scheduleId);
     }
 
@@ -201,7 +259,10 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     @Transactional(readOnly = true)
     public List<ClassSessionResponse> getSessionsBySchedule(Long scheduleId) {
-        findEntity(scheduleId); // validate schedule exists
+        /**
+         * validate schedule exists
+         */
+        findEntity(scheduleId); 
         return sessionRepo.findByScheduleId(scheduleId)
                 .stream()
                 .map(this::toSessionResponse)

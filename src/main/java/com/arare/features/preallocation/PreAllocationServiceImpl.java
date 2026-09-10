@@ -66,12 +66,16 @@ public class PreAllocationServiceImpl implements PreAllocationService {
         Schedule schedule = scheduleRepo.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
 
-        // Load existing pre-allocations ONCE so createAll is O(N) and can catch
-        // intra-payload conflicts (two specs in the same request that collide).
+        /**
+         * Load existing pre-allocations ONCE so createAll is O(N) and can catch
+         * intra-payload conflicts (two specs in the same request that collide).
+         */
         List<PreAllocation> existing = repo.findByScheduleId(scheduleId);
 
-        // Deterministic insert order so identical wizard payloads produce the
-        // same rows (mirrors the solver's REPRODUCIBLE environment mode).
+        /**
+         * Deterministic insert order so identical wizard payloads produce the
+         * same rows (mirrors the solver's REPRODUCIBLE environment mode).
+         */
         List<PreAllocationResponse> created = new ArrayList<>();
         for (PreAllocationSpec spec : specs) {
             PreAllocation pa = buildFromSpec(schedule, spec, true);
@@ -93,6 +97,11 @@ public class PreAllocationServiceImpl implements PreAllocationService {
     }
 
     @Override
+    public List<PreAllocationResponse> findAll() {
+        return repo.findAll().stream().map(this::toResponse).toList();
+    }
+
+    @Override
     @Transactional
     public void delete(Long id) {
         findEntity(id);
@@ -109,6 +118,8 @@ public class PreAllocationServiceImpl implements PreAllocationService {
             .orElseThrow(() -> new ResourceNotFoundException("Batch", spec.batchId()));
         Subject subject = subjectRepo.findById(spec.subjectId())
             .orElseThrow(() -> new ResourceNotFoundException("Subject", spec.subjectId()));
+
+        validateDepartmentPairing(subject, batch);
 
         Teacher teacher = null;
         if (spec.teacherId() != null) {
@@ -167,8 +178,10 @@ public class PreAllocationServiceImpl implements PreAllocationService {
                     "Room '" + room.getRoomNumber() + "' is not available at "
                         + timeslot.getDay() + " " + timeslot.getStartTime() + "-" + timeslot.getEndTime());
             }
-            // Reject pre-allocating a teacher to a slot already claimed by an
-            // ACTIVE (live) schedule — never queue an infeasible pre-allocation.
+            /**
+             * Reject pre-allocating a teacher to a slot already claimed by an
+             * ACTIVE (live) schedule — never queue an infeasible pre-allocation.
+             */
             requireTeacherSlotFreeInActiveSchedules(teacher, timeslot, schedule.getId(), schedule.getInstituteId());
         }
 
@@ -215,8 +228,10 @@ public class PreAllocationServiceImpl implements PreAllocationService {
             }
             boolean sameBatchSubject = other.getBatch().getId().equals(batchId)
                 && other.getSubject().getId().equals(subjectId);
-            // Identical (schedule, batch, subject, timeslot) is the unique key
-            // and must be rejected regardless of which teacher is assigned.
+            /**
+             * Identical (schedule, batch, subject, timeslot) is the unique key
+             * and must be rejected regardless of which teacher is assigned.
+             */
             boolean sameTimeslot = (timeslotId == null && other.getTimeslot() == null)
                 || (timeslotId != null && other.getTimeslot() != null
                     && other.getTimeslot().getId().equals(timeslotId));
@@ -233,8 +248,10 @@ public class PreAllocationServiceImpl implements PreAllocationService {
                     "Subject '" + candidate.getSubject().getName() + "' for this batch is already pre-assigned to '"
                         + other.getTeacher().getName() + "'. A subject must be taught by exactly one teacher.");
             }
-            // The same teacher pre-assigned to two overlapping slots is
-            // infeasible before the solver is even asked to run.
+            /**
+             * The same teacher pre-assigned to two overlapping slots is
+             * infeasible before the solver is even asked to run.
+             */
             if (teacherId != null
                 && other.getTeacher() != null
                 && other.getTeacher().getId().equals(teacherId)
@@ -265,8 +282,10 @@ public class PreAllocationServiceImpl implements PreAllocationService {
     }
 
     private int sectionSizeOf(Batch batch, Subject subject) {
-        // Lab subjects are taught per ClassSection, so a room must fit a single
-        // section's size rather than the full batch.
+        /**
+         * Lab subjects are taught per ClassSection, so a room must fit a single
+         * section's size rather than the full batch.
+         */
         if (subject.isLab()) {
             List<ClassSection> sections = classSectionRepo.findByBatchId(batch.getId());
             if (!sections.isEmpty()) {
@@ -288,6 +307,22 @@ public class PreAllocationServiceImpl implements PreAllocationService {
             return aStartSlot < bEndExclusive && bStartSlot < aEndExclusive;
         }
         return a.getStartTime().isBefore(b.getEndTime()) && b.getStartTime().isBefore(a.getEndTime());
+    }
+
+    /**
+     * Ensures a department-scoped subject is only paired with batches of the
+     * same department. Institute-wide subjects (department == null) may pair
+     * with any batch.
+     */
+    private void validateDepartmentPairing(Subject subject, Batch batch) {
+        if (batch == null) return;
+        if (subject.getDepartment() == null) return;
+        if (batch.getDepartment() == null) return;
+        if (!subject.getDepartment().getId().equals(batch.getDepartment().getId())) {
+            throw new ResourceConflictException(
+                "Subject belongs to department '" + subject.getDepartment().getCode()
+                    + "' but batch belongs to department '" + batch.getDepartment().getCode() + "'");
+        }
     }
 
     private PreAllocation findEntity(Long id) {

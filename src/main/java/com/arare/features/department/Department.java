@@ -14,10 +14,12 @@ import org.hibernate.annotations.FetchMode;
 import java.util.ArrayList;
 import java.util.List;
 
-// Academic department, e.g. CSE, IT, AI.
-// Owns a set of allowed buildings for scheduling purposes.
+/**
+ * Academic department, e.g. CSE, IT, AI.
+ * Owns a set of allowed buildings for scheduling purposes.
+ */
 @Entity
-@Table(name = "departments")
+@Table(name = "departments", uniqueConstraints = @UniqueConstraint(name = "uq_departments_institute_code", columnNames = {"institute_id", "code"}))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -27,24 +29,28 @@ public class Department extends BaseEntity {
 
     @NotBlank
     @Size(max = 120)
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String name;
 
     @NotBlank
     @Size(max = 20)
     @Pattern(regexp = "^[A-Za-z0-9_-]+$")
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String code;
 
-    // Constituent institute/college this department belongs to. Every
-    // department has exactly one home institute; a department's subjects and
-    // batches are scoped to that institute for scheduling.
+    /**
+     * Constituent institute/college this department belongs to. Every
+     * department has exactly one home institute; a department's subjects and
+     * batches are scoped to that institute for scheduling.
+     */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "institute_id", nullable = false)
     private Institute institute;
 
-// Buildings this department is allowed to schedule sessions in.
-// Soft constraint: sessions should prefer these buildings.
+/**
+ * Buildings this department is allowed to schedule sessions in.
+ * Soft constraint: sessions should prefer these buildings.
+ */
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "department_buildings",

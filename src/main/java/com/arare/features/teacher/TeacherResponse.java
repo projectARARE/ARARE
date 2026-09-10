@@ -15,5 +15,6 @@ public record TeacherResponse(
     int maxWeeklyHours,
     int maxConsecutiveClasses,
     int movementPenalty,
-    SchoolDay preferredFreeDay
+    SchoolDay preferredFreeDay,
+    Long instituteId
 ) {}

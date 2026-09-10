@@ -51,6 +51,11 @@ public class ScheduleController {
         return ResponseEntity.ok(service.archive(id));
     }
 
+    @PostMapping("/{id}/revalidate")
+    public ResponseEntity<ScheduleResponse> revalidate(@PathVariable Long id) {
+        return ResponseEntity.ok(service.revalidate(id));
+    }
+
     @PostMapping("/{id}/partial-resolve")
     public ResponseEntity<SolveJobResponse> partialResolve(
         @PathVariable Long id,

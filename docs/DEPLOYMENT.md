@@ -20,7 +20,7 @@ reverse proxy / network policy that restricts access.
    GRANT ALL PRIVILEGES ON DATABASE araredb TO arare;
    ```
 4. On startup, Flyway applies all migrations under
-   `src/main/resources/db/migration` (`V1`…`V13`) and validates the schema
+   `src/main/resources/db/migration` (`V1`…`V15`) and validates the schema
    (`spring.jpa.hibernate.ddl-auto=validate`). No manual schema work is needed.
 
 > Opt-in auto-create: set `ARARE_FLYWAY_AUTO_CREATE_DB=true` and the app will
@@ -35,7 +35,7 @@ reverse proxy / network policy that restricts access.
 | --- | --- | --- | --- |
 | `ARARE_DB_URL` | `jdbc:postgresql://localhost:5432/araredb` | no* | JDBC URL (*DB must exist) |
 | `ARARE_DB_USERNAME` | `postgres` | no | DB username |
-| `ARARE_DB_PASSWORD` | — | **yes** | DB password (default 123456 � dev only, override for real use) |
+| `ARARE_DB_PASSWORD` | — | no (override for real use) | DB password (default 123456, dev only; never leave the default on a shared deployment) |
 | `ARARE_CORS_ORIGINS` | `http://localhost:5173` | no | Comma-separated allowed origins |
 | `ARARE_FLYWAY_AUTO_CREATE_DB` | `false` | no | Auto-create DB on startup (dev only) |
 

@@ -6,6 +6,7 @@ import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { instituteApi } from '../services/api'
 import type { Institute, InstituteRequest } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const EMPTY: InstituteRequest = { name: '', code: '', description: '' }
 
@@ -101,8 +102,8 @@ export default function Institutes() {
       key: 'actions', header: '', width: '96px',
       render: (i) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(i)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(i.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(i)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(i.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -113,12 +114,19 @@ export default function Institutes() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(i.id) },
   ]
 
+  const bulk = useBulkDelete<Institute>({
+    getKey: (x) => x.id,
+    deleteFn: instituteApi.delete,
+    reload: load,
+    noun: 'institute',
+  })
+
   return (
     <>
       <Card
         title="Institutes"
         description="Constituent institutes within the university"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Institute</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Institute</Button></div>}
       >
         <Table
           columns={columns}
@@ -130,6 +138,10 @@ export default function Institutes() {
           exportFilename="institutes"
           searchKeys={[(i) => i.name, (i) => i.code, (i) => i.description ?? '']}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.institutes.density"
         />
       </Card>
 
@@ -161,6 +173,7 @@ export default function Institutes() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

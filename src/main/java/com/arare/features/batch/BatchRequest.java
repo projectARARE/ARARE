@@ -5,7 +5,9 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
-// Request DTO: create or update a Batch (student cohort). 
+/**
+ * Request DTO: create or update a Batch (student cohort).
+ */
 public record BatchRequest(
     @NotNull Long departmentId,
     @Min(1) int year,
@@ -14,7 +16,9 @@ public record BatchRequest(
     List<SchoolDay> workingDays,
     SchoolDay preferredFreeDay,
     Long homeRoomId,
-    // Curriculum: subject ids this batch actually offers this term.
-    // Empty/null = inherit everything the department offers.
+    /**
+     * Curriculum: subject ids this batch actually offers this term.
+     * Empty/null = inherit everything the department offers.
+     */
     List<Long> subjectIds
 ) {}

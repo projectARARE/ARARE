@@ -5,7 +5,9 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
 
-// Request DTO: configure global university scheduling parameters. 
+/**
+ * Request DTO: configure global university scheduling parameters.
+ */
 public record UniversityConfigRequest(
     @Min(1) @Max(7) int daysPerWeek,
     @Min(1) int timeslotsPerDay,

@@ -18,7 +18,11 @@ A `FeasibilityCheckResult` is feasible iff `errorCount == 0`
 Mirrors `JpaProblemDataGateway.loadFacts` scoping:
 
 * Batches: narrow by `batchIds` → `departmentId` → `instituteId` → all.
-* Teachers / Rooms: narrow by explicit id list → all.
+* Teachers / Rooms: narrow by explicit id list → in an **institute** scope, the
+  teacher pool is limited to teachers qualified for at least one scoped subject
+  (`findDistinctBySubjectsIdIn`) and rooms to the institute's buildings
+  (`findByBuildingInstituteId`); a **university** scope uses all teachers/rooms.
+  This mirrors `JpaProblemDataGateway.loadFacts` exactly.
 * Subjects: `findByDepartmentId` / `findByDepartmentInstituteId` / all-filtered;
   **institute-wide** subjects (null department) are always added.
 

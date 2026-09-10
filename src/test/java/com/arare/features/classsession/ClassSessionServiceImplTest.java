@@ -1,6 +1,7 @@
 package com.arare.features.classsession;
 
 import com.arare.common.enums.RoomType;
+import com.arare.common.enums.ScheduleStatus;
 import com.arare.common.enums.SchoolDay;
 import com.arare.common.enums.TimeslotType;
 import com.arare.exception.ResourceNotFoundException;
@@ -36,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -326,6 +328,59 @@ class ClassSessionServiceImplTest {
         verify(repo, never()).save(any());
     }
 
+    @Test
+    void allowRoomChangeWhenTeacherIsAlreadyAllocatedAtTimeslot() {
+        Schedule schedule = new Schedule();
+        schedule.setId(300L);
+        session.setSchedule(schedule);
+        session.setTeacher(null);
+        session.getSubject().setRequiresTeacher(true);
+
+        Timeslot ts = Timeslot.builder()
+            .day(SchoolDay.MONDAY).type(TimeslotType.CLASS)
+            .startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(10, 0))
+            .slotNumber(1).build();
+        ts.setId(410L);
+
+        Timeslot otherSlot = Timeslot.builder()
+            .day(SchoolDay.TUESDAY).type(TimeslotType.CLASS)
+            .startTime(LocalTime.of(9, 0)).endTime(LocalTime.of(10, 0))
+            .slotNumber(1).build();
+        otherSlot.setId(411L);
+
+        // pre-allocated: session already carries teacher+timeslot,
+        // but the teacher's general availability excludes this slot.
+        Teacher t = Teacher.builder()
+            .name("Dr. Q")
+            .subjects(List.of(session.getSubject()))
+            .availableTimeslots(List.of(otherSlot))
+            .build();
+        t.setId(220L);
+
+        Room room = Room.builder().roomNumber("B101").type(RoomType.LECTURE).capacity(80).build();
+        room.setId(310L);
+        com.arare.features.building.Building building = com.arare.features.building.Building.builder()
+            .name("Main Block").build();
+        building.setId(7L);
+        room.setBuilding(building);
+
+        session.setTeacher(t);
+        session.setTimeslot(ts);
+
+        when(repo.findById(1L)).thenReturn(Optional.of(session));
+        when(roomRepo.findById(310L)).thenReturn(Optional.of(room));
+        when(repo.findByScheduleId(300L)).thenReturn(List.of());
+        when(repo.save(session)).thenReturn(session);
+
+        // change only the room; teacher and timeslot are unchanged.
+        service.updateAssignment(1L, new SessionAssignmentRequest(
+            null, 310L, null, null, false, false, false));
+
+        assertSame(room, session.getRoom());
+        assertSame(t, session.getTeacher());
+        assertSame(ts, session.getTimeslot());
+    }
+
     // Manual session creation (right-click "add session")
 
     private Department dept;
@@ -458,5 +513,48 @@ class ClassSessionServiceImplTest {
 
         assertThrows(ResourceNotFoundException.class, () -> service.delete(55L));
         verify(repo, never()).deleteById(any());
+    }
+
+    // Bulk lock toggle (lock-all / unlock-all / release pre-allocation locks)
+
+    @Test
+    void bulkLockLocksAllSessionsOfSchedule() {
+        schedule.setStatus(ScheduleStatus.DRAFT);
+        ClassSession a = ClassSession.builder().id(1L).schedule(schedule).isLocked(false).build();
+        ClassSession b = ClassSession.builder().id(2L).schedule(schedule).isLocked(false).build();
+        when(scheduleRepo.findById(300L)).thenReturn(Optional.of(schedule));
+        when(repo.findBulkByScheduleId(300L)).thenReturn(List.of(a, b));
+        when(repo.saveAll(List.of(a, b))).thenReturn(List.of(a, b));
+
+        int count = service.bulkSetLocked(300L, new SessionsBulkLockRequest(true, null));
+
+        assertEquals(2, count);
+        assertTrue(a.isLocked());
+        assertTrue(b.isLocked());
+        verify(repo).saveAll(List.of(a, b));
+    }
+
+    @Test
+    void bulkUnlockOnlyUpdatesRequestedSessionIds() {
+        schedule.setStatus(ScheduleStatus.DRAFT);
+        ClassSession a = ClassSession.builder().id(1L).schedule(schedule).isLocked(true).build();
+        when(scheduleRepo.findById(300L)).thenReturn(Optional.of(schedule));
+        when(repo.findAllById(List.of(1L))).thenReturn(List.of(a));
+        when(repo.saveAll(List.of(a))).thenReturn(List.of(a));
+
+        int count = service.bulkSetLocked(300L, new SessionsBulkLockRequest(false, List.of(1L)));
+
+        assertEquals(1, count);
+        assertFalse(a.isLocked());
+    }
+
+    @Test
+    void bulkLockRejectedOnArchivedSchedule() {
+        schedule.setStatus(ScheduleStatus.ARCHIVED);
+        when(scheduleRepo.findById(300L)).thenReturn(Optional.of(schedule));
+
+        assertThrows(IllegalArgumentException.class,
+            () -> service.bulkSetLocked(300L, new SessionsBulkLockRequest(true, null)));
+        verify(repo, never()).saveAll(any());
     }
 }

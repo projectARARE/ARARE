@@ -60,7 +60,10 @@ public class ClassSectionServiceImpl implements ClassSectionService {
         for (int i = 1; i <= req.count(); i++) {
             String label = prefix + i;
             if (existingLabels.contains(label)) {
-                continue; // idempotent: skip already-generated labels
+                /**
+                 * idempotent: skip already-generated labels
+                 */
+                continue; 
             }
             ClassSection cs = ClassSection.builder()
                 .batch(batch)
@@ -119,8 +122,10 @@ public class ClassSectionServiceImpl implements ClassSectionService {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("ClassSection", id));
     }
 
-    // Resolves every requested subject id, rejecting unknown ones instead of
-    // silently dropping curriculum entries.
+    /**
+     * Resolves every requested subject id, rejecting unknown ones instead of
+     * silently dropping curriculum entries.
+     */
     private List<Subject> resolveSubjects(List<Long> subjectIds) {
         if (subjectIds == null || subjectIds.isEmpty()) {
             return new ArrayList<>();

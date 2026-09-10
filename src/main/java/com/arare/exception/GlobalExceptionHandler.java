@@ -21,11 +21,13 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.net.URI;
 import java.util.stream.Collectors;
 
-// Centralised error handling. Returns RFC-9457 ProblemDetail JSON responses.
-// <p>Only messages that are safe for end users are ever returned. Framework and
-// unexpected exceptions are logged server-side with their full stack trace and
-// reported to the client with a generic message — raw internals and stack
-// traces are never exposed.</p>
+/**
+ * Centralised error handling. Returns RFC-9457 ProblemDetail JSON responses.
+ * <p>Only messages that are safe for end users are ever returned. Framework and
+ * unexpected exceptions are logged server-side with their full stack trace and
+ * reported to the client with a generic message — raw internals and stack
+ * traces are never exposed.</p>
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -99,13 +101,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleIllegalState(IllegalStateException ex) {
         log.error("Unexpected IllegalStateException", ex);
-        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "An unexpected error occurred. Please try again, and contact support if the problem persists."
+        );
         detail.setType(URI.create("/errors/internal"));
         return detail;
     }
 
-    // Handles database constraint violations (foreign key, unique, not-null) with
-    // human-readable messages instead of exposing raw SQL error details.
+    /**
+     * Handles database constraint violations (foreign key, unique, not-null) with
+     * human-readable messages instead of exposing raw SQL error details.
+     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
         log.warn("Data integrity violation", ex);
@@ -207,8 +214,10 @@ public class GlobalExceptionHandler {
         return detail;
     }
 
-    // Catch-all for anything unexpected. The full stack trace is logged
-    // server-side only; clients receive a generic, safe message.
+    /**
+     * Catch-all for anything unexpected. The full stack trace is logged
+     * server-side only; clients receive a generic, safe message.
+     */
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleGeneric(Exception ex) {
         log.error("Unhandled exception", ex);

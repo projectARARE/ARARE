@@ -1,11 +1,10 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+﻿import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { AlertCircle, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus, Pin, CheckCircle2, Archive, FileText, Sheet, Pencil, Trash2, Copy, X, BarChart3, AlertTriangle, Filter, Rows3, Columns3 } from 'lucide-react'
-import { Card, Button, Select, Badge, Modal, ContextMenu, Input, ConfirmDialog, SearchableSelect, MultiSelect, Toggle } from '../components/ui'
+import { AlertCircle, Settings2, RefreshCw, Lock, Unlock, Zap, Download, Flame, Target, Bookmark, Plus, Pin, CheckCircle2, Archive, FileText, Sheet, Pencil, Trash2, Copy, X, BarChart3, Filter, Rows3, Columns3, Undo2, Redo2, ArrowLeftRight, BadgeCheck, RotateCcw, Maximize2, Minimize2 } from 'lucide-react'
+import { Button, Select, Badge, Modal, ContextMenu, Input, ConfirmDialog, SearchableSelect, MultiSelect, Toggle, QualifiedTeacherSelect, QualifiedRoomSelect } from '../components/ui'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import TimetableGrid from '../components/timetable/TimetableGrid'
 import ScoreBreakdownPanel from '../components/timetable/ScoreBreakdownPanel'
-import ConflictSolverSidecar, { buildConflictSuggestions } from '../components/timetable/ConflictSolverSidecar'
 import { scheduleApi, timeslotApi, batchApi, teacherApi, roomApi, sessionApi, subjectApi, classSectionApi, preAllocationApi, type ExportView } from '../services/api'
 import { waitForJob } from '../hooks/useSolveJob'
 import type {
@@ -21,7 +20,6 @@ import type {
   DisruptionResponse,
   DisruptionType,
   ScoreExplanation,
-  ConflictSuggestion,
   SessionCreateRequest,
   PreAllocation,
 } from '../types'
@@ -153,6 +151,23 @@ type SessionContextMenuState = {
   session: ClassSession
 }
 
+// Client-side undo/redo model: a manual edit is captured as the before/after
+// assignment of a single session, and both stacks are kept in memory so the
+// operator can step backwards/forwards through their own changes without
+// touching the backend.
+type AssignmentSnapshot = {
+  teacherId: number | null
+  roomId: number | null
+  timeslotId: number | null
+  locked: boolean
+}
+
+type AssignmentEdit = {
+  sessionId: number
+  before: AssignmentSnapshot
+  after: AssignmentSnapshot
+}
+
 const savedViewsKey = (scheduleId: number) => `arare.savedViews.${scheduleId}`
 const MAX_SAVED_VIEWS = 20
 
@@ -237,12 +252,9 @@ export default function TimetableViewer() {
   const [density, setDensity] = useState<'compact' | 'comfortable'>('comfortable')
   const [showConflictsOnly, setShowConflictsOnly] = useState(false)
   const [showUnplacedOnly, setShowUnplacedOnly] = useState(false)
-  const [filterBarOpen, setFilterBarOpen] = useState(true)
+  const [filterBarOpen, setFilterBarOpen] = useState(false)
   const [showScorePanel, setShowScorePanel] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
-  )
-  const [showConflictsPanel, setShowConflictsPanel] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 1280 : true,
   )
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -254,14 +266,14 @@ export default function TimetableViewer() {
   const [editError, setEditError] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [toolsOpen, setToolsOpen] = useState(true)
 
   const [scoreBreakdown, setScoreBreakdown] = useState<ScoreExplanation | null>(null)
   const [rawExplanation, setRawExplanation] = useState<string | null>(null)
   const [heatmapEnabled, setHeatmapEnabled] = useState(false)
   const [highlightedSessionIds, setHighlightedSessionIds] = useState<Set<number>>(new Set())
   const [hoveredSession, setHoveredSession] = useState<ClassSession | null>(null)
-  const [conflictSession, setConflictSession] = useState<ClassSession | null>(null)
-  const [backendSuggestions, setBackendSuggestions] = useState<ConflictSuggestion[] | null>(null)
   const [draggedSession, setDraggedSession] = useState<ClassSession | null>(null)
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null)
 
@@ -271,6 +283,7 @@ export default function TimetableViewer() {
   const [deleteSaving, setDeleteSaving] = useState(false)
   const [createSessionOpen, setCreateSessionOpen] = useState(false)
   const [createSlot, setCreateSlot] = useState<Timeslot | null>(null)
+  const [conflictsListOpen, setConflictsListOpen] = useState(false)
   const [createSubjectId, setCreateSubjectId] = useState('')
   const [createBatchId, setCreateBatchId] = useState('')
   const [createSectionId, setCreateSectionId] = useState('')
@@ -292,13 +305,153 @@ export default function TimetableViewer() {
 
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
 
-  const scheduleReadonly = schedule?.status === 'ARCHIVED' || schedule?.status === 'INFEASIBLE'
+  // ---------------------------------------------------------------------------
+  // Client-side edit history (undo/redo) — kept entirely in the browser.
+  // ---------------------------------------------------------------------------
+  const undoStackRef = useRef<AssignmentEdit[]>([])
+  const redoStackRef = useRef<AssignmentEdit[]>([])
+  const [, setHistoryVersion] = useState(0)
+  const undoCount = undoStackRef.current.length
+  const redoCount = redoStackRef.current.length
+
+  const [swapSource, setSwapSource] = useState<ClassSession | null>(null)
+  const [revalidating, setRevalidating] = useState(false)
+  const [bulkLockBusy, setBulkLockBusy] = useState(false)
+  const [snapshotStored, setSnapshotStored] = useState(false)
+  const [disruptionRestoring, setDisruptionRestoring] = useState(false)
+
+  const snapshotKey = (sid: number) => `arare.disruptionSnapshot.${sid}`
+
+  useEffect(() => {
+    document.body.style.overflow = fullscreen ? 'hidden' : ''
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [fullscreen])
+
+  useEffect(() => {
+    let stored = false
+    try {
+      stored = scheduleId != null && !!window.localStorage.getItem(snapshotKey(scheduleId))
+    } catch {
+      stored = false
+    }
+    setSnapshotStored(stored)
+  }, [scheduleId])
+
+  const snapshotOf = (s: ClassSession): AssignmentSnapshot => ({
+    teacherId: s.teacherId ?? null,
+    roomId: s.roomId ?? null,
+    timeslotId: s.timeslotId ?? null,
+    locked: s.isLocked,
+  })
+
+  const recordEdit = (sessionId: number, before: ClassSession, after: ClassSession) => {
+    undoStackRef.current.push({ sessionId, before: snapshotOf(before), after: snapshotOf(after) })
+    redoStackRef.current = []
+    setHistoryVersion((v) => v + 1)
+  }
+
+  const recordRawEdit = (edit: AssignmentEdit) => {
+    undoStackRef.current.push(edit)
+    redoStackRef.current = []
+    setHistoryVersion((v) => v + 1)
+  }
+
+  const applyAssignment = async (sessionId: number, snap: AssignmentSnapshot) => {
+    await sessionApi.updateAssignment(sessionId, {
+      teacherId: snap.teacherId,
+      roomId: snap.roomId,
+      timeslotId: snap.timeslotId,
+      clearTeacher: snap.teacherId == null,
+      clearRoom: snap.roomId == null,
+      clearTimeslot: snap.timeslotId == null,
+      locked: snap.locked,
+    })
+  }
+
+  const handleUndo = async () => {
+    const edit = undoStackRef.current.pop()
+    if (!edit) return
+    if (scheduleReadonly) {
+      undoStackRef.current.push(edit)
+      toast.error('This schedule is read-only — nothing to undo')
+      return
+    }
+    try {
+      await applyAssignment(edit.sessionId, edit.before)
+      redoStackRef.current.push(edit)
+      setHistoryVersion((v) => v + 1)
+      refreshSessionsAndSchedule()
+      toast.success('Undid last manual change')
+    } catch (e) {
+      undoStackRef.current.push(edit)
+      toast.error(e instanceof Error ? e.message : 'Undo failed')
+    }
+  }
+
+  const handleRedo = async () => {
+    const edit = redoStackRef.current.pop()
+    if (!edit) return
+    if (scheduleReadonly) {
+      redoStackRef.current.push(edit)
+      toast.error('This schedule is read-only — nothing to redo')
+      return
+    }
+    try {
+      await applyAssignment(edit.sessionId, edit.after)
+      undoStackRef.current.push(edit)
+      setHistoryVersion((v) => v + 1)
+      refreshSessionsAndSchedule()
+      toast.success('Redid last manual change')
+    } catch (e) {
+      redoStackRef.current.push(edit)
+      toast.error(e instanceof Error ? e.message : 'Redo failed')
+    }
+  }
+
+  // Keyboard shortcuts: Ctrl/Cmd+Z (undo), Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y (redo).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (fullscreen && e.key === 'Escape') {
+        setFullscreen(false)
+        return
+      }
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      if (createSessionOpen || selectedSession !== null || showDisruptionPanel || slotContextMenu || sessionContextMenu) return
+      const k = e.key.toLowerCase()
+      if (k === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) void handleRedo()
+        else void handleUndo()
+      } else if (k === 'y') {
+        e.preventDefault()
+        void handleRedo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const scheduleReadonly = schedule?.status === 'ARCHIVED'
 
   useEffect(() => {
     setSavedViews(loadSavedViews(scheduleId))
   }, [scheduleId])
 
-  const heatBySessionId = useMemo(() => computeHeatMap(sessions), [sessions])
+  const heatBySessionId = useMemo(() => {
+    const heat = computeHeatMap(sessions)
+    for (const entry of Object.values(scoreBreakdown?.constraints ?? [])) {
+      for (const sid of entry.sessionIds ?? []) {
+        const target = heat[sid] ?? { hard: 0, soft: 0, notes: [] }
+        if (entry.level === 'HARD') target.hard += 1
+        else target.soft += 1
+        if (!target.notes.includes(entry.constraintName)) target.notes.push(entry.constraintName)
+        heat[sid] = target
+      }
+    }
+    return heat
+  }, [sessions, scoreBreakdown])
 
   const preAllocatedSessionIds = useMemo(() => {
     if (preAllocations.length === 0) return new Set<number>()
@@ -343,29 +496,25 @@ export default function TimetableViewer() {
     return null
   }, [sessions, heatSummary.hard])
 
+  // Flatten the heat entries into a named list so operator can see WHY each
+  // session is flagged. Solver-reported mismatches (teacher missing, room
+  // missing, not qualified, etc.) arrive as constraint names via the score
+  // breakdown; overlap notes only appear once heatmap is enabled.
+  const conflictSessions = useMemo(() => {
+    return sessions
+      .filter((s) => heatBySessionId[s.id]?.hard > 0)
+      .map((s) => {
+        const entry = heatBySessionId[s.id]!
+        return {
+          session: s,
+          hard: entry.hard,
+          reasons: entry.notes.length > 0 ? entry.notes : ['Hard conflict (overlap or constraint violation)'],
+        }
+      })
+      .sort((a, b) => b.hard - a.hard || a.session.id - b.session.id)
+  }, [sessions, heatBySessionId])
+
   const canPublish = publishBlockReason === null
-
-  const fallbackSuggestions = useMemo(() => {
-    if (!conflictSession) return []
-    return buildConflictSuggestions(conflictSession, timeslots, sessions)
-  }, [conflictSession, timeslots, sessions])
-
-  useEffect(() => {
-    if (!conflictSession) {
-      setBackendSuggestions(null)
-      return
-    }
-    scheduleApi
-      .getConflictSuggestions(scheduleId, conflictSession.id, 4)
-      .then(setBackendSuggestions)
-      .catch(() => setBackendSuggestions(null))
-  }, [conflictSession, scheduleId])
-
-  // Selecting a conflicting session makes the conflict solver side panel
-  // discoverable by auto-opening it (the operator can still collapse it).
-  useEffect(() => {
-    if (conflictSession) setShowConflictsPanel(true)
-  }, [conflictSession])
 
   const loadExplanations = () => {
     Promise.all([
@@ -546,8 +695,8 @@ export default function TimetableViewer() {
       toast.error('Select an entity to disrupt')
       return
     }
-    if ((disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE') && !disruptionDate) {
-      toast.error('Select a date — teacher/room disruptions affect a specific day')
+    if ((disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE' || disruptionType === 'SPECIAL_EVENT') && !disruptionDate) {
+      toast.error('Select a date — teacher/room disruptions and special events affect a specific day')
       return
     }
     setDisruptionPreviewing(true)
@@ -567,12 +716,21 @@ export default function TimetableViewer() {
       toast.error('Select an entity to disrupt')
       return
     }
-    if ((disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE') && !disruptionDate) {
-      toast.error('Select a date — teacher/room disruptions affect a specific day')
+    if ((disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE' || disruptionType === 'SPECIAL_EVENT') && !disruptionDate) {
+      toast.error('Select a date — teacher/room disruptions and special events affect a specific day')
       return
     }
     setDisruptionApplying(true)
     try {
+      // Snapshot the current sessions in the browser before committing the
+      // disruption so the operator can revert to this exact state afterwards,
+      // even if the re-solve moves or clears sessions.
+      try {
+        window.localStorage.setItem(snapshotKey(scheduleId), JSON.stringify(sessions))
+        setSnapshotStored(true)
+      } catch {
+        // Snapshotting is best-effort; a full storage quota should not block apply.
+      }
       const job = await scheduleApi.applyDisruption(scheduleId, buildDisruptionRequest())
       const finished = await waitForJob(job, abortRef.current?.signal)
       if (finished.status === 'FAILED') {
@@ -602,10 +760,14 @@ export default function TimetableViewer() {
   }
 
   const openSessionDetail = (s: ClassSession) => {
-    if ((heatBySessionId[s.id]?.hard ?? 0) > 0) {
-      setConflictSession(s)
-    } else {
-      setConflictSession(null)
+    if (swapSource) {
+      if (swapSource.id !== s.id) {
+        const a = swapSource
+        setSwapSource(null)
+        void performSwap(a, s)
+        return
+      }
+      setSwapSource(null)
     }
     setSelectedSession(s)
     setEditMode(false)
@@ -619,7 +781,7 @@ export default function TimetableViewer() {
   const handleSaveAssignment = async () => {
     if (!selectedSession) return
     if (scheduleReadonly) {
-      setEditError('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      setEditError('This schedule is read-only — archived schedules can\'t be edited')
       return
     }
     if (editLocked && !selectedSession.isLocked) {
@@ -641,7 +803,7 @@ export default function TimetableViewer() {
     setEditSaving(true)
     setEditError(null)
     try {
-      await sessionApi.updateAssignment(selectedSession.id as number, {
+      const updated = await sessionApi.updateAssignment(selectedSession.id as number, {
         teacherId: editTeacherId ? +editTeacherId : null,
         roomId: editRoomId ? +editRoomId : null,
         timeslotId: editTimeslotId ? +editTimeslotId : null,
@@ -650,6 +812,7 @@ export default function TimetableViewer() {
         clearTimeslot: !editTimeslotId,
         locked: editLocked,
       })
+      recordEdit(selectedSession.id, selectedSession, updated)
       setSelectedSession(null)
       setEditMode(false)
       toast.success('Session assignment updated')
@@ -672,11 +835,12 @@ export default function TimetableViewer() {
   const handleQuickLockToggle = async () => {
     if (!selectedSession) return
     if (scheduleReadonly) {
-      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
       return
     }
     try {
-      await sessionApi.updateAssignment(selectedSession.id, { locked: !selectedSession.isLocked })
+      const updated = await sessionApi.updateAssignment(selectedSession.id, { locked: !selectedSession.isLocked })
+      recordEdit(selectedSession.id, selectedSession, updated)
       toast.success(selectedSession.isLocked ? 'Session unlocked' : 'Session locked')
       setSelectedSession(null)
       refreshSessionsAndSchedule()
@@ -688,7 +852,7 @@ export default function TimetableViewer() {
   const handleDeleteSession = async () => {
     if (!deleteSession) return
     if (scheduleReadonly) {
-      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
       setDeleteSession(null)
       setSessionContextMenu(null)
       return
@@ -710,7 +874,7 @@ export default function TimetableViewer() {
   const handleDuplicateSession = async (session: ClassSession) => {
     setSessionContextMenu(null)
     if (scheduleReadonly) {
-      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
       return
     }
     if (!session.timeslotId) {
@@ -738,6 +902,7 @@ export default function TimetableViewer() {
     return [
     { label: 'Edit assignment', icon: <Pencil size={13} />, onClick: () => openSessionDetail(s) },
     { label: s.isLocked ? 'Unlock' : 'Lock', icon: s.isLocked ? <Unlock size={13} /> : <Lock size={13} />, onClick: () => handleQuickLockToggleFrom(s) },
+    { label: 'Swap slots with…', icon: <ArrowLeftRight size={13} />, onClick: () => handleBeginSwap(s), disabled: !s.timeslotId || s.isLocked },
     { label: 'Duplicate session', icon: <Copy size={13} />, onClick: () => handleDuplicateSession(s) },
     { label: 'Remove from slot', icon: <X size={13} />, onClick: () => handleClearTimeslot(s), disabled: !s.timeslotId || s.isLocked },
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setDeleteSession(s) },
@@ -747,11 +912,12 @@ export default function TimetableViewer() {
   const handleQuickLockToggleFrom = async (s: ClassSession) => {
     setSessionContextMenu(null)
     if (scheduleReadonly) {
-      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
       return
     }
     try {
-      await sessionApi.updateAssignment(s.id, { locked: !s.isLocked })
+      const updated = await sessionApi.updateAssignment(s.id, { locked: !s.isLocked })
+      recordEdit(s.id, s, updated)
       toast.success(s.isLocked ? 'Session unlocked' : 'Session locked')
       refreshSessionsAndSchedule()
     } catch (e) {
@@ -762,11 +928,12 @@ export default function TimetableViewer() {
   const handleClearTimeslot = async (s: ClassSession) => {
     setSessionContextMenu(null)
     if (scheduleReadonly) {
-      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
       return
     }
     try {
-      await sessionApi.updateAssignment(s.id, { timeslotId: null, clearTimeslot: true, locked: s.isLocked })
+      const updated = await sessionApi.updateAssignment(s.id, { timeslotId: null, clearTimeslot: true, locked: s.isLocked })
+      recordEdit(s.id, s, updated)
       toast.success(`"${s.subjectName}" removed from its slot`)
       refreshSessionsAndSchedule()
     } catch (e) {
@@ -774,10 +941,145 @@ export default function TimetableViewer() {
     }
   }
 
+  const handleBeginSwap = (s: ClassSession) => {
+    setSessionContextMenu(null)
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
+      return
+    }
+    if (!s.timeslotId) {
+      toast.error('Cannot swap an unassigned session')
+      return
+    }
+    if (s.isLocked) {
+      toast.error('This session is locked — unlock it before swapping')
+      return
+    }
+    setSwapSource(s)
+    toast.success(`Now click the session to swap slots with "${s.subjectName ?? 'session'}"`)
+  }
+
+  const performSwap = async (a: ClassSession, b: ClassSession) => {
+    if (!a.timeslotId || !b.timeslotId) {
+      toast.error('Both sessions must be assigned to swap')
+      return
+    }
+    if (a.isLocked || b.isLocked) {
+      toast.error('Unlock both sessions before swapping')
+      return
+    }
+    const edits: AssignmentEdit[] = [
+      { sessionId: a.id, before: snapshotOf(a), after: { teacherId: b.teacherId ?? null, roomId: b.roomId ?? null, timeslotId: b.timeslotId, locked: a.isLocked } },
+      { sessionId: b.id, before: snapshotOf(b), after: { teacherId: a.teacherId ?? null, roomId: a.roomId ?? null, timeslotId: a.timeslotId, locked: b.isLocked } },
+    ]
+    try {
+      await sessionApi.updateAssignment(a.id, { timeslotId: b.timeslotId, locked: a.isLocked })
+      await sessionApi.updateAssignment(b.id, { timeslotId: a.timeslotId, locked: b.isLocked })
+      recordRawEdit(edits[0])
+      recordRawEdit(edits[1])
+      toast.success(`Swapped "${a.subjectName ?? 'session'}" with "${b.subjectName ?? 'session'}"`)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Swap failed — the new slot violates a hard constraint')
+    }
+  }
+
+  const handleBulkLock = async (locked: boolean, ids?: number[]) => {
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — locks cannot be changed')
+      return
+    }
+    setBulkLockBusy(true)
+    try {
+      const count = await sessionApi.bulkSetLocked(scheduleId, { locked, sessionIds: ids })
+      toast.success(locked
+        ? `Locked ${count} session${count !== 1 ? 's' : ''} — the solver will not move them`
+        : `Unlocked ${count} session${count !== 1 ? 's' : ''}`)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Bulk lock change failed')
+    } finally {
+      setBulkLockBusy(false)
+    }
+  }
+
+  const handleRevalidate = async () => {
+    if (!schedule || revalidating) return
+    setRevalidating(true)
+    try {
+      const updated = await scheduleApi.revalidate(schedule.id)
+      setSchedule(updated)
+      loadExplanations()
+      toast.success(
+        updated.status === 'INFEASIBLE'
+          ? 'Unarchived — the schedule is INFEASIBLE with the current sessions (re-open it to edit)'
+          : 'Unarchived — the schedule is feasible and editable again',
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Unarchive failed')
+    } finally {
+      setRevalidating(false)
+    }
+  }
+
+  const handleRestoreSnapshot = async () => {
+    if (scheduleReadonly) {
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
+      return
+    }
+    let raw: string | null = null
+    try {
+      raw = window.localStorage.getItem(snapshotKey(scheduleId))
+    } catch {
+      raw = null
+    }
+    if (!raw) {
+      toast.error('No pre-disruption snapshot is stored for this schedule')
+      return
+    }
+    let target: ClassSession[]
+    try {
+      target = JSON.parse(raw) as ClassSession[]
+    } catch {
+      toast.error('The stored snapshot is corrupt — it can not be restored')
+      return
+    }
+    setDisruptionRestoring(true)
+    try {
+      let changed = 0
+      for (const sess of target) {
+        await sessionApi.updateAssignment(sess.id, {
+          teacherId: sess.teacherId ?? null,
+          roomId: sess.roomId ?? null,
+          timeslotId: sess.timeslotId ?? null,
+          clearTeacher: sess.teacherId == null,
+          clearRoom: sess.roomId == null,
+          clearTimeslot: sess.timeslotId == null,
+          locked: sess.isLocked,
+        })
+        changed += 1
+      }
+      toast.success(`Reverted ${changed} session(s) to the pre-disruption snapshot`)
+      try {
+        window.localStorage.removeItem(snapshotKey(scheduleId))
+      } catch {
+        // best-effort cleanup
+      }
+      setSnapshotStored(false)
+      setShowDisruptionPanel(false)
+      setDisruptionPreview(null)
+      refreshSessionsAndSchedule()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Snapshot restore failed — some sessions may already be restored')
+    } finally {
+      setDisruptionRestoring(false)
+    }
+  }
+
   const openCreateSession = (slot: Timeslot) => {
     setSlotContextMenu(null)
     if (scheduleReadonly) {
-      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
       return
     }
     setCreateSlot(slot)
@@ -795,7 +1097,11 @@ export default function TimetableViewer() {
   const handleCreateSession = async () => {
     if (!createSlot) return
     if (scheduleReadonly) {
-      setCreateError('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      setCreateError('This schedule is read-only — archived schedules can\'t be edited')
+      return
+    }
+    if (!createSlot) {
+      setCreateError('Select a timeslot for the new session')
       return
     }
     if (!createSubjectId) {
@@ -804,6 +1110,12 @@ export default function TimetableViewer() {
     }
     if (!createBatchId && !createSectionId) {
       setCreateError('Select a batch or a section')
+      return
+    }
+    const createSubject = subjects.find((s) => s.id === (+createSubjectId || 0))
+    const createBatch = batches.find((b) => b.id === (+createBatchId || 0))
+    if (createSubject?.departmentId != null && createBatch?.departmentId != null && createSubject.departmentId !== createBatch.departmentId) {
+      setCreateError(`Subject belongs to ${createSubject.departmentName ?? `dept #${createSubject.departmentId}`}, batch to ${createBatch.departmentName ?? `dept #${createBatch.departmentId}`} — pick matching department/${createBatch.departmentName ?? `dept #${createBatch.departmentId}`}`)
       return
     }
     setCreateSaving(true)
@@ -847,7 +1159,13 @@ export default function TimetableViewer() {
     loadExplanations()
   }
 
-  const highlightByText = (text: string) => {
+  const highlightByText = (text: string, sessionIds?: number[]) => {
+    if (sessionIds && sessionIds.length > 0) {
+      const known = new Set(sessions.map((s) => s.id))
+      setHighlightedSessionIds(new Set(sessionIds.filter((id) => known.has(id))))
+      return
+    }
+
     const lowered = text.toLowerCase()
     const tokens = lowered.split(/[^a-z0-9]+/).filter((t) => t.length > 3)
 
@@ -961,7 +1279,15 @@ export default function TimetableViewer() {
   }
 
   const teacherOptions = teachers.map((t) => ({ value: t.id, label: t.name }))
-  const subjectOptions = subjects.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))
+  const createDeptId = useMemo(() => {
+    const subject = subjects.find((s) => s.id === (+createSubjectId || 0))
+    if (subject?.departmentId != null) return subject.departmentId
+    const batch = batches.find((b) => b.id === (+createBatchId || 0))
+    return batch?.departmentId ?? null
+  }, [createSubjectId, createBatchId, subjects, batches])
+  const subjectOptions = subjects
+    .filter((s) => createDeptId == null || s.departmentId == null || s.departmentId === createDeptId)
+    .map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))
   const roomOptions = rooms.map((r) => ({ value: r.id, label: `${r.roomNumber}${r.buildingName ? ` (${r.buildingName})` : ''}` }))
   const timeslotOptions = timeslots
     .filter((ts) => ts.type === 'CLASS')
@@ -991,12 +1317,39 @@ export default function TimetableViewer() {
     value: batch.id,
     label: batch.departmentName ? `${batch.departmentName} · Yr ${batch.year}-${batch.section}` : `Yr ${batch.year}-${batch.section}`,
   }))
+  const modalCreateBatchOptions = batches
+    .filter((batch) => createDeptId == null || batch.departmentId === createDeptId)
+    .map((batch) => ({
+      value: batch.id,
+      label: batch.departmentName ? `${batch.departmentName} · Yr ${batch.year}-${batch.section}` : `Yr ${batch.year}-${batch.section}`,
+    }))
   const createSectionOptions = sections
     .filter((section) => !createBatchId || section.batchId === +createBatchId)
     .map((section) => ({
       value: section.id,
       label: `${section.batchName ?? `Batch #${section.batchId}`} · ${section.label}`,
     }))
+
+  // Curriculum quota guard: warn when a duplicate/manual session would push
+  // a subject past its weekly-hours allotment for the chosen batch/section.
+  const createQuotaHint = useMemo(() => {
+    const subjectIdNum = +createSubjectId
+    const subject = subjects.find((s) => s.id === subjectIdNum)
+    if (!subject) return null
+    const expected = Math.ceil((subject.weeklyHours ?? 0) / (subject.chunkHours || 1))
+    const existing = sessions.filter((s) => {
+      if (s.subjectId !== subjectIdNum) return false
+      if (createSectionId) return s.sectionId === +createSectionId
+      if (createBatchId) return s.batchId === +createBatchId
+      return true
+    }).length
+    return {
+      existing,
+      expected,
+      over: existing >= expected,
+      text: `${existing} session(s) already for this subject${expected > 0 ? ` (curriculum expects ~${expected})` : ''}`,
+    }
+  }, [createSubjectId, createBatchId, createSectionId, subjects, sessions])
 
   const handleSlotDragHover = (slot: Timeslot | null) => {
     if (!draggedSession || !slot) {
@@ -1012,7 +1365,7 @@ export default function TimetableViewer() {
     setDropPreview(null)
     if (!session) return
     if (scheduleReadonly) {
-      toast.error('This schedule is read-only — archived or infeasible schedules can\'t be edited')
+      toast.error('This schedule is read-only — archived schedules can\'t be edited')
       return
     }
     if (session.isLocked) {
@@ -1021,11 +1374,12 @@ export default function TimetableViewer() {
     }
     if (slot.id === session.timeslotId) return
     try {
-      await sessionApi.updateAssignment(session.id, {
+      const updated = await sessionApi.updateAssignment(session.id, {
         timeslotId: slot.id,
         clearTimeslot: false,
         locked: session.isLocked,
       })
+      recordEdit(session.id, session, updated)
       const label = `${slot.day} ${slot.startTime}-${slot.endTime}`
       toast.success(`"${session.subjectName ?? 'Session'}" moved to ${label}`)
       refreshSessionsAndSchedule()
@@ -1068,6 +1422,30 @@ export default function TimetableViewer() {
     />
   )
 
+  const renderInspector = () => {
+    if (!hoveredSession) return null
+    const notes = heatBySessionId[hoveredSession.id]?.notes ?? []
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white shadow-lg p-3">
+        <p className="text-sm font-semibold text-slate-900 truncate">{hoveredSession.subjectName}</p>
+        <p className="mt-0.5 text-[11px] text-slate-500 truncate">
+          {hoveredSession.teacherName ?? 'No teacher'} · {hoveredSession.roomNumber ?? 'No room'} · {hoveredSession.day ?? 'No day'}
+        </p>
+        {notes.length === 0 ? (
+          <p className="mt-2 text-[11px] text-emerald-700">No local heatmap penalties detected for this session.</p>
+        ) : (
+          <div className="mt-2 space-y-1.5">
+            {notes.map((note) => (
+              <div key={note} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-700">
+                {note}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (loading) return <div className="animate-pulse h-96 bg-gray-100 rounded-lg" />
 
   if (loadFailed || !schedule) {
@@ -1086,213 +1464,329 @@ export default function TimetableViewer() {
     )
   }
 
-  return (
-    <div className="space-y-4">
-      <Card className="card-glass border-slate-200 text-slate-900">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">{schedule?.name}</h2>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {schedule?.status && (
-                <Badge
-                  label={schedule.status}
-                  variant={STATUS_VARIANT[schedule.status] ?? 'gray'}
-                  dot
-                />
-              )}
-              {scheduleReadonly && (
-                <span className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                  <Lock size={11} />
-                  Read-only — archived or infeasible schedules can't be edited
-                </span>
-              )}
-              {schedule?.score && (
-                <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">{schedule.score}</code>
-              )}
-              {totalUnassigned > 0 && (
-                <span className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                  <AlertCircle size={11} />
-                  {totalUnassigned} unassigned
-                  {orphanCount > 0 && (
-                    <span className="opacity-70">({orphanCount} unplaceable)</span>
-                  )}
-                </span>
-              )}
-              {lockedCount > 0 && (
-                <span className="flex items-center gap-1 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-                  <Lock size={11} />
-                  {lockedCount} locked
-                </span>
-              )}
-              {preAllocatedSessionIds.size > 0 && (
-                <span className="flex items-center gap-1 text-xs text-cyan-700 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded">
-                  <Pin size={11} />
-                  {preAllocatedSessionIds.size} pre-assigned
-                </span>
-              )}
-              {(schedule?.blockedDays?.length ?? 0) > 0 && (
-                <span className="flex items-center gap-1 text-xs text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
-                  <Flame size={11} />
-                  {schedule!.blockedDays!.map((d) => d.slice(0, 3)).join(', ')} blocked
-                </span>
-              )}
-              {heatmapEnabled && (
-                <span className="flex items-center gap-1 text-xs text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
-                  <Flame size={11} />
-                  {heatSummary.hard} hard - {heatSummary.soft} soft flagged
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {savedViews.length > 0 && (
-              <Select
-                value=""
-                onChange={(e) => e.target.value && handleApplyView(e.target.value)}
-                options={[{ value: '', label: `Saved views (${savedViews.length})` }, ...savedViews.map((v) => ({ value: v.name, label: v.name }))]}
-                className="w-44"
-              />
-            )}
-            <Button variant="secondary" size="sm" icon={<Bookmark size={14} />} onClick={handleSaveView} title="Save current view filters">
-              Save view
-            </Button>
-            <Button variant={heatmapEnabled ? 'primary' : 'secondary'} size="sm" icon={<Target size={14} />} onClick={() => setHeatmapEnabled((v) => !v)}>
-              Heatmap
-            </Button>
-            <Button variant="secondary" size="sm" icon={<Download size={14} />} onClick={handleExportCsv}>
-              Export CSV
-            </Button>
-            <Button variant="secondary" size="sm" icon={<FileText size={14} />} onClick={handleExportPdf} title="Download as PDF — one page per entity, or a single file when a specific entity is focused">
-              PDF
-            </Button>
-            <Button variant="secondary" size="sm" icon={<Sheet size={14} />} onClick={handleExportExcel} title="Download as Excel — one sheet per entity, or a single sheet in the full timetable">
-              Excel
-            </Button>
-            {schedule?.status === 'DRAFT' && (
-              <span className="flex items-center gap-2">
-                {publishBlockReason && (
-                  <span className="text-xs text-rose-700 bg-rose-50 border border-rose-200 px-2 py-1 rounded" title={publishBlockReason}>
-                    {heatSummary.hard > 0
-                      ? `${heatSummary.hard} hard conflict${heatSummary.hard !== 1 ? 's' : ''} remaining`
-                      : 'No placed sessions yet'}
-                  </span>
-                )}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={publishing}
-                  icon={<CheckCircle2 size={14} />}
-                  disabled={!canPublish}
-                  title={publishBlockReason ?? 'Make this timetable the active published schedule'}
-                  onClick={handlePublish}
+return (
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-x-4 gap-y-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          <h2 className="text-lg font-semibold text-gray-900">{schedule?.name}</h2>
+          {schedule?.status && (
+            <Badge label={schedule.status} variant={STATUS_VARIANT[schedule.status] ?? 'gray'} dot />
+          )}
+          {schedule?.score && (
+            <code className="text-[11px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{schedule.score}</code>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant={toolsOpen ? 'primary' : 'secondary'}
+            size="sm"
+            icon={<Settings2 size={14} />}
+            onClick={() => setToolsOpen((v) => !v)}
+            title="Show or hide the action toolbar"
+          >
+            Tools
+          </Button>
+          <Button
+            variant={showScorePanel ? 'primary' : 'secondary'}
+            size="sm"
+            icon={<BarChart3 size={14} />}
+            onClick={() => setShowScorePanel((v) => !v)}
+            title="Toggle the score breakdown side panel"
+          >
+            Score
+          </Button>
+          <Button
+            variant={fullscreen ? 'primary' : 'secondary'}
+            size="sm"
+            icon={<Maximize2 size={14} />}
+            onClick={() => setFullscreen((v) => !v)}
+            title="Expand the timetable to fill the whole screen (Esc to exit)"
+          >
+            Full screen
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {scheduleReadonly && (
+          <span className="flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+            <Lock size={10} /> Read-only
+          </span>
+        )}
+        {totalUnassigned > 0 && (
+          <span className="flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+            <AlertCircle size={10} />
+            {totalUnassigned} unassigned
+            {orphanCount > 0 && <span className="opacity-70">({orphanCount} unplaceable)</span>}
+          </span>
+        )}
+        {lockedCount > 0 && (
+          <span className="flex items-center gap-1 text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+            <Lock size={10} /> {lockedCount} locked
+          </span>
+        )}
+        {preAllocatedSessionIds.size > 0 && (
+          <span className="flex items-center gap-1 text-[11px] text-cyan-700 bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+            <Pin size={10} /> {preAllocatedSessionIds.size} pre-assigned
+          </span>
+        )}
+        {(schedule?.blockedDays?.length ?? 0) > 0 && (
+          <span className="flex items-center gap-1 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+            <Flame size={10} /> {schedule!.blockedDays!.map((d) => d.slice(0, 3)).join(', ')} blocked
+          </span>
+        )}
+        {conflictSessions.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setConflictsListOpen(true)}
+            title="Show the sessions that still violate hard constraints, with the reason for each"
+            className="flex items-center gap-1 text-[11px] text-rose-700 bg-rose-50 border border-rose-300 hover:bg-rose-100 px-1.5 py-0.5 rounded whitespace-nowrap cursor-pointer"
+          >
+            <Flame size={10} /> {conflictSessions.length} hard conflict{conflictSessions.length !== 1 ? 's' : ''} — view
+          </button>
+        )}
+
+        {heatmapEnabled && (
+          <span className="flex items-center gap-1 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+            <Flame size={10} /> {heatSummary.hard}H · {heatSummary.soft}S flagged
+          </span>
+        )}
+      </div>
+
+      {toolsOpen && (
+        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+          {savedViews.length > 0 && (
+            <Select
+              value=""
+              onChange={(e) => e.target.value && handleApplyView(e.target.value)}
+              options={[{ value: '', label: `Saved views (${savedViews.length})` }, ...savedViews.map((v) => ({ value: v.name, label: v.name }))]}
+              className="w-40 shrink-0"
+            />
+          )}
+          <Button variant="secondary" size="sm" icon={<Bookmark size={14} />} onClick={handleSaveView} title="Save current view filters">
+            Save view
+          </Button>
+          <Button variant={heatmapEnabled ? 'primary' : 'secondary'} size="sm" icon={<Target size={14} />} onClick={() => setHeatmapEnabled((v) => !v)} title="Toggle conflict heatmap">
+            Heatmap
+          </Button>
+          <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block" />
+          <Button variant="secondary" size="sm" icon={<Download size={14} />} onClick={handleExportCsv} title="Export CSV">
+            Export CSV
+          </Button>
+          <Button variant="secondary" size="sm" icon={<FileText size={14} />} onClick={handleExportPdf} title="Download as PDF — one page per entity, or a single file when a specific entity is focused">
+            PDF
+          </Button>
+          <Button variant="secondary" size="sm" icon={<Sheet size={14} />} onClick={handleExportExcel} title="Download as Excel — one sheet per entity, or a single sheet in the full timetable">
+            Excel
+          </Button>
+          <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block" />
+          {schedule?.status === 'DRAFT' && (
+            <>
+              {publishBlockReason && (
+                <button
+                  type="button"
+                  onClick={() => heatSummary.hard > 0 && setConflictsListOpen(true)}
+                  title={publishBlockReason}
+                  className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 px-2 py-1 rounded whitespace-nowrap cursor-pointer"
                 >
-                  Publish
-                </Button>
-              </span>
-            )}
-            {schedule && (schedule.status === 'ACTIVE' || schedule.status === 'PARTIAL') && (
-              <Button variant="secondary" size="sm" loading={archiving} icon={<Archive size={14} />} onClick={handleArchive}>
-                Archive
+                  {heatSummary.hard > 0
+                    ? `${heatSummary.hard} hard conflict${heatSummary.hard !== 1 ? 's' : ''} remaining — view`
+                    : 'No placed sessions yet'}
+                </button>
+              )}
+              <Button
+                variant="primary"
+                size="sm"
+                loading={publishing}
+                icon={<CheckCircle2 size={14} />}
+                disabled={!canPublish}
+                title={publishBlockReason ?? 'Make this timetable the active published schedule'}
+                onClick={handlePublish}
+              >
+                Publish
               </Button>
-            )}
+            </>
+          )}
+          {schedule && (schedule.status === 'ACTIVE' || schedule.status === 'PARTIAL') && (
+            <Button variant="secondary" size="sm" loading={archiving} icon={<Archive size={14} />} onClick={handleArchive} title="Archive this schedule">
+              Archive
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Zap size={14} />}
+            disabled={scheduleReadonly}
+            title={scheduleReadonly ? 'Disruptions cannot be applied to archived schedules' : 'Manage disruptions'}
+            onClick={() => { setShowDisruptionPanel(true); setDisruptionPreview(null) }}
+          >
+            Disruptions
+          </Button>
+          <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block" />
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Undo2 size={14} />}
+            onClick={handleUndo}
+            disabled={scheduleReadonly || undoCount === 0}
+            title="Undo the last manual change (Ctrl+Z)"
+          >
+            Undo
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Redo2 size={14} />}
+            onClick={handleRedo}
+            disabled={scheduleReadonly || redoCount === 0}
+            title="Redo the undone change (Ctrl+Y / Ctrl+Shift+Z)"
+          >
+            Redo
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Lock size={14} />}
+            loading={bulkLockBusy}
+            disabled={scheduleReadonly}
+            onClick={() => handleBulkLock(true)}
+            title="Lock every session so the solver leaves it untouched"
+          >
+            Lock all
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Unlock size={14} />}
+            loading={bulkLockBusy}
+            disabled={scheduleReadonly}
+            onClick={() => handleBulkLock(false)}
+            title="Unlock every session so the solver can re-arrange it"
+          >
+            Unlock all
+          </Button>
+          {preAllocatedSessionIds.size > 0 && (
             <Button
               variant="secondary"
               size="sm"
-              icon={<Zap size={14} />}
+              icon={<RotateCcw size={14} />}
+              loading={bulkLockBusy}
               disabled={scheduleReadonly}
-              title={scheduleReadonly ? 'Disruptions cannot be applied to archived or infeasible schedules' : undefined}
-              onClick={() => { setShowDisruptionPanel(true); setDisruptionPreview(null) }}
+              onClick={() => handleBulkLock(false, Array.from(preAllocatedSessionIds))}
+              title="Release the locks that were applied automatically from pre-allocations"
             >
-              Disruptions
+              Release pre-assigned
             </Button>
+          )}
+          {schedule && (!scheduleReadonly || schedule.status === 'ARCHIVED') && (
             <Button
-              variant={showScorePanel ? 'primary' : 'secondary'}
+              variant="secondary"
               size="sm"
-              icon={<BarChart3 size={14} />}
-              onClick={() => setShowScorePanel((v) => !v)}
-              title="Toggle the score breakdown side panel"
+              icon={<BadgeCheck size={14} />}
+              loading={revalidating}
+              onClick={handleRevalidate}
+              title={
+                schedule.status === 'ARCHIVED'
+                  ? 'Unarchive (re-open for editing): re-score it and bring it back to an editable DRAFT'
+                  : 'Re-score the current sessions against the solver constraints and refresh the status/score'
+              }
             >
-              Score
+              {schedule.status === 'ARCHIVED' ? 'Unarchive' : 'Revalidate'}
             </Button>
-            <Button
-              variant={showConflictsPanel ? 'primary' : 'secondary'}
-              size="sm"
-              icon={<AlertTriangle size={14} />}
-              onClick={() => setShowConflictsPanel((v) => !v)}
-              title="Toggle the conflict solver side panel"
-            >
-              Conflicts
-            </Button>
-            <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} onClick={load}>
-              Refresh
-            </Button>
-          </div>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<RefreshCw size={14} />}
+            onClick={load}
+            title="Reload schedule data"
+          >
+            Refresh
+          </Button>
+          <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block" />
+          <Toggle label="Unplaced only" checked={showUnplacedOnly} onChange={setShowUnplacedOnly} />
+          <Toggle label="Conflicts only" checked={showConflictsOnly} onChange={setShowConflictsOnly} />
         </div>
-      </Card>
+      )}
 
-      <div className={`grid gap-4 ${showScorePanel || showConflictsPanel ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : 'grid-cols-1'}`}>
-        <div className="space-y-4">
-          <Card>
-            <div className="flex items-center gap-3 flex-wrap mb-3">
-              <Select
-                value={viewMode}
-                onChange={(e) => {
-                  setViewMode(e.target.value as ViewMode)
-                  setFocusedEntityId(null)
-                  setActiveTabId(null)
-                }}
-                options={viewOptions}
-              />
-              {viewMode !== 'all' && (
-                <div className="w-56">
-                  <SearchableSelect
-                    label={viewMode === 'batch' ? 'Focus a batch' : viewMode === 'teacher' ? 'Focus a teacher' : 'Focus a room'}
-                    placeholder={viewMode === 'batch' ? 'All batches…' : viewMode === 'teacher' ? 'All teachers…' : 'All rooms…'}
-                    value={focusedEntityId}
-                    onChange={(v) => setFocusedEntityId(v == null ? null : Number(v))}
-                    options={entitySelectOptions}
-                    allowClear
-                    maxHeight={260}
-                  />
-                </div>
-              )}
-              <div className="flex items-center rounded-md border border-gray-300 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setDensity('compact')}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium ${density === 'compact' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  aria-pressed={density === 'compact'}
-                >
-                  <Rows3 size={13} /> Compact
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDensity('comfortable')}
-                  className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border-l border-gray-300 ${density === 'comfortable' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  aria-pressed={density === 'comfortable'}
-                >
-                  <Columns3 size={13} /> Comfortable
-                </button>
-              </div>
-              <Toggle label="Conflicts only" checked={showConflictsOnly} onChange={setShowConflictsOnly} />
-              <Toggle label="Unplaced only" checked={showUnplacedOnly} onChange={setShowUnplacedOnly} />
-              <Button
-                variant={filterBarOpen ? 'primary' : 'secondary'}
-                size="sm"
-                icon={<Filter size={14} />}
-                onClick={() => setFilterBarOpen((v) => !v)}
-              >
-                Filters
-              </Button>
-            </div>
-            {filterBarOpen && (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 border-t border-slate-100 pt-3 mb-3">
-                <MultiSelect label="Departments" options={departmentOptions} selected={filterDepartmentIds} onChange={setFilterDepartmentIds} />
-                <MultiSelect label="Batches" options={createBatchOptions} selected={filterBatchIds} onChange={setFilterBatchIds} />
-                <MultiSelect label="Teachers" options={teacherOptions} selected={filterTeacherIds} onChange={setFilterTeacherIds} />
-                <MultiSelect label="Rooms" options={roomOptions} selected={filterRoomIds} onChange={setFilterRoomIds} />
+      {swapSource && (
+        <div className="rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-800 flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2">
+            <ArrowLeftRight size={15} />
+            Swap mode: click the session that should take the slot of&nbsp;<strong>"{swapSource.subjectName ?? `#${swapSource.id}`}"</strong>.
+          </span>
+          <button
+            type="button"
+            className="text-xs font-medium text-indigo-700 hover:text-indigo-900"
+            onClick={() => setSwapSource(null)}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-start gap-3">
+        <div className="w-full min-w-0 flex-1 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap px-4">
+            <Select
+              value={viewMode}
+              onChange={(e) => {
+                setViewMode(e.target.value as ViewMode)
+                setFocusedEntityId(null)
+                setActiveTabId(null)
+              }}
+              options={viewOptions}
+              className="w-40"
+            />
+            {viewMode !== 'all' && (
+              <div className="w-56">
+                <SearchableSelect
+                  label={viewMode === 'batch' ? 'Focus a batch' : viewMode === 'teacher' ? 'Focus a teacher' : 'Focus a room'}
+                  placeholder={viewMode === 'batch' ? 'All batches…' : viewMode === 'teacher' ? 'All teachers…' : 'All rooms…'}
+                  value={focusedEntityId}
+                  onChange={(v) => setFocusedEntityId(v == null ? null : Number(v))}
+                  options={entitySelectOptions}
+                  allowClear
+                  maxHeight={260}
+                />
               </div>
             )}
+            <div className="flex items-center rounded-md border border-gray-300 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setDensity('compact')}
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium ${density === 'compact' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                aria-pressed={density === 'compact'}
+              >
+                <Rows3 size={13} /> Compact
+              </button>
+              <button
+                type="button"
+                onClick={() => setDensity('comfortable')}
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border-l border-gray-300 ${density === 'comfortable' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                aria-pressed={density === 'comfortable'}
+              >
+                <Columns3 size={13} /> Comfortable
+              </button>
+            </div>
+            <Button
+              variant={filterBarOpen ? 'primary' : 'secondary'}
+              size="sm"
+              icon={<Filter size={14} />}
+              onClick={() => setFilterBarOpen((v) => !v)}
+            >
+              Filters
+            </Button>
+          </div>
+          {filterBarOpen && (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 px-4">
+              <MultiSelect label="Departments" options={departmentOptions} selected={filterDepartmentIds} onChange={setFilterDepartmentIds} />
+              <MultiSelect label="Batches" options={createBatchOptions} selected={filterBatchIds} onChange={setFilterBatchIds} />
+              <MultiSelect label="Teachers" options={teacherOptions} selected={filterTeacherIds} onChange={setFilterTeacherIds} />
+              <MultiSelect label="Rooms" options={roomOptions} selected={filterRoomIds} onChange={setFilterRoomIds} />
+            </div>
+          )}
+          <div className="relative">
             {viewMode === 'all' ? (
               renderGrid()
             ) : focusedEntityId != null ? (
@@ -1305,13 +1799,15 @@ export default function TimetableViewer() {
                     Show all {viewMode}s
                   </Button>
                 </div>
-                {displayEntityId != null ? renderGrid() : <p className="text-sm text-slate-500">No sessions for this {viewMode}.</p>}
+                {displayEntityId != null
+                  ? renderGrid()
+                  : <p className="text-sm text-slate-500">No sessions for this {viewMode}.</p>}
               </div>
             ) : entityIdsInSchedule.length === 0 ? (
               <p className="text-sm text-slate-500">No {viewMode} assigned sessions yet.</p>
             ) : (
               <div className="space-y-3">
-                <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
+                <div className="flex flex-wrap gap-1.5">
                   <span className="text-xs font-medium text-slate-500 mr-1 self-center">
                     {viewMode === 'batch' ? 'Batches' : viewMode === 'teacher' ? 'Teachers' : 'Rooms'}:
                   </span>
@@ -1329,34 +1825,17 @@ export default function TimetableViewer() {
                 {displayEntityId != null ? renderGrid() : <p className="text-sm text-slate-500">Select a {viewMode} above.</p>}
               </div>
             )}
-          </Card>
-
-          <Card title="Conflict Inspector" description="Hover over a session to inspect why this slot is risky.">
-            {!hoveredSession && (
-              <p className="text-sm text-slate-500">Move the pointer over a session cell to inspect local conflict details.</p>
-            )}
-            {hoveredSession && (
-              <div className="space-y-2 text-sm">
-                <p className="font-semibold text-slate-900">{hoveredSession.subjectName}</p>
-                <p className="text-xs text-slate-500">
-                  {hoveredSession.teacherName ?? 'No teacher'} - {hoveredSession.roomNumber ?? 'No room'} - {hoveredSession.day ?? 'No day'}
-                </p>
-                {(heatBySessionId[hoveredSession.id]?.notes ?? []).length === 0 && (
-                  <p className="text-sm text-emerald-700">No local heatmap penalties detected for this session.</p>
-                )}
-                {(heatBySessionId[hoveredSession.id]?.notes ?? []).map((note) => (
-                  <div key={note} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                    {note}
-                  </div>
-                ))}
+            {hoveredSession && !showScorePanel && (
+              <div className="pointer-events-none absolute bottom-4 right-4 z-20 w-72 max-w-[calc(100%-2rem)]">
+                {renderInspector()}
               </div>
             )}
-          </Card>
+          </div>
         </div>
 
-        {(showScorePanel || showConflictsPanel) && (
-          <div className="space-y-4">
-            {showScorePanel && (
+        {showScorePanel && (
+          <aside className="w-full lg:w-[340px] lg:sticky lg:top-4 shrink-0 self-start space-y-3">
+            <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
               <ScoreBreakdownPanel
                 score={scoreBreakdown}
                 rawExplanation={rawExplanation}
@@ -1365,25 +1844,68 @@ export default function TimetableViewer() {
                 onViolationClick={highlightByText}
                 onClearHighlight={() => setHighlightedSessionIds(new Set())}
               />
+            </div>
+            {hoveredSession && (
+              <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+                {renderInspector()}
+              </div>
             )}
-            {showConflictsPanel && (
-              <ConflictSolverSidecar
-                session={conflictSession}
-                suggestions={backendSuggestions ?? fallbackSuggestions}
-                onClose={() => setConflictSession(null)}
-                onApplySuggestion={(timeslotId) => {
-                  if (!conflictSession) return
-                  setSelectedSession(conflictSession)
-                  setEditMode(true)
-                  setEditTeacherId(conflictSession.teacherId?.toString() ?? '')
-                  setEditRoomId(conflictSession.roomId?.toString() ?? '')
-                  setEditTimeslotId(String(timeslotId))
-                }}
-              />
-            )}
-          </div>
+          </aside>
         )}
       </div>
+
+      {fullscreen && (
+        <div className="fixed inset-0 z-40 flex flex-col bg-slate-50">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white border-b border-gray-200 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-sm font-semibold text-slate-900 truncate">{schedule?.name}</h3>
+              {schedule?.status && (
+                <Badge label={schedule.status} variant={STATUS_VARIANT[schedule.status] ?? 'gray'} dot />
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-nowrap overflow-x-auto min-w-0 py-0.5" style={{ scrollbarWidth: 'thin' }}>
+              <Select
+                value={viewMode}
+                onChange={(e) => {
+                  setViewMode(e.target.value as ViewMode)
+                  setFocusedEntityId(null)
+                  setActiveTabId(null)
+                }}
+                options={viewOptions}
+                className="w-36 shrink-0"
+              />
+              {viewMode !== 'all' && (
+                <div className="w-52 shrink-0">
+                  <SearchableSelect
+                    label={viewMode === 'batch' ? 'Focus a batch' : viewMode === 'teacher' ? 'Focus a teacher' : 'Focus a room'}
+                    placeholder={viewMode === 'batch' ? 'All batches…' : viewMode === 'teacher' ? 'All teachers…' : 'All rooms…'}
+                    value={focusedEntityId}
+                    onChange={(v) => setFocusedEntityId(v == null ? null : Number(v))}
+                    options={entitySelectOptions}
+                    allowClear
+                    maxHeight={260}
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')}
+                className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 shrink-0"
+                title="Toggle density"
+              >
+                {density === 'compact' ? <Rows3 size={13} /> : <Columns3 size={13} />}
+                {density === 'compact' ? 'Compact' : 'Comfortable'}
+              </button>
+              <Button variant="secondary" size="sm" icon={<Minimize2 size={14} />} onClick={() => setFullscreen(false)} title="Exit full screen (Esc)">
+                Exit full screen
+              </Button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-auto p-3">
+            {renderGrid()}
+          </div>
+        </div>
+      )}
 
       <Modal
         open={selectedSession !== null}
@@ -1436,18 +1958,21 @@ export default function TimetableViewer() {
                     {editError}
                   </div>
                 )}
-                <SearchableSelect
+                <QualifiedTeacherSelect
                   label="Teacher"
+                  teachers={teachers}
+                  subjectId={selectedSession?.subjectId}
                   value={editTeacherId ? +editTeacherId : null}
                   onChange={(v) => setEditTeacherId(v == null ? '' : String(v))}
-                  options={teacherOptions}
                   allowClear
                 />
-                <SearchableSelect
-                  label="Room"
+                <QualifiedRoomSelect
+                  rooms={rooms}
+                  subject={subjects.find((s) => s.id === selectedSession?.subjectId) ?? null}
+                  minCapacity={batches.find((b) => b.id === selectedSession?.batchId)?.studentCount ?? null}
                   value={editRoomId ? +editRoomId : null}
                   onChange={(v) => setEditRoomId(v == null ? '' : String(v))}
-                  options={roomOptions}
+                  label="Room"
                   allowClear
                 />
                 <SearchableSelect
@@ -1513,13 +2038,34 @@ export default function TimetableViewer() {
           )}
           <div className="grid md:grid-cols-2 gap-4">
             <SearchableSelect label="Subject" value={createSubjectId ? +createSubjectId : null} onChange={(v) => setCreateSubjectId(v == null ? '' : String(v))} options={subjectOptions} placeholder="Select subject" />
-            <SearchableSelect label="Teacher" value={createTeacherId ? +createTeacherId : null} onChange={(v) => setCreateTeacherId(v == null ? '' : String(v))} options={teacherOptions} allowClear />
-            <SearchableSelect label="Room" value={createRoomId ? +createRoomId : null} onChange={(v) => setCreateRoomId(v == null ? '' : String(v))} options={roomOptions} allowClear />
+            <QualifiedTeacherSelect label="Teacher" teachers={teachers} subjectId={createSubjectId ? +createSubjectId : null} value={createTeacherId ? +createTeacherId : null} onChange={(v) => setCreateTeacherId(v == null ? '' : String(v))} allowClear />
+            <QualifiedRoomSelect rooms={rooms} subject={subjects.find((s) => s.id === (+createSubjectId || 0)) ?? null} minCapacity={batches.find((b) => b.id === (+createBatchId || 0))?.studentCount ?? null} value={createRoomId ? +createRoomId : null} onChange={(v) => setCreateRoomId(v == null ? '' : String(v))} label="Room" allowClear />
             <Input label="Duration (hours)" type="number" min={1} max={4} value={createDuration} onChange={(e) => setCreateDuration(Math.max(1, +e.target.value || 1))} />
           </div>
           <div className="grid md:grid-cols-2 gap-4">
-            <SearchableSelect label="Batch" value={createBatchId ? +createBatchId : null} onChange={(v) => { setCreateBatchId(v == null ? '' : String(v)); setCreateSectionId('') }} options={createBatchOptions} placeholder="Select batch" helpText="Pick a batch or override it with a section." allowClear />
+            <SearchableSelect label="Batch" value={createBatchId ? +createBatchId : null} onChange={(v) => { setCreateBatchId(v == null ? '' : String(v)); setCreateSectionId('') }} options={modalCreateBatchOptions} placeholder="Select batch" helpText="Pick a batch or override it with a section." allowClear />
             <SearchableSelect label="Section" value={createSectionId ? +createSectionId : null} onChange={(v) => setCreateSectionId(v == null ? '' : String(v))} options={createSectionOptions} placeholder={createBatchId ? 'Optional section' : 'Select a batch first'} disabled={!createBatchId} helpText="Optional. If selected, it takes precedence over batch." allowClear />
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <SearchableSelect
+              label="Timeslot"
+              value={createSlot ? createSlot.id : null}
+              onChange={(v) => {
+                const ts = v == null ? null : (timeslots.find((t) => t.id === +v) ?? null)
+                setCreateSlot(ts)
+                setCreateError(null)
+              }}
+              options={timeslotOptions}
+              placeholder="— Select a timeslot —"
+              helpText="Duplicating pre-fills the original slot — pick a different one to avoid an immediate hard conflict."
+            />
+            <div className="flex items-end pb-1">
+              <p className={`text-xs rounded-md border px-3 py-2 ${createQuotaHint?.over ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+                {createQuotaHint
+                  ? `${createQuotaHint.text}${createQuotaHint.over ? ' — adding another may exceed the curriculum hours.' : ''}`
+                  : 'Pick a batch or a section to see the curriculum quota for this subject.'}
+              </p>
+            </div>
           </div>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input type="checkbox" checked={createLocked} onChange={(e) => setCreateLocked(e.target.checked)} />
@@ -1570,6 +2116,75 @@ export default function TimetableViewer() {
       />
 
       <Modal
+        open={conflictsListOpen}
+        onClose={() => setConflictsListOpen(false)}
+        title={`Hard conflicts (${conflictSessions.length})`}
+        size="lg"
+        footer={
+          <Button variant="secondary" onClick={() => setConflictsListOpen(false)}>
+            Close
+          </Button>
+        }
+      >
+        {conflictSessions.length === 0 ? (
+          <p className="text-sm text-slate-500">No hard-conflict sessions right now.</p>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">
+              These sessions still violate a hard constraint. Click one to open its editor, reassign
+              the teacher/room, or reschedule it. The highlighted cell lets you find it on the grid.
+            </p>
+            <div className="space-y-2">
+              {conflictSessions.map(({ session: s, reasons }) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => {
+                    openSessionDetail(s)
+                    setHighlightedSessionIds(new Set([s.id]))
+                    setConflictsListOpen(false)
+                  }}
+                  className="w-full text-left rounded-lg border border-rose-200 bg-rose-50/50 hover:bg-rose-100 px-3 py-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-slate-800">{s.subjectName ?? `Session #${s.id}`}</span>
+                    <span className="text-[11px] text-slate-500 whitespace-nowrap">
+                      {s.batchLabel ?? s.day ?? ''}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-600">
+                    <span className={s.teacherId ? '' : 'text-rose-700 font-medium'}>
+                      {s.teacherName ?? (s.teacherId ? `Teacher #${s.teacherId}` : 'No teacher assigned')}
+                    </span>
+                    <span>·</span>
+                    <span className={s.roomId ? '' : 'text-rose-700 font-medium'}>
+                      {s.roomNumber ?? (s.roomId ? `Room #${s.roomId}` : 'No room assigned')}
+                    </span>
+                    {s.day && (
+                      <>
+                        <span>·</span>
+                        <span>
+                          {s.day}
+                          {s.startTime ? ` ${s.startTime}` : ''}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <ul className="mt-1.5 flex flex-wrap gap-1">
+                    {reasons.map((r) => (
+                      <li key={r} className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-700">
+                        {r}
+                      </li>
+                    ))}
+                  </ul>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
         open={showDisruptionPanel}
         onClose={() => { setShowDisruptionPanel(false); setDisruptionPreview(null) }}
         title="Disruption Management"
@@ -1579,6 +2194,17 @@ export default function TimetableViewer() {
             <Button variant="secondary" onClick={() => { setShowDisruptionPanel(false); setDisruptionPreview(null) }}>
               Cancel
             </Button>
+            {snapshotStored && (
+              <Button
+                variant="secondary"
+                loading={disruptionRestoring}
+                onClick={handleRestoreSnapshot}
+                title="Reverts every session to the snapshot captured before the last applied disruption"
+              >
+                <RotateCcw size={14} className="mr-1" />
+                Revert snapshot
+              </Button>
+            )}
             <Button
               variant="secondary"
               loading={disruptionPreviewing}
@@ -1595,6 +2221,12 @@ export default function TimetableViewer() {
         }
       >
         <div className="space-y-4">
+          {snapshotStored && (
+            <p className="text-xs flex items-center gap-1.5 rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-cyan-700">
+              <RotateCcw size={12} />
+              A pre-disruption snapshot is stored for this schedule — "Revert snapshot" restores every session to it.
+            </p>
+          )}
           <Select
             label="Disruption Type"
             value={disruptionType}
@@ -1623,10 +2255,12 @@ export default function TimetableViewer() {
             />
           )}
 
-          {(disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE') && (
+          {(disruptionType === 'TEACHER_UNAVAILABLE' || disruptionType === 'ROOM_UNAVAILABLE' || disruptionType === 'SPECIAL_EVENT') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Date (required for teacher/room disruptions)
+                {disruptionType === 'SPECIAL_EVENT'
+                  ? 'Date (the day the event blocks all sessions)'
+                  : 'Date (required for teacher/room disruptions)'}
               </label>
               <input
                 type="date"

@@ -88,7 +88,7 @@ const nav: NavGroup[] = [
   },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const { prefs } = useUiPreferences()
 
   const visibleNav = nav
@@ -99,7 +99,11 @@ export default function Sidebar() {
     .filter(({ items }) => items.length > 0)
 
   return (
-    <aside className="w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0 overflow-y-auto">
+    <aside
+      className={`shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0 overflow-hidden transition-[width] duration-200 ease-out ${
+        collapsed ? 'w-0 border-r-0' : 'w-60'
+      }`}
+    >
       <div className="px-6 py-5 border-b border-gray-200 flex items-center gap-3">
         <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
           <Zap className="w-4 h-4 text-white" />
@@ -111,7 +115,7 @@ export default function Sidebar() {
           <p className="text-xs text-gray-500 mt-0.5">Timetable Scheduler</p>
         </div>
       </div>
-      <nav className="flex-1 px-3 py-4 space-y-6">
+      <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
         {visibleNav.map(({ group, items }) => (
           <div key={group}>
             <p className="px-3 mb-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">

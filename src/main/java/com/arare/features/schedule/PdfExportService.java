@@ -28,10 +28,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-// Renders a solved schedule as a printable PDF grid. The layout mirrors the
-// on-screen timetable: rows are time slots, columns are days of the week.
-// A view narrows the grid to one batch, teacher, or room, so the exported
-// PDF is the timetable the end user actually cares about.
+/**
+ * Renders a solved schedule as a printable PDF grid. The layout mirrors the
+ * on-screen timetable: rows are time slots, columns are days of the week.
+ * A view narrows the grid to one batch, teacher, or room, so the exported
+ * PDF is the timetable the end user actually cares about.
+ */
 @Service
 @RequiredArgsConstructor
 public class PdfExportService {
@@ -56,9 +58,11 @@ public class PdfExportService {
         ALL, TEACHER, BATCH, ROOM
     }
 
-    // When a BATCH/TEACHER/ROOM view is selected without a single entity, the
-    // export emits one full timetable per entity so the operator gets a separate
-    // schedule for every batch (or teacher, or room), one PDF page each.
+    /**
+     * When a BATCH/TEACHER/ROOM view is selected without a single entity, the
+     * export emits one full timetable per entity so the operator gets a separate
+     * schedule for every batch (or teacher, or room), one PDF page each.
+     */
     @Transactional(readOnly = true)
     public byte[] exportPdf(Long scheduleId, View view, Long entityId) {
         com.arare.features.schedule.Schedule schedule = scheduleRepo.findById(scheduleId)

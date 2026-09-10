@@ -11,27 +11,29 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
-// The "allotted" layer of a teacher's term duty: which teacher actually
-// teaches which subject, for which batch/section, this academic term.
-// <p>This is the two-stage gap from the university domain model:
-// <ol>
-// <li><b>Qualified</b> (Teacher.subjects) — the subjects a teacher is
-// certified to teach, listed on their profile.</li>
-// <li><b>Allotted</b> (this entity) — the concrete teaching load assigned
-// this term, e.g. "Dr Meena teaches CSE-2A OS this term".</li>
-// </ol>
-// The solver treats an allotment as a HARD constraint: sessions for the
-// (subject, batch/section) class may only be taught by the allotted teacher.
-// When no allotment exists the solver falls back to qualified teachers, so
-// the feature is fully backward compatible.
-// <p>An assignment must reference exactly one of:
-// <ul>
-// <li>{@code batch} — the whole batch takes the subject as a single class;</li>
-// <li>{@code section} — a lab split where each section is taught separately.</li>
-// </ul>
-// One subject is taught by exactly one teacher per (subject, batch) or
-// (subject, section). This mirrors the {@code singleTeacherPerSubjectSection}
-// solver constraint, guaranteeing the allotment is always solver-feasible.</p>
+/**
+ * The "allotted" layer of a teacher's term duty: which teacher actually
+ * teaches which subject, for which batch/section, this academic term.
+ * <p>This is the two-stage gap from the university domain model:
+ * <ol>
+ * <li><b>Qualified</b> (Teacher.subjects) — the subjects a teacher is
+ * certified to teach, listed on their profile.</li>
+ * <li><b>Allotted</b> (this entity) — the concrete teaching load assigned
+ * this term, e.g. "Dr Meena teaches CSE-2A OS this term".</li>
+ * </ol>
+ * The solver treats an allotment as a HARD constraint: sessions for the
+ * (subject, batch/section) class may only be taught by the allotted teacher.
+ * When no allotment exists the solver falls back to qualified teachers, so
+ * the feature is fully backward compatible.
+ * <p>An assignment must reference exactly one of:
+ * <ul>
+ * <li>{@code batch} — the whole batch takes the subject as a single class;</li>
+ * <li>{@code section} — a lab split where each section is taught separately.</li>
+ * </ul>
+ * One subject is taught by exactly one teacher per (subject, batch) or
+ * (subject, section). This mirrors the {@code singleTeacherPerSubjectSection}
+ * solver constraint, guaranteeing the allotment is always solver-feasible.</p>
+ */
 @Entity
 @Table(name = "teacher_assignments")
 @Getter
@@ -51,7 +53,9 @@ public class TeacherAssignment extends BaseEntity {
     @JoinColumn(name = "subject_id", nullable = false)
     private Subject subject;
 
-    // Allotment scope: exactly one of batch / section must be set.
+    /**
+     * Allotment scope: exactly one of batch / section must be set.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "batch_id")
     private Batch batch;
@@ -60,15 +64,19 @@ public class TeacherAssignment extends BaseEntity {
     @JoinColumn(name = "section_id")
     private ClassSection section;
 
-    // Optional per-term override of the teacher's teaching hours for this
-    // subject (used for workload reporting; the solver enforces teacher
-    // maxDailyHours/maxWeeklyHours from the Teacher profile).
+    /**
+     * Optional per-term override of the teacher's teaching hours for this
+     * subject (used for workload reporting; the solver enforces teacher
+     * maxDailyHours/maxWeeklyHours from the Teacher profile).
+     */
     @Min(1)
     @Column(name = "weekly_hours")
     private Integer weeklyHours;
 
-    // Load priority: higher = more authoritative when a teacher is allotted
-    // to overlapping subjects across the institution (1 = default, higher wins).
+    /**
+     * Load priority: higher = more authoritative when a teacher is allotted
+     * to overlapping subjects across the institution (1 = default, higher wins).
+     */
     @Min(0)
     @Column(nullable = false)
     @Builder.Default

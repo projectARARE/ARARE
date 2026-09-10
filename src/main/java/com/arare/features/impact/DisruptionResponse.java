@@ -2,9 +2,11 @@ package com.arare.features.impact;
 
 import java.util.List;
 
-// Response from the Impact Analyzer.
-// Contains the sessions that will be affected by the disruption
-// before any re-solving takes place.
+/**
+ * Response from the Impact Analyzer.
+ * Contains the sessions that will be affected by the disruption
+ * before any re-solving takes place.
+ */
 public record DisruptionResponse(
     DisruptionType type,
     Long affectedEntityId,
@@ -14,7 +16,9 @@ public record DisruptionResponse(
     List<ImpactedSession> impactedSessions,
     List<Long> impactedSessionIds
 ) {
-    // Lightweight session summary used in the disruption preview. 
+    /**
+     * Lightweight session summary used in the disruption preview.
+     */
     public record ImpactedSession(
         Long id,
         String subjectName,

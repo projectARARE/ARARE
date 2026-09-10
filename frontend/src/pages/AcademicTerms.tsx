@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2, CheckCircle, Clock } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, ConfirmDialog } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, ConfirmDialog, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { academicTermApi } from '../services/api'
 import type { AcademicTerm, AcademicTermRequest, AcademicTermStatus } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const STATUS_OPTIONS: { value: AcademicTermStatus; label: string }[] = [
   { value: 'UPCOMING', label: 'Upcoming' },
@@ -42,6 +43,7 @@ export default function AcademicTerms() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -152,8 +154,8 @@ export default function AcademicTerms() {
       key: 'actions', header: '', width: '96px',
       render: (t) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(t)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700" onClick={() => setConfirmId(t.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(t)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(t.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -164,16 +166,33 @@ export default function AcademicTerms() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(t.id) },
   ]
 
+  const bulk = useBulkDelete<AcademicTerm>({
+    getKey: (x) => x.id,
+    deleteFn: academicTermApi.delete,
+    reload: load,
+    noun: 'academic term',
+  })
+
+  const filteredItems = statusFilter ? items.filter((t) => t.status === statusFilter) : items
+
   return (
     <>
       <Card
         title="Academic Terms"
         description="Define semesters, trimesters, and academic years to version your schedules"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Term</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Term</Button></div>}
       >
+        <FilterPanel activeCount={statusFilter != null ? 1 : 0} persistKey="arare.academicTerms.filters.open">
+          <Select
+            label="Status"
+            value={statusFilter ?? ''}
+            onChange={(e) => setStatusFilter(e.target.value || null)}
+            options={[{ value: '', label: 'All statuses' }, ...STATUS_OPTIONS]}
+          />
+        </FilterPanel>
         <Table
           columns={columns}
-          data={items}
+          data={filteredItems}
           loading={loading}
           keyExtractor={(t) => t.id}
           searchable
@@ -181,6 +200,10 @@ export default function AcademicTerms() {
           exportFilename="academic-terms"
           searchKeys={[(t) => t.name, (t) => t.academicYear ?? '', (t) => t.status]}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.terms.density"
         />
       </Card>
 
@@ -242,6 +265,7 @@ export default function AcademicTerms() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

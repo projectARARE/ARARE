@@ -82,8 +82,10 @@ public class BatchServiceImpl implements BatchService {
         return toResponse(repo.save(b));
     }
 
-    // Resolves every requested subject id, rejecting unknown ones instead of
-    // silently dropping curriculum entries.
+    /**
+     * Resolves every requested subject id, rejecting unknown ones instead of
+     * silently dropping curriculum entries.
+     */
     private List<Subject> resolveSubjects(List<Long> subjectIds) {
         if (subjectIds == null || subjectIds.isEmpty()) {
             return new ArrayList<>();
@@ -114,7 +116,9 @@ public class BatchServiceImpl implements BatchService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
-        // Delete sessions referencing this batch (directly or via its sections)
+        /**
+         * Delete sessions referencing this batch (directly or via its sections)
+         */
         List<Long> sectionIds = sectionRepo.findByBatchId(id).stream().map(s -> s.getId()).toList();
         for (Long sectionId : sectionIds) {
             sessionRepo.deleteBySectionId(sectionId);

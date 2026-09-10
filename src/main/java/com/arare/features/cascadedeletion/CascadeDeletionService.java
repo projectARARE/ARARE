@@ -26,8 +26,10 @@ public class CascadeDeletionService {
     private final TimeslotRepository timeslotRepo;
     private final EventRepository eventRepo;
 
-    // Purges sessions, pre-allocations and schedule rows for the given schedule
-    // and every descendant schedule (child schedules created from a parent).
+    /**
+     * Purges sessions, pre-allocations and schedule rows for the given schedule
+     * and every descendant schedule (child schedules created from a parent).
+     */
     @Transactional
     public void purgeScheduleTree(Long scheduleId) {
         List<Long> ids = collectScheduleSubtree(scheduleId);
@@ -68,7 +70,9 @@ public class CascadeDeletionService {
         preAllocationRepo.deleteByDepartmentId(departmentId);
     }
 
-    // Removes a timeslot from teacher/room availability and event join tables
+    /**
+     * Removes a timeslot from teacher/room availability and event join tables
+     */
     @Transactional
     public void detachTimeslot(Long timeslotId) {
         teacherRepo.deleteTeacherAvailabilityByTimeslotId(timeslotId);

@@ -16,8 +16,10 @@ import com.arare.features.timeslot.Timeslot;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -39,8 +41,10 @@ public class ImportContext {
     private final TeacherRepository teacherRepository;
     private final BatchRepository batchRepository;
 
-    private final Map<String, Department> deptByCode = new HashMap<>();
+    private final Map<String, List<Department>> deptByCode = new HashMap<>();
+    private final Set<String> ambiguousDeptCodes = new HashSet<>();
     private final Map<String, Building> buildingByKey = new HashMap<>();
+    private final Set<String> ambiguousBuildingNames = new HashSet<>();
     private final Map<String, Timeslot> timeslotByKey = new HashMap<>();
     private final Map<Long, Timeslot> timeslotById = new HashMap<>();
     private final Map<String, Room> roomByKey = new HashMap<>();
@@ -52,8 +56,8 @@ public class ImportContext {
 
     /** Prepares the indexes by loading all current entities from the database. */
     public void loadFromDatabase() {
-        departmentRepository.findAll().forEach(d -> deptByCode.putIfAbsent(CsvUtils.key(d.getCode()), d));
-        buildingRepository.findAll().forEach(b -> buildingByKey.putIfAbsent(CsvUtils.key(b.getName()), b));
+        departmentRepository.findAll().forEach(this::indexDepartment);
+        buildingRepository.findAll().forEach(this::indexBuilding);
         timeslotRepository.findAll().forEach(t -> {
             timeslotById.put(t.getId(), t);
             timeslotByKey.putIfAbsent(
@@ -80,16 +84,27 @@ public class ImportContext {
         });
     }
 
-    // 
-    // Lookups
-    // 
+    /**
+     * Lookups
+     */
 
     public Department departmentByCode(String code) {
-        return deptByCode.get(CsvUtils.key(code));
+        String key = CsvUtils.key(code);
+        if (ambiguousDeptCodes.contains(key)) return null;
+        List<Department> list = deptByCode.get(key);
+        if (list == null || list.isEmpty()) return null;
+        if (list.size() == 1) return list.get(0);
+        ambiguousDeptCodes.add(key);
+        return null;
     }
 
     public Building buildingByName(String name) {
-        return buildingByKey.get(CsvUtils.key(name));
+        String key = CsvUtils.key(name);
+        return ambiguousBuildingNames.contains(key) ? null : buildingByKey.get(key);
+    }
+
+    public boolean isAmbiguousBuildingName(String name) {
+        return ambiguousBuildingNames.contains(CsvUtils.key(name));
     }
 
     public Timeslot timeslot(String day, String start, String end) {
@@ -141,6 +156,32 @@ public class ImportContext {
         }
     }
 
+    private void indexBuilding(Building building) {
+        String key = CsvUtils.key(building.getName());
+        if (ambiguousBuildingNames.contains(key)) return;
+        Building existing = buildingByKey.get(key);
+        if (existing != null && existing != building) {
+            buildingByKey.remove(key);
+            ambiguousBuildingNames.add(key);
+        } else if (existing == null) {
+            buildingByKey.put(key, building);
+        }
+    }
+
+    private void indexDepartment(Department dept) {
+        String key = CsvUtils.key(dept.getCode());
+        if (ambiguousDeptCodes.contains(key)) return;
+        List<Department> existing = deptByCode.computeIfAbsent(key, k -> new ArrayList<>());
+        if (existing.isEmpty()) {
+            existing.add(dept);
+        } else if (!existing.contains(dept)) {
+            existing.add(dept);
+            if (existing.size() > 1) {
+                ambiguousDeptCodes.add(key);
+            }
+        }
+    }
+
     public Teacher teacherByEmployeeId(String employeeId) {
         return teacherByEmployeeId.get(CsvUtils.key(employeeId));
     }
@@ -149,16 +190,16 @@ public class ImportContext {
         return batchByKey.get(CsvUtils.batchKey(deptCode, year, section));
     }
 
-    // 
-    // Registrations (called after an upsert so later files can reference it)
-    // 
+    /**
+     * Registrations (called after an upsert so later files can reference it)
+     */
 
     public void register(Department department) {
-        deptByCode.put(CsvUtils.key(department.getCode()), department);
+        indexDepartment(department);
     }
 
     public void register(Building building) {
-        buildingByKey.put(CsvUtils.key(building.getName()), building);
+        indexBuilding(building);
     }
 
     public void register(Timeslot timeslot) {

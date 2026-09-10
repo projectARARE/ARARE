@@ -36,7 +36,11 @@ public interface RoomRepository extends JpaRepository<Room, Long> {
     @Query("DELETE FROM Room r WHERE r.building.id = :buildingId")
     void deleteByBuildingId(@Param("buildingId") Long buildingId);
 
-    // Delete from room_availability join table where timeslot_id = :timeslotId
+    /**
+     * Delete from room_availability join table where timeslot_id = :timeslotId
+     */
     @Query("DELETE FROM Room r JOIN r.availableTimeslots ts WHERE ts.id = :timeslotId")
     void deleteRoomAvailabilityByTimeslotId(@Param("timeslotId") Long timeslotId);
+
+    List<Room> findByBuildingInstituteId(Long instituteId);
 }

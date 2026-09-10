@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { timeslotApi } from '../services/api'
 import type { Timeslot, TimeslotRequest, SchoolDay, TimeslotType } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const DAYS: SchoolDay[] = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
 const TYPES: TimeslotType[] = ['CLASS', 'BREAK', 'BLOCKED']
@@ -25,6 +26,7 @@ export default function Timeslots() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [dayFilter, setDayFilter] = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -84,6 +86,8 @@ export default function Timeslots() {
   const dayOptions = DAYS.map((d) => ({ value: d, label: d }))
   const typeOptions = TYPES.map((t) => ({ value: t, label: t }))
 
+  const filteredItems = dayFilter != null ? items.filter((t) => t.day === dayFilter) : items
+
   const columns: Column<Timeslot>[] = [
     {
       key: 'day', header: 'Day',
@@ -106,8 +110,8 @@ export default function Timeslots() {
       key: 'actions', header: '', width: '96px',
       render: (t) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(t)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(t.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(t)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(t.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -118,14 +122,29 @@ export default function Timeslots() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(t.id) },
   ]
 
+  const bulk = useBulkDelete<Timeslot>({
+    getKey: (x) => x.id,
+    deleteFn: timeslotApi.delete,
+    reload: load,
+    noun: 'timeslot',
+  })
+
   return (
     <>
       <Card title="Timeslots" description="Define weekly timeslot grid"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Timeslot</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Timeslot</Button></div>}
       >
+        <FilterPanel activeCount={dayFilter != null ? 1 : 0} persistKey="arare.timeslots.filters.open">
+          <Select
+            label="Day"
+            value={dayFilter ?? ''}
+            onChange={(e) => setDayFilter(e.target.value || null)}
+            options={[{ value: '', label: 'All days' }, ...dayOptions]}
+          />
+        </FilterPanel>
         <Table
           columns={columns}
-          data={items}
+          data={filteredItems}
           loading={loading}
           keyExtractor={(t) => t.id}
           searchable
@@ -133,6 +152,10 @@ export default function Timeslots() {
           exportFilename="timeslots"
           searchKeys={[(t) => t.day, (t) => t.startTime, (t) => t.endTime, (t) => t.type]}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.timeslots.density"
         />
       </Card>
 
@@ -171,6 +194,7 @@ export default function Timeslots() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

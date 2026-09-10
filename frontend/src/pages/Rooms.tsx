@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog, SearchableSelect } from '../components/ui'
+import { Card, Button, Modal, Input, Select, Table, Badge, ConfirmDialog, SearchableSelect, FilterPanel } from '../components/ui'
 import type { Column } from '../components/ui/Table'
 import type { ContextMenuItem } from '../components/ui/ContextMenu'
-import { roomApi, buildingApi, timeslotApi } from '../services/api'
-import type { Room, RoomRequest, Building, Timeslot, RoomType, LabSubtype, SchoolDay } from '../types'
+import { roomApi, buildingApi, timeslotApi, instituteApi } from '../services/api'
+import type { Room, RoomRequest, Building, Timeslot, RoomType, LabSubtype, SchoolDay, Institute } from '../types'
 import { useToast } from '../contexts/ToastContext'
+import { useBulkDelete } from '../hooks/useBulkDelete'
 
 const LAB_SUBTYPES: LabSubtype[] = [
   'COMPUTER_LAB', 'ELECTRONICS_LAB', 'CHEMISTRY_LAB', 'PHYSICS_LAB',
@@ -21,6 +22,7 @@ export default function Rooms() {
   const [items, setItems] = useState<Room[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
   const [timeslots, setTimeslots] = useState<Timeslot[]>([])
+  const [institutes, setInstitutes] = useState<Institute[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Room | null>(null)
@@ -28,16 +30,20 @@ export default function Rooms() {
   const [saving, setSaving] = useState(false)
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [buildingFilter, setBuildingFilter] = useState<number | null>(null)
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
+  const [instituteFilter, setInstituteFilter] = useState<number | null>(null)
 
   const load = () => {
     setLoading(true)
-    Promise.allSettled([roomApi.getAll(), buildingApi.getAll(), timeslotApi.getAll()])
-      .then(([rooms, bldgs, ts]) => {
+    Promise.allSettled([roomApi.getAll(), buildingApi.getAll(), timeslotApi.getAll(), instituteApi.getAll()])
+      .then(([rooms, bldgs, ts, insts]) => {
         if (rooms.status === 'fulfilled') setItems(rooms.value)
         if (bldgs.status === 'fulfilled') setBuildings(bldgs.value)
         if (ts.status === 'fulfilled') setTimeslots(ts.value)
-        const failed = [rooms, bldgs, ts].filter((x) => x.status === 'rejected').length
-        if (failed > 0) toast.error(`Some room data failed to refresh (${failed}/3)`)
+        if (insts.status === 'fulfilled') setInstitutes(insts.value)
+        const failed = [rooms, bldgs, ts, insts].filter((x) => x.status === 'rejected').length
+        if (failed > 0) toast.error(`Some room data failed to refresh (${failed}/4)`)
       })
       .finally(() => setLoading(false))
   }
@@ -106,12 +112,25 @@ export default function Rooms() {
     })
   }
 
-  const bldgOptions = buildings.map((b) => ({ value: b.id, label: b.name }))
+  const bldgOptions = buildings
+    .filter((b) => instituteFilter == null || b.instituteId === instituteFilter)
+    .map((b) => ({ value: b.id, label: b.name }))
+  const instituteOptions = institutes.map((i) => ({ value: i.id, label: i.name }))
   const typeOptions: { value: string; label: string }[] = [
     { value: 'LECTURE', label: 'Lecture Hall' },
     { value: 'LAB', label: 'Laboratory' },
   ]
   const subtypeOptions = LAB_SUBTYPES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))
+
+  const filteredItems = items.filter((r) => {
+    if (instituteFilter != null) {
+      const bldg = buildings.find((b) => b.id === r.buildingId)
+      if (bldg?.instituteId !== instituteFilter) return false
+    }
+    if (buildingFilter != null && r.buildingId !== buildingFilter) return false
+    if (typeFilter != null && r.type !== typeFilter) return false
+    return true
+  })
 
   const timeslotsByDay = DAYS.reduce<Record<SchoolDay, Timeslot[]>>((acc, day) => {
     acc[day] = timeslots.filter((t) => t.day === day && t.type === 'CLASS')
@@ -129,6 +148,14 @@ export default function Rooms() {
       sortValue: (r) => r.buildingName ?? '',
       render: (r) => r.buildingName ?? `#${r.buildingId}`,
     },
+    {
+      key: 'institute', header: 'Institute',
+      sortValue: (r) => institutes.find((i) => i.id === buildings.find((b) => b.id === r.buildingId)?.instituteId)?.name ?? '',
+      render: (r) => {
+        const inst = institutes.find((i) => i.id === buildings.find((b) => b.id === r.buildingId)?.instituteId)
+        return inst ? <span className="text-xs text-gray-600">{inst.name}</span> : <span className="text-gray-400">—</span>
+      },
+    },
     { key: 'capacity', header: 'Capacity', render: (r) => r.capacity },
     { key: 'type', header: 'Type', render: (r) => <Badge label={r.type} variant={r.type === 'LAB' ? 'purple' : 'blue'} /> },
     { key: 'labSubtype', header: 'Lab Type', render: (r) => r.labSubtype ? <span className="text-xs text-gray-600">{r.labSubtype.replace(/_/g, ' ')}</span> : <span className="text-gray-400">—</span> },
@@ -136,8 +163,8 @@ export default function Rooms() {
       key: 'actions', header: '', width: '96px',
       render: (r) => (
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(r)}>Edit</Button>
-          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600" onClick={() => setConfirmId(r.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="px-1.5" onClick={() => openEdit(r)} title="Edit" aria-label="Edit" />
+          <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} className="text-red-600 hover:text-red-700 px-1.5" onClick={() => setConfirmId(r.id)} title="Delete" aria-label="Delete" />
         </div>
       ),
     },
@@ -148,14 +175,49 @@ export default function Rooms() {
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, divider: true, onClick: () => setConfirmId(r.id) },
   ]
 
+  const bulk = useBulkDelete<Room>({
+    getKey: (x) => x.id,
+    deleteFn: roomApi.delete,
+    reload: load,
+    noun: 'room',
+  })
+
   return (
     <>
       <Card title="Rooms" description="Manage classrooms and labs"
-        actions={<Button icon={<Plus size={16} />} onClick={openAdd}>Add Room</Button>}
+        actions={<div className="flex items-center gap-2">{bulk.Bar}<Button icon={<Plus size={16} />} onClick={openAdd}>Add Room</Button></div>}
       >
+        <FilterPanel activeCount={(buildingFilter != null ? 1 : 0) + (typeFilter != null ? 1 : 0) + (instituteFilter != null ? 1 : 0)} persistKey="arare.rooms.filters.open">
+          {institutes.length > 0 && (
+            <SearchableSelect
+              label="Institute"
+              value={instituteFilter}
+              onChange={(v) => { setInstituteFilter(v == null ? null : +v); setBuildingFilter(null) }}
+              options={instituteOptions}
+              placeholder="All institutes"
+              allowClear
+              className="w-72"
+            />
+          )}
+          <SearchableSelect
+            label="Building"
+            value={buildingFilter}
+            onChange={(v) => setBuildingFilter(v == null ? null : +v)}
+            options={bldgOptions}
+            placeholder="All buildings"
+            allowClear
+            className="w-72"
+          />
+          <Select
+            label="Type"
+            value={typeFilter ?? ''}
+            onChange={(e) => setTypeFilter(e.target.value || null)}
+            options={[{ value: '', label: 'All types' }, ...typeOptions]}
+          />
+        </FilterPanel>
         <Table
           columns={columns}
-          data={items}
+          data={filteredItems}
           loading={loading}
           keyExtractor={(r) => r.id}
           searchable
@@ -163,6 +225,10 @@ export default function Rooms() {
           exportFilename="rooms"
           searchKeys={[(r) => r.roomNumber, (r) => r.buildingName ?? '']}
           onRowContextMenu={getContextItems}
+          selectable={bulk.selectable}
+          onSelectionChange={bulk.onSelectionChange}
+          clearSignal={bulk.clearSignal}
+          densityStorageKey="arare.rooms.density"
         />
       </Card>
 
@@ -230,6 +296,7 @@ export default function Rooms() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmId(null)}
       />
+      {bulk.Dialog}
     </>
   )
 }

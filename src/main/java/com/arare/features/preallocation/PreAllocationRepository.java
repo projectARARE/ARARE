@@ -13,14 +13,18 @@ import java.util.List;
 @Repository
 public interface PreAllocationRepository extends JpaRepository<PreAllocation, Long> {
 
-    // Eagerly fetch every association touched by toResponse to avoid N+1.
+    /**
+     * Eagerly fetch every association touched by toResponse to avoid N+1.
+     */
     @EntityGraph(attributePaths = {"batch", "batch.department", "subject", "teacher", "room", "timeslot"})
     List<PreAllocation> findByScheduleId(Long scheduleId);
 
     List<PreAllocation> findByScheduleIdAndLocked(Long scheduleId, boolean locked);
 
-    // Cascade-purge helpers (pre_allocations rows must be removed before
-    //     their referenced parent rows, which are non-null FKs)
+    /**
+     * Cascade-purge helpers (pre_allocations rows must be removed before
+     * their referenced parent rows, which are non-null FKs)
+     */
 
     @Transactional @Modifying
     @Query("DELETE FROM PreAllocation pa WHERE pa.schedule.id = :scheduleId")

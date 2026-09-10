@@ -109,6 +109,39 @@ public class SolveJobService {
         }
     }
 
+    /**
+     * Re-submits a terminal FAILED / CANCELLED job as a fresh QUEUED job using
+     * its persisted request snapshot (request columns are stored precisely so a
+     * job "can be rebuilt or retried without losing the original intent").
+     * A GENERATE retry re-solves the same schedule in place (reusing its
+     * sessions); a PARTIAL_RESOLVE retry re-applies the same impacted set and
+     * disruption facts.
+     */
+    public SolveJobResponse retry(Long jobId) {
+        SolveJob job = find(jobId);
+        if (job.getStatus() != SolveJobStatus.FAILED && job.getStatus() != SolveJobStatus.CANCELLED) {
+            throw new ResourceConflictException(
+                "Job " + jobId + " is not retryable in status " + job.getStatus()
+                    + " (only FAILED or CANCELLED jobs can be retried)");
+        }
+        SolveJob retry = SolveJob.builder()
+            .jobType(job.getJobType())
+            .scheduleId(job.getScheduleId())
+            .status(SolveJobStatus.QUEUED)
+            .solvingTimeSeconds(job.getSolvingTimeSeconds())
+            .departmentId(job.getDepartmentId())
+            .instituteId(job.getInstituteId())
+            .batchIdsCsv(job.getBatchIdsCsv())
+            .teacherIdsCsv(job.getTeacherIdsCsv())
+            .roomIdsCsv(job.getRoomIdsCsv())
+            .impactedSessionIdsCsv(job.getImpactedSessionIdsCsv())
+            .disruptionFactsCsv(job.getDisruptionFactsCsv())
+            .build();
+        retry = jobRepo.save(retry);
+        scheduleWorkerAfterCommit(retry.getId());
+        return toResponse(retry);
+    }
+
     public SolveJobResponse cancel(Long jobId) {
         SolveJob job = find(jobId);
         if (job.getStatus() == SolveJobStatus.QUEUED || job.getStatus() == SolveJobStatus.RUNNING) {
@@ -128,8 +161,10 @@ public class SolveJobService {
                 null,
                 null);
             if (updated == 0) {
-                // The job left QUEUED/RUNNING between our read and the update
-                // (e.g. the runner just finished). Report it as not cancellable.
+                /**
+                 * The job left QUEUED/RUNNING between our read and the update
+                 * (e.g. the runner just finished). Report it as not cancellable.
+                 */
                 throw new ResourceConflictException(
                     "Job " + jobId + " is not cancellable in status " + job.getStatus());
             }

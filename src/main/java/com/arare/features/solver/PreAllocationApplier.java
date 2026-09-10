@@ -50,9 +50,11 @@ public class PreAllocationApplier {
                         return;
                     }
                     if (pa.getTimeslot() != null) {
-                        // Full pin: pin whatever the pre-allocation carries —
-                        // teacher/room are only overwritten when explicitly set,
-                        // so a slot-only pin never wipes a pre-existing assignment.
+                        /**
+                         * Full pin: pin whatever the pre-allocation carries —
+                         * teacher/room are only overwritten when explicitly set,
+                         * so a slot-only pin never wipes a pre-existing assignment.
+                         */
                         if (pa.getTeacher() != null) {
                             s.setTeacher(pa.getTeacher());
                         }
@@ -62,8 +64,10 @@ public class PreAllocationApplier {
                         s.setTimeslot(pa.getTimeslot());
                         s.setLocked(true);
                     } else if (pa.getTeacher() != null) {
-                        // Partial pin: keep teacher (and optionally room), the
-                        // solver remains free to choose a compatible slot.
+                        /**
+                         * Partial pin: keep teacher (and optionally room), the
+                         * solver remains free to choose a compatible slot.
+                         */
                         s.setTeacher(pa.getTeacher());
                         s.setRoom(pa.getRoom());
                         facts.add(new PreAllocationConstraintFact(

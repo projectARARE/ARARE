@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, CheckCircle, Clock, GitBranch, Plus, Settings, ShieldCheck, Trash2, X, Zap } from 'lucide-react'
-import { Card, Button, Input, Select, SearchableSelect, MultiSelect } from '../components/ui'
-import { scheduleApi, departmentApi, instituteApi, batchApi, teacherApi, roomApi, subjectApi } from '../services/api'
+import { Card, Button, Input, Select, SearchableSelect, MultiSelect, QualifiedTeacherSelect } from '../components/ui'
+import { scheduleApi, solveJobApi, departmentApi, instituteApi, batchApi, teacherApi, roomApi, subjectApi } from '../services/api'
 import { useSolveJobPoll } from '../hooks/useSolveJob'
 import type { ScheduleRequest, ScheduleScope, Department, Batch, Teacher, Room, Schedule, Subject, FeasibilityCheckResult, SolveJobResponse, PreAllocationSpec, Institute } from '../types'
 
@@ -12,7 +12,6 @@ const SCOPE_OPTIONS: { value: ScheduleScope; label: string }[] = [
   { value: 'UNIVERSITY', label: 'University' },
 ]
 
-const TIME_MARKS = [10, 30, 60, 120, 300]
 const WIZARD_STEPS = [
   { id: 1, label: 'Scope Selection', optional: false },
   { id: 2, label: 'Resource Selection', optional: false },
@@ -159,7 +158,7 @@ export default function ScheduleGenerator() {
     if (form.scope === 'DEPARTMENT' && !form.departmentId) {
       setError('Please select a department for department-scoped scheduling'); return
     }
-    if (form.scope === 'INSTITUTE' && institutes.length > 1 && !form.instituteId) {
+    if (form.scope === 'INSTITUTE' && !form.instituteId) {
       setError('Please select an institute for institute-scoped scheduling'); return
     }
     if (builderMode && selectedBatchIds.length === 0) {
@@ -208,8 +207,8 @@ export default function ScheduleGenerator() {
     if (job.status === 'SUCCEEDED') {
       if (job.scheduleId) {
         // Infeasible solves now SUCCEED with the partial result persisted.
-        // Surface that clearly instead of silently dropping the user onto a
-        // read-only INFEASIBLE schedule.
+        // Surface that clearly instead of silently dropping the user onto an
+        // INFEASIBLE schedule with no explanation.
         try {
           const schedule = await scheduleApi.getById(job.scheduleId)
           if (schedule.status === 'INFEASIBLE') {
@@ -226,6 +225,23 @@ export default function ScheduleGenerator() {
       setError(job.errorMessage || 'Solver failed — check the schedule data and try again.')
     } else {
       setError('Generation cancelled.')
+    }
+  }
+
+  // Calls the backend retry endpoint which re-queues the exact same request
+  // snapshot under a fresh job id, then swaps the active job so the progress
+  // panel (re-mounted by key) polls the new job.
+  const handleRetryJob = async () => {
+    const failed = activeJob
+    if (!failed?.id) return
+    setError(null)
+    try {
+      const retried = await solveJobApi.retry(failed.id)
+      setActiveJob(retried)
+      setJobStartedAt(Date.now())
+      setElapsedSeconds(0)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Retry failed')
     }
   }
 
@@ -256,7 +272,11 @@ export default function ScheduleGenerator() {
 
   const canNext =
     wizardStep === 1
-      ? (form.scope !== 'DEPARTMENT' || Boolean(form.departmentId))
+      ? (form.scope === 'DEPARTMENT'
+          ? Boolean(form.departmentId)
+          : form.scope === 'INSTITUTE'
+            ? Boolean(form.instituteId)
+            : true)
       : wizardStep === 2
         ? (!builderMode || selectedBatchIds.length > 0)
         : true
@@ -274,9 +294,12 @@ export default function ScheduleGenerator() {
     <div className="space-y-4">
       {activeJob && (
         <SolveProgress
+          key={activeJob.id ?? 'sync'}
           job={activeJob}
           elapsedSeconds={elapsedSeconds}
+          expectedSessionCount={feasibility?.totalSessionsEstimate}
           onDone={handleJobFinished}
+          onRetry={handleRetryJob}
         />
       )}
 
@@ -333,7 +356,7 @@ export default function ScheduleGenerator() {
                     ...form,
                     scope: nextScope,
                     departmentId: undefined,
-                    instituteId: nextScope === 'INSTITUTE' && institutes.length === 1 ? institutes[0].id : undefined,
+                    instituteId: undefined,
                   }
                   setForm(next)
                   setSelectedBatchIds([])
@@ -573,14 +596,15 @@ export default function ScheduleGenerator() {
                    placeholder="Select subject"
                    allowClear
                  />
-                 <SearchableSelect
-                   label="Teacher (pinned)"
-                   value={draft.teacherId || null}
-                   onChange={(v) => setDraft({ ...draft, teacherId: v == null ? 0 : +v })}
-                   options={allTeachers.map((t) => ({ value: t.id, label: t.name }))}
-                   placeholder="Select teacher"
-                   allowClear
-                 />
+                 <QualifiedTeacherSelect
+                    label="Teacher (pinned)"
+                    teachers={allTeachers}
+                    subjectId={draft.subjectId}
+                    value={draft.teacherId || null}
+                    onChange={(v) => setDraft({ ...draft, teacherId: v == null ? 0 : +v })}
+                    placeholder="Select teacher"
+                    allowClear
+                  />
                  <SearchableSelect
                    label="Room (optional)"
                    value={draft.roomId ?? null}
@@ -700,21 +724,46 @@ export default function ScheduleGenerator() {
                     {timeLabel(form.solvingTimeSeconds ?? 30)}
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min={10}
-                  max={Math.max(300, form.solvingTimeSeconds ?? 300)}
-                  step={10}
-                  value={form.solvingTimeSeconds ?? 30}
-                  onChange={(e) => {
-                    setTimeTouched(true)
-                    setForm({ ...form, solvingTimeSeconds: +e.target.value })
-                  }}
-                  className="w-full accent-cyan-500"
-                />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  {TIME_MARKS.map((m) => <span key={m}>{timeLabel(m)}</span>)}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="number"
+                    min={30}
+                    max={1800}
+                    step={10}
+                    value={form.solvingTimeSeconds ?? 30}
+                    onChange={(e) => {
+                      setTimeTouched(true)
+                      setForm({ ...form, solvingTimeSeconds: Math.max(30, Math.min(1800, +e.target.value || 30)) })
+                    }}
+                    className="block w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <span className="text-xs text-gray-500">seconds</span>
+                  <div className="flex gap-1.5">
+                    {[60, 300, 600, 900].map((sec) => (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => {
+                          setTimeTouched(true)
+                          setForm({ ...form, solvingTimeSeconds: sec })
+                        }}
+                        className={`rounded-md border px-2 py-1 text-xs ${
+                          (form.solvingTimeSeconds ?? 30) === sec
+                            ? 'border-cyan-400 bg-cyan-50 text-cyan-800'
+                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {timeLabel(sec)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {form.solvingTimeSeconds && form.solvingTimeSeconds > 600 && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Regression runs hit 0 hard conflicts around {timeLabel(600)} — more budget polishes
+                    medium/soft penalties but refines slower. Consider starting near the recommendation below.
+                  </p>
+                )}
                 {feasibility?.recommendedSolvingTimeSeconds && (
                   <p className="mt-1 text-xs text-cyan-700">
                     Recommended: {timeLabel(feasibility.recommendedSolvingTimeSeconds)} for
@@ -814,16 +863,41 @@ export default function ScheduleGenerator() {
 function SolveProgress({
   job,
   elapsedSeconds,
+  expectedSessionCount,
   onDone,
+  onRetry,
 }: {
   job: SolveJobResponse
   elapsedSeconds: number
+  expectedSessionCount?: number
   onDone: (job: SolveJobResponse) => void
+  onRetry?: () => void
 }) {
   const { job: freshJob, done, error: pollError, cancel } = useSolveJobPoll(job, onDone)
+  const [retrying, setRetrying] = useState(false)
 
   const cancelled = freshJob.status === 'CANCELLED'
   const failed = freshJob.status === 'FAILED'
+
+  const doRetry = async () => {
+    if (!onRetry) return
+    setRetrying(true)
+    try {
+      await onRetry()
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  // Real progress: Timefold's score string appends "/<N>init" while sessions
+  // remain unassigned. With the expected session count (from the feasibility
+  // estimate) we can render an honest percentage; without it we fall back to
+  // the animated indeterminate bar.
+  const initMatch = freshJob.bestScore?.match(/(\d+)init/)
+  const unassigned = initMatch ? Number(initMatch[1]) : null
+  const progress = expectedSessionCount && expectedSessionCount > 0 && unassigned != null
+    ? Math.max(3, Math.min(100, Math.round(((expectedSessionCount - unassigned) / expectedSessionCount) * 100)))
+    : null
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-2 text-slate-900">
@@ -856,21 +930,38 @@ function SolveProgress({
               Cancel
             </button>
           )}
+          {done && failed && onRetry && (
+            <button
+              type="button"
+              onClick={doRetry}
+              disabled={retrying}
+              className="flex items-center gap-1 rounded-md border border-indigo-300 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+            >
+              {retrying ? 'Re-queuing…' : 'Retry solve'}
+            </button>
+          )}
         </div>
       </div>
-      <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-        <div
-          className={`h-full transition-all duration-700 ${
-            done
-              ? cancelled
-                ? 'bg-slate-400'
-                : failed
-                  ? 'bg-rose-400'
-                  : 'bg-emerald-400'
-              : 'bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-400 animate-pulse'
-          }`}
-          style={{ width: done ? '100%' : '70%' }}
-        />
+      <div className="flex items-center gap-3">
+        <div className="h-2 rounded-full bg-slate-200 overflow-hidden flex-1">
+          <div
+            className={`h-full transition-all duration-700 ${
+              done
+                ? cancelled
+                  ? 'bg-slate-400'
+                  : failed
+                    ? 'bg-rose-400'
+                    : 'bg-emerald-400'
+                : 'bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-400 animate-pulse'
+            }`}
+            style={{ width: progress != null ? `${progress}%` : done ? '100%' : '70%' }}
+          />
+        </div>
+        {progress != null && (
+          <span className="text-xs font-mono text-slate-500 w-9 text-right">
+            {progress}%
+          </span>
+        )}
       </div>
       {done && pollError && (
         <p className="text-xs text-rose-600">{pollError}</p>

@@ -97,6 +97,8 @@ public class SubjectOfferingServiceImpl implements SubjectOfferingService {
             batch = section.getBatch();
         }
 
+        validateDepartmentPairing(subject, batch);
+
         return SubjectOffering.builder()
             .subject(subject)
             .batch(batch)
@@ -104,6 +106,22 @@ public class SubjectOfferingServiceImpl implements SubjectOfferingService {
             .weeklyHours(req.weeklyHours())
             .elective(req.elective())
             .build();
+    }
+
+    /**
+     * Ensures a department-scoped subject is only offered to batches of the
+     * same department. Institute-wide subjects (department == null) may pair
+     * with any batch.
+     */
+    private void validateDepartmentPairing(Subject subject, Batch batch) {
+        if (batch == null) return;
+        if (subject.getDepartment() == null) return;
+        if (batch.getDepartment() == null) return;
+        if (!subject.getDepartment().getId().equals(batch.getDepartment().getId())) {
+            throw new ResourceConflictException(
+                "Subject belongs to department '" + subject.getDepartment().getCode()
+                    + "' but batch belongs to department '" + batch.getDepartment().getCode() + "'");
+        }
     }
 
     private void validateNoDuplicate(SubjectOffering candidate, Long excludedId) {

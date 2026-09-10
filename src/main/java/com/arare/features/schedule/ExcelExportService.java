@@ -27,11 +27,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-// Exports a solved schedule as an Excel workbook. The default ALL view emits one
-// sheet per batch (lab sections grouped under their batch) so a class's full week
-// is visible on a single tab. The TEACHER/BATCH/ROOM views emit a single sheet
-// narrowed to that entity. Streaming POI (SXSSF) keeps memory flat even when the
-// timetable has thousands of sessions.
+/**
+ * Exports a solved schedule as an Excel workbook. The default ALL view emits one
+ * sheet per batch (lab sections grouped under their batch) so a class's full week
+ * is visible on a single tab. The TEACHER/BATCH/ROOM views emit a single sheet
+ * narrowed to that entity. Streaming POI (SXSSF) keeps memory flat even when the
+ * timetable has thousands of sessions.
+ */
 @Service
 @RequiredArgsConstructor
 public class ExcelExportService {
@@ -49,14 +51,18 @@ public class ExcelExportService {
         ALL, TEACHER, BATCH, ROOM
     }
 
-    // Sentinel key for sessions that have no applicable entity in the active
-    // view dimension (e.g. a session with no teacher in a TEACHER split).
+    /**
+     * Sentinel key for sessions that have no applicable entity in the active
+     * view dimension (e.g. a session with no teacher in a TEACHER split).
+     */
     private static final long UNASSIGNED = -1L;
 
-    // The ALL view emits one full timetable on a single sheet. When a
-    // BATCH/TEACHER/ROOM view is selected without a single entity, one sheet is
-    // emitted per entity so each batch (or teacher, or room) gets its own
-    // schedule tab. Selecting a specific entity keeps a single narrowed sheet.
+    /**
+     * The ALL view emits one full timetable on a single sheet. When a
+     * BATCH/TEACHER/ROOM view is selected without a single entity, one sheet is
+     * emitted per entity so each batch (or teacher, or room) gets its own
+     * schedule tab. Selecting a specific entity keeps a single narrowed sheet.
+     */
     @Transactional(readOnly = true)
     public byte[] exportExcel(Long scheduleId, View view, Long entityId) {
         com.arare.features.schedule.Schedule schedule = scheduleRepo.findById(scheduleId)
@@ -120,9 +126,11 @@ public class ExcelExportService {
         }
     }
 
-    // Renders an arbitrary header/row grid as a single-sheet workbook. Used by the
-    // generic "Export Excel" action on every master-data table so each page supports
-    // the same CSV + Excel export without per-page backend wiring.
+    /**
+     * Renders an arbitrary header/row grid as a single-sheet workbook. Used by the
+     * generic "Export Excel" action on every master-data table so each page supports
+     * the same CSV + Excel export without per-page backend wiring.
+     */
     @Transactional(readOnly = true)
     public byte[] exportRows(String sheetName, List<String> headers, List<List<String>> rows) {
         try (XSSFWorkbook template = new XSSFWorkbook();
@@ -249,16 +257,18 @@ public class ExcelExportService {
         return sb.toString();
     }
 
-    // Groups placed sessions into per-entity buckets for the active view so each
-    // batch/teacher/room becomes its own sheet. Buckets are labelled with the
-    // plain entity name (without the "Batch:"/"Teacher:"/"Room:" prefix) so the
-    // sheet tab reads naturally; sessions with no applicable entity fall through
-    // to an "Unassigned" bucket.
-    // Buckets placed sessions by the entity's database id (teacher id, room id,
-    // batch id) so that distinct entities with identical display labels — e.g.
-    // two teachers with the same name, or the same "CSE Yr1-A" in two campuses —
-    // still get their own separate sheet. Sessions with no entity in the active
-    // view fall into a single "Unassigned" sheet.
+    /**
+     * Groups placed sessions into per-entity buckets for the active view so each
+     * batch/teacher/room becomes its own sheet. Buckets are labelled with the
+     * plain entity name (without the "Batch:"/"Teacher:"/"Room:" prefix) so the
+     * sheet tab reads naturally; sessions with no applicable entity fall through
+     * to an "Unassigned" bucket.
+     * Buckets placed sessions by the entity's database id (teacher id, room id,
+     * batch id) so that distinct entities with identical display labels — e.g.
+     * two teachers with the same name, or the same "CSE Yr1-A" in two campuses —
+     * still get their own separate sheet. Sessions with no entity in the active
+     * view fall into a single "Unassigned" sheet.
+     */
     private Map<Long, List<ClassSession>> groupByEntityId(List<ClassSession> sessions, View view) {
         Map<Long, List<ClassSession>> map = new java.util.LinkedHashMap<>();
         for (ClassSession s : sessions) {
@@ -306,11 +316,16 @@ public class ExcelExportService {
         return cleaned.length() > 31 ? cleaned.substring(0, 31) : cleaned;
     }
 
-    // Ensures every created sheet name is unique (case-insensitive collisions can
-    // occur after safeSheetName truncation) by appending -2, -3, ... on conflict.
+    /**
+     * Ensures every created sheet name is unique (case-insensitive collisions can
+     * occur after safeSheetName truncation) by appending -2, -3, ... on conflict.
+     */
     private String uniqueSheetName(Set<String> used, String label) {
         String base = safeSheetName(label);
-        if (base.length() > 26) base = base.substring(0, 26); // leave room for "-NN"
+        /**
+         * leave room for "-NN"
+         */
+        if (base.length() > 26) base = base.substring(0, 26); 
         String candidate = base;
         int i = 2;
         while (!used.add(candidate)) {

@@ -57,9 +57,20 @@ private Timeslot timeslot;
 `TimetableConstraintProvider.defineConstraints` returns 43 constraints in three
 buckets. Overlap between two sessions is computed by
 `overlapsByPlannedDuration` (slot-number based; falls back to start/end time
-comparison when `slotNumber` is null). Most binary clash constraints use
-`forEachUniquePair` with `Joiners.equal` on the resource **and** on
-`timeslot.getDay()`, then an `overlapsByPlannedDuration` filter.
+comparison when `slotNumber` is null). Most binary clash constraints pair each
+unordered session pair via an id-ordered join over `forEachIncludingUnassigned`
+(`Joiners.equal` on the resource **and** on `timeslot.getDay()`, plus
+`Joiners.lessThan(ClassSession::getId)`), then an `overlapsByPlannedDuration`
+filter.
+
+> Why `forEachIncludingUnassigned` and not `forEachUniquePair`? Timefold's
+> `forEachUniquePair` wraps `forEach`, which skips sessions that are missing any
+> planning variable (e.g. `teacher = null`). Overlaps involving such incomplete
+> sessions — typically the very sessions the operator needs the solver to flag —
+> were silently invisible to the score. Replacing it with an explicit
+> id-ordered join ensures every distinct unordered pair participates even when a
+> session is unassigned. The `lessThan(id)` joiner preserves each unordered
+> pair exactly once, matching `forEachUniquePair` semantics.
 
 ### HARD constraints (must never break)
 

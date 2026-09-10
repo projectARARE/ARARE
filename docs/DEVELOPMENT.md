@@ -42,7 +42,7 @@ classes live under `src/test/java/com/arare/`, including:
 ```bash
 export ARARE_DB_URL=jdbc:postgresql://localhost:5432/araredb
 export ARARE_DB_USERNAME=postgres
-export ARARE_DB_PASSWORD=*****        # required — no default
+export ARARE_DB_PASSWORD=*****        # optional — defaults to 123456 for local dev; override for real use
 # optional:
 export ARARE_CORS_ORIGINS=http://localhost:5173
 export ARARE_FLYWAY_AUTO_CREATE_DB=true   # only for ephemeral/dev DB auto-create
@@ -58,7 +58,7 @@ The backend listens on **port 8080**.
 | --- | --- | --- | --- |
 | `ARARE_DB_URL` | `jdbc:postgresql://localhost:5432/araredb` | no (but DB must exist) | JDBC URL |
 | `ARARE_DB_USERNAME` | `postgres` | no | DB user |
-| `ARARE_DB_PASSWORD` | — | **yes** | DB password (default 123456 � dev only) |
+| `ARARE_DB_PASSWORD` | — | no (override for real use) | DB password (default `123456`, dev only) |
 | `ARARE_CORS_ORIGINS` | `http://localhost:5173` | no | Comma-separated allowed origins for `/api/**` |
 | `ARARE_FLYWAY_AUTO_CREATE_DB` | `false` | no | If `true`, creates the target DB on the `postgres` maintenance DB at startup (dev only) |
 

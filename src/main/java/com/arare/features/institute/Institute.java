@@ -7,10 +7,12 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
-// A constituent institute/college within the university. Most deployments
-// have exactly one; universities with multiple constituent institutes each
-// get their own institute row with independent departments, while sharing
-// the parent university's term calendar.
+/**
+ * A constituent institute/college within the university. Most deployments
+ * have exactly one; universities with multiple constituent institutes each
+ * get their own institute row with independent departments, while sharing
+ * the parent university's term calendar.
+ */
 @Entity
 @Table(name = "institutes")
 @Getter

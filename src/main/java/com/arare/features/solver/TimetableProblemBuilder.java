@@ -41,11 +41,13 @@ public class TimetableProblemBuilder {
             parentLockedSessionApplier.apply(request.schedule(), sessions, parentLocked);
         }
 
-        // Locked pre-allocations: a timeslot-less pre-allocation pins teacher
-        // (and optionally room) while leaving the slot to the solver. Sessions
-        // in the impacted set are exempt: a disruption that targets a
-        // pre-allocated session (e.g. teacher unavailable) must be allowed to
-        // move it, otherwise the repair is unsolvable by construction.
+        /**
+         * Locked pre-allocations: a timeslot-less pre-allocation pins teacher
+         * (and optionally room) while leaving the slot to the solver. Sessions
+         * in the impacted set are exempt: a disruption that targets a
+         * pre-allocated session (e.g. teacher unavailable) must be allowed to
+         * move it, otherwise the repair is unsolvable by construction.
+         */
         List<Long> impacted = request.impactedSessionIds();
         List<PreAllocationConstraintFact> preAllocationFacts = preAllocationApplier.apply(
             sessions,
@@ -56,11 +58,13 @@ public class TimetableProblemBuilder {
         if (impacted != null) {
             sessions.forEach(s -> {
                 if (impacted.contains(s.getId())) {
-                    // Impacted sessions MUST be movable in this re-solve. A
-                    // prior partial resolve persists solver-induced locks, so a
-                    // session that was stable last time can arrive already
-                    // locked; leaving it pinned would make the re-solve
-                    // impossible whenever the new disruption fact targets it.
+                    /**
+                     * Impacted sessions MUST be movable in this re-solve. A
+                     * prior partial resolve persists solver-induced locks, so a
+                     * session that was stable last time can arrive already
+                     * locked; leaving it pinned would make the re-solve
+                     * impossible whenever the new disruption fact targets it.
+                     */
                     s.setLocked(false);
                 } else {
                     s.setLocked(true);
@@ -115,7 +119,9 @@ public class TimetableProblemBuilder {
             return existing;
         }
         if (!generateIfMissing) {
-            // Read-only explain path: never persist generated sessions.
+            /**
+             * Read-only explain path: never persist generated sessions.
+             */
             return List.of();
         }
 

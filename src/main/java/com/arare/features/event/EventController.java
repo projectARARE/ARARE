@@ -37,8 +37,10 @@ public class EventController {
         return ResponseEntity.ok(service.findAll());
     }
 
-// Applies the event to an active schedule (finds impacted sessions,
-// triggers asynchronous partial re-optimization).
+/**
+ * Applies the event to an active schedule (finds impacted sessions,
+ * triggers asynchronous partial re-optimization).
+ */
     @PostMapping("/{eventId}/apply/{scheduleId}")
     public ResponseEntity<SolveJobResponse> applyToSchedule(@PathVariable Long eventId,
                                                 @PathVariable Long scheduleId) {

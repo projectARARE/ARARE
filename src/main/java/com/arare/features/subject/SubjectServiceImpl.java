@@ -1,5 +1,6 @@
 package com.arare.features.subject;
 
+import com.arare.exception.DuplicateResourceException;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
@@ -25,6 +26,7 @@ private final CascadeDeletionService cascadeDeletionService;
     @Transactional
     public SubjectResponse create(SubjectRequest req) {
         Department dept = resolveDepartment(req.departmentId());
+        validateSubjectUniqueness(null, req.code(), dept);
 
         Subject s = Subject.builder()
             .name(req.name())
@@ -48,6 +50,7 @@ private final CascadeDeletionService cascadeDeletionService;
     public SubjectResponse update(Long id, SubjectRequest req) {
         Subject s = findEntity(id);
         Department dept = resolveDepartment(req.departmentId());
+        validateSubjectUniqueness(id, req.code(), dept);
 
         s.setName(req.name());
         s.setCode(req.code());
@@ -85,7 +88,10 @@ private final CascadeDeletionService cascadeDeletionService;
         findEntity(id);
         sessionRepo.deleteBySubjectId(id);
         cascadeDeletionService.purgePreAllocationsForSubject(id);
-        repo.removeTeacherAssociations(id);  // Clean up teacher_subjects join table
+        /**
+         * Clean up teacher_subjects join table
+         */
+        repo.removeTeacherAssociations(id);  
         repo.deleteById(id);
     }
 
@@ -93,14 +99,43 @@ private final CascadeDeletionService cascadeDeletionService;
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Subject", id));
     }
 
-    // A null departmentId creates an institute-wide subject (no owning
-    // department), offered to specific batches via SubjectOffering.
+    /**
+     * A null departmentId creates an institute-wide subject (no owning
+     * department), offered to specific batches via SubjectOffering.
+     */
     private Department resolveDepartment(Long departmentId) {
         if (departmentId == null) {
             return null;
         }
         return departmentRepo.findById(departmentId)
             .orElseThrow(() -> new ResourceNotFoundException("Department", departmentId));
+    }
+
+    /**
+     * Validates subject code uniqueness: within a department when department is
+     * set, or globally among institute-wide subjects when department is null.
+     */
+    private void validateSubjectUniqueness(Long existingId, String code, Department dept) {
+        if (code == null || code.isBlank()) {
+            return;
+        }
+        if (dept != null) {
+            boolean exists = existingId == null
+                ? repo.existsByDepartmentIdAndCode(dept.getId(), code)
+                : repo.existsByDepartmentIdAndCodeAndIdNot(dept.getId(), code, existingId);
+            if (exists) {
+                throw new DuplicateResourceException(
+                    "Subject with code '" + code + "' already exists in department '" + dept.getName() + "'");
+            }
+        } else {
+            boolean exists = existingId == null
+                ? repo.existsByCodeAndDepartmentIsNull(code)
+                : repo.existsByCodeAndDepartmentIsNullAndIdNot(code, existingId);
+            if (exists) {
+                throw new DuplicateResourceException(
+                    "Institute-wide subject with code '" + code + "' already exists");
+            }
+        }
     }
 
     private SubjectResponse toResponse(Subject s) {

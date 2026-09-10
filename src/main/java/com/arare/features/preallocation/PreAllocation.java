@@ -10,12 +10,14 @@ import com.arare.features.timeslot.Timeslot;
 import jakarta.persistence.*;
 import lombok.*;
 
-// A manually fixed (pre-allocated) assignment that the solver must honour.
-// <p>Before the solver runs, SolverService iterates all PreAllocations,
-// finds the corresponding {@link com.arare.features.classsession.ClassSession},
-// sets its teacher/room/timeslot fields, and marks it as {@code isLocked = true}.</p>
-// <p>Example use case:<br>
-// "Prof. Sharma MUST teach DSA for CSE-2A on Monday at 9:00 AM in Room 101."</p>
+/**
+ * A manually fixed (pre-allocated) assignment that the solver must honour.
+ * <p>Before the solver runs, SolverService iterates all PreAllocations,
+ * finds the corresponding {@link com.arare.features.classsession.ClassSession},
+ * sets its teacher/room/timeslot fields, and marks it as {@code isLocked = true}.</p>
+ * <p>Example use case:<br>
+ * "Prof. Sharma MUST teach DSA for CSE-2A on Monday at 9:00 AM in Room 101."</p>
+ */
 @Entity
 @Table(
     name = "pre_allocations",
@@ -40,24 +42,32 @@ public class PreAllocation extends BaseEntity {
     @JoinColumn(name = "subject_id", nullable = false)
     private Subject subject;
 
-    // Fixed teacher; null if subject does not require one. 
+    /**
+     * Fixed teacher; null if subject does not require one.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "teacher_id")
     private Teacher teacher;
 
-    // Fixed room; null if subject does not require one. 
+    /**
+     * Fixed room; null if subject does not require one.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "room_id")
     private Room room;
 
-    // Fixed timeslot; null when only the teacher (and optionally the room) is
-    // pinned and the solver is free to pick a compatible slot.
+    /**
+     * Fixed timeslot; null when only the teacher (and optionally the room) is
+     * pinned and the solver is free to pick a compatible slot.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "timeslot_id")
     private Timeslot timeslot;
 
-// When true, the solver cannot override this assignment.
-// When false, the allocation is treated as a strong preference (soft/medium constraint).
+/**
+ * When true, the solver cannot override this assignment.
+ * When false, the allocation is treated as a strong preference (soft/medium constraint).
+ */
     @Column(nullable = false)
     @Builder.Default
     private boolean locked = true;

@@ -33,9 +33,11 @@ public class StandardSessionGenerator implements SessionGenerator {
     ) {
         List<ClassSession> generated = new ArrayList<>();
 
-        // Preload offerings for the batches/sections in scope so curriculum
-        // scoping and per-offering weeklyHours overrides are honoured without
-        // a query per (batch, subject) pair.
+        /**
+         * Preload offerings for the batches/sections in scope so curriculum
+         * scoping and per-offering weeklyHours overrides are honoured without
+         * a query per (batch, subject) pair.
+         */
         List<Long> batchIds = batches.stream().map(Batch::getId).toList();
         List<Long> sectionIds = sections.stream().map(ClassSection::getId).toList();
         Map<Long, List<SubjectOffering>> batchOfferings = indexOfferings(
@@ -49,17 +51,21 @@ public class StandardSessionGenerator implements SessionGenerator {
 
         for (Batch batch : batches) {
             for (Subject subject : subjectsByChunkFirst) {
-                // Institute-wide subjects (no owning department) are offered to
-                // every batch; otherwise the subject must belong to the batch's
-                // department.
+                /**
+                 * Institute-wide subjects (no owning department) are offered to
+                 * every batch; otherwise the subject must belong to the batch's
+                 * department.
+                 */
                 if (subject.getDepartment() != null
                     && !subject.getDepartment().getId().equals(batch.getDepartment().getId())) {
                     continue;
                 }
-                // Curriculum scoping: an explicit offering list wins; otherwise
-                // a batch that declares its own legacy curriculum only generates
-                // sessions for the subjects it actually offers. Empty curriculum
-                // = inherit everything the department offers.
+                /**
+                 * Curriculum scoping: an explicit offering list wins; otherwise
+                 * a batch that declares its own legacy curriculum only generates
+                 * sessions for the subjects it actually offers. Empty curriculum
+                 * = inherit everything the department offers.
+                 */
                 if (!batchTakesSubject(batch, subject, batchOfferings)) {
                     continue;
                 }
@@ -138,10 +144,12 @@ public class StandardSessionGenerator implements SessionGenerator {
         }
 
         if (!canRunBySections) {
-            // No lab room can accommodate the whole batch nor any per-section
-            // split, so any generated whole-batch lab session would be
-            // permanently room-capacity-infeasible. Skip emitting it rather than
-            // producing a known-infeasible session.
+            /**
+             * No lab room can accommodate the whole batch nor any per-section
+             * split, so any generated whole-batch lab session would be
+             * permanently room-capacity-infeasible. Skip emitting it rather than
+             * producing a known-infeasible session.
+             */
             return;
         }
 
@@ -175,9 +183,11 @@ public class StandardSessionGenerator implements SessionGenerator {
             .build();
     }
 
-    // Curriculum fallback chain: explicit SubjectOffering list -> section
-    // curriculum -> batch curriculum -> department-offered (all subjects).
-    // Empty curriculum means "inherit".
+    /**
+     * Curriculum fallback chain: explicit SubjectOffering list -> section
+     * curriculum -> batch curriculum -> department-offered (all subjects).
+     * Empty curriculum means "inherit".
+     */
     private boolean batchTakesSubject(Batch batch, Subject subject,
                                       Map<Long, List<SubjectOffering>> batchOfferings) {
         List<SubjectOffering> offerings = batchOfferings.get(batch.getId());
@@ -200,8 +210,10 @@ public class StandardSessionGenerator implements SessionGenerator {
             || curriculum.stream().anyMatch(s -> s.getId().equals(subject.getId()));
     }
 
-    // Per-offering weeklyHours override (null = catalogue weeklyHours). Only
-    // consulted when the batch has explicit offerings.
+    /**
+     * Per-offering weeklyHours override (null = catalogue weeklyHours). Only
+     * consulted when the batch has explicit offerings.
+     */
     private int effectiveWeeklyHours(Batch batch, Subject subject,
                                      Map<Long, List<SubjectOffering>> batchOfferings) {
         List<SubjectOffering> offerings = batchOfferings.get(batch.getId());

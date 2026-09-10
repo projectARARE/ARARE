@@ -17,23 +17,25 @@ import lombok.*;
 
 import java.util.List;
 
-// The core planning entity for the timetable scheduler.
-// <p>Each ClassSession represents one teaching slot that the solver must
-// assign a {@link Teacher}, {@link Room}, and {@link Timeslot} to.</p>
-// <p>Planning variables ({@code teacher}, {@code room}, {@code timeslot}) start
-// as {@code null} and are filled in by the Timefold solver. Their value ranges
-// are provided by the {@link com.arare.features.solver.TimetableSolution}.</p>
-// <p>When {@code isLocked == true} the session already has a
-// {@link com.arare.features.preallocation.PreAllocation} assignment and
-// the solver must not change it. This is enforced via
-// {@code @PlanningPin} or by filtering the value range to a single value.</p>
-// <hr>
-// <b>Session generation logic (handled by SolverService before invoking solver):</b>
-// <pre>
-// sessionsNeeded = subject.weeklyHours / subject.chunkHours
-// if (subject.isLab) → one ClassSession per ClassSection
-// else               → one ClassSession per Batch
-// </pre>
+/**
+ * The core planning entity for the timetable scheduler.
+ * <p>Each ClassSession represents one teaching slot that the solver must
+ * assign a {@link Teacher}, {@link Room}, and {@link Timeslot} to.</p>
+ * <p>Planning variables ({@code teacher}, {@code room}, {@code timeslot}) start
+ * as {@code null} and are filled in by the Timefold solver. Their value ranges
+ * are provided by the {@link com.arare.features.solver.TimetableSolution}.</p>
+ * <p>When {@code isLocked == true} the session already has a
+ * {@link com.arare.features.preallocation.PreAllocation} assignment and
+ * the solver must not change it. This is enforced via
+ * {@code @PlanningPin} or by filtering the value range to a single value.</p>
+ * <hr>
+ * <b>Session generation logic (handled by SolverService before invoking solver):</b>
+ * <pre>
+ * sessionsNeeded = subject.weeklyHours / subject.chunkHours
+ * if (subject.isLab) → one ClassSession per ClassSection
+ * else               → one ClassSession per Batch
+ * </pre>
+ */
 @Entity
 @Table(name = "class_sessions")
 @PlanningEntity
@@ -45,8 +47,10 @@ import java.util.List;
 @Builder
 public class ClassSession {
 
-// Using @PlanningId instead of inheriting BaseEntity to avoid
-// Timefold serialisation incompatibilities with @MappedSuperclass auditing.
+/**
+ * Using @PlanningId instead of inheriting BaseEntity to avoid
+ * Timefold serialisation incompatibilities with @MappedSuperclass auditing.
+ */
     @PlanningId
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -56,14 +60,18 @@ public class ClassSession {
     @JoinColumn(name = "subject_id", nullable = false)
     private Subject subject;
 
-// The batch this session belongs to.
-// Null when this session is for a specific {@link ClassSection} (lab split).
+/**
+ * The batch this session belongs to.
+ * Null when this session is for a specific {@link ClassSection} (lab split).
+ */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "batch_id")
     private Batch batch;
 
-// Non-null only for lab sessions where the batch is split into sections.
-// The solver checks {@code section.size} against room capacity.
+/**
+ * Non-null only for lab sessions where the batch is split into sections.
+ * The solver checks {@code section.size} against room capacity.
+ */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "section_id")
     private ClassSection section;
@@ -72,50 +80,64 @@ public class ClassSession {
     @JoinColumn(name = "schedule_id", nullable = false)
     private Schedule schedule;
 
-    // Duration of this session in slot units (copied from {@code subject.chunkHours}). 
+    /**
+     * Duration of this session in slot units (copied from {@code subject.chunkHours}).
+     */
     @Min(1)
     @Column(nullable = false)
     @Builder.Default
     private int duration = 1;
 
-// When true, Timefold will NOT modify this session's planning variables.
-// Pre-allocated sessions and sessions outside the partial re-solve scope are pinned.
+/**
+ * When true, Timefold will NOT modify this session's planning variables.
+ * Pre-allocated sessions and sessions outside the partial re-solve scope are pinned.
+ */
     @PlanningPin
     @Column(nullable = false)
     @Builder.Default
     private boolean isLocked = false;
 
 
-// Assigned teacher. {@code allowsUnassigned = true}: null when
-// {@code subject.requiresTeacher == false} (self-study, project, seminar).
+/**
+ * Assigned teacher. {@code allowsUnassigned = true}: null when
+ * {@code subject.requiresTeacher == false} (self-study, project, seminar).
+ */
     @PlanningVariable(allowsUnassigned = true, valueRangeProviderRefs = {"teacherRange"})
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "teacher_id")
     private Teacher teacher;
 
-// Assigned room. {@code allowsUnassigned = true}: null when
-// {@code subject.requiresRoom == false} (field work, off-campus activity).
+/**
+ * Assigned room. {@code allowsUnassigned = true}: null when
+ * {@code subject.requiresRoom == false} (field work, off-campus activity).
+ */
     @PlanningVariable(allowsUnassigned = true, valueRangeProviderRefs = {"roomRange"})
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "room_id")
     private Room room;
 
-    // Assigned timeslot. Always required. 
+    /**
+     * Assigned timeslot. Always required.
+     */
     @PlanningVariable(valueRangeProviderRefs = {"timeslotRange"})
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "timeslot_id")
     private Timeslot timeslot;
 
-    // Teacher term-allotment gate, populated by TimetableProblemBuilder from
-    // TeacherAssignment facts. null/empty = no allotment for this class, the
-    // solver may use any qualified teacher. Non-empty = the HARD
-    // teacherNotAssignedToClass constraint may only assign these teacher ids.
-    // Not persisted; it is derived per problem build, never stored on a row.
+    /**
+     * Teacher term-allotment gate, populated by TimetableProblemBuilder from
+     * TeacherAssignment facts. null/empty = no allotment for this class, the
+     * solver may use any qualified teacher. Non-empty = the HARD
+     * teacherNotAssignedToClass constraint may only assign these teacher ids.
+     * Not persisted; it is derived per problem build, never stored on a row.
+     */
     @Transient
     private List<Long> allowedTeacherIds;
 
 
-    // Returns the student count relevant for room capacity checking. 
+    /**
+     * Returns the student count relevant for room capacity checking.
+     */
     @Transient
     public int getEffectiveStudentCount() {
         if (section != null) return section.getSize();
@@ -123,10 +145,12 @@ public class ClassSession {
         return 0;
     }
 
-    // Returns the batch this session belongs to, resolving the lab-split
-    // case where the session points at a ClassSection rather than a Batch
-    // directly. Centralising this here keeps the solver/impact/pre-allocation
-    // code (and their tests) on one definition instead of re-deriving it.
+    /**
+     * Returns the batch this session belongs to, resolving the lab-split
+     * case where the session points at a ClassSection rather than a Batch
+     * directly. Centralising this here keeps the solver/impact/pre-allocation
+     * code (and their tests) on one definition instead of re-deriving it.
+     */
     @Transient
     public Batch getEffectiveBatch() {
         if (batch != null) return batch;

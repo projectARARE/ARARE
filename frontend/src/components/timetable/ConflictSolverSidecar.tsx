@@ -1,5 +1,5 @@
 import { Lightbulb, AlertTriangle } from 'lucide-react'
-import type { ClassSession, Timeslot } from '../../types'
+import type { ClassSession, Timeslot, Teacher, Room, Subject, Batch, ClassSection } from '../../types'
 
 interface SuggestedFix {
   timeslotId: number
@@ -65,11 +65,49 @@ export default function ConflictSolverSidecar({
   )
 }
 
-export function buildConflictSuggestions(session: ClassSession, timeslots: Timeslot[], sessions: ClassSession[]) {
+export function buildConflictSuggestions(
+  session: ClassSession,
+  timeslots: Timeslot[],
+  sessions: ClassSession[],
+  refs?: {
+    teachers?: Teacher[]
+    rooms?: Room[]
+    subjects?: Subject[]
+    batches?: Batch[]
+    sections?: ClassSection[]
+  },
+) {
   const classSlots = timeslots.filter((t) => t.type === 'CLASS')
+
+  const teacher = refs?.teachers?.find((t) => t.id === session.teacherId)
+  const room = refs?.rooms?.find((r) => r.id === session.roomId)
+  const subject = refs?.subjects?.find((s) => s.id === session.subjectId)
+  const batch = refs?.batches?.find((b) => b.id === session.batchId)
+  const section = refs?.sections?.find((s) => s.id === session.sectionId)
+
+  // Effective student count mirrors the solver (section overrides batch).
+  const studentCount = session.sectionId
+    ? (section?.size ?? 0)
+    : (batch?.studentCount ?? 0)
+
   const candidates = classSlots
     .filter((slot) => slot.id !== session.timeslotId)
     .map((slot) => {
+      // Value-range filters the solver would apply (availability, room
+      // suitability, capacity) — a candidate violating any of these can never
+      // be a legal move, so it is excluded rather than merely penalised.
+      if (teacher && teacher.availableTimeslotIds.length > 0 && !teacher.availableTimeslotIds.includes(slot.id)) {
+        return null
+      }
+      if (room && room.availableTimeslotIds.length > 0 && !room.availableTimeslotIds.includes(slot.id)) {
+        return null
+      }
+      if (room && subject) {
+        if (subject.roomTypeRequired && room.type !== subject.roomTypeRequired) return null
+        if (subject.labSubtypeRequired && room.labSubtype !== subject.labSubtypeRequired) return null
+      }
+      if (room && studentCount > 0 && room.capacity < studentCount) return null
+
       let hard = 0
       let soft = 0
       for (const other of sessions) {
@@ -89,12 +127,20 @@ export function buildConflictSuggestions(session: ClassSession, timeslots: Times
       return {
         timeslotId: slot.id,
         label: `${slot.day} ${slot.startTime}-${slot.endTime}`,
-        preview: hard > 0 ? `${hard} hard conflict(s) remain` : `No hard conflicts, ${soft} soft issue(s)` ,
+        preview:
+          hard > 0
+            ? `${hard} hard conflict(s) remain`
+            : teacher && teacher.availableTimeslotIds.length > 0
+              ? `Teacher available · ${soft > 0 ? `${soft} soft issue(s)` : 'no soft issues'}`
+              : hard === 0 && soft === 0
+                ? 'Best move — no conflicts'
+                : `No hard conflicts, ${soft} soft issue(s)`,
         scoreHint: hard > 0 ? `HARD +${hard}` : soft > 0 ? `Soft +${soft}` : 'Best move',
         hard,
         soft,
       }
     })
+    .filter((c): c is NonNullable<typeof c> => c !== null)
     .sort((a, b) => {
       if (a.hard !== b.hard) return a.hard - b.hard
       return a.soft - b.soft

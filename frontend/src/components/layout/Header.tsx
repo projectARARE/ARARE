@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom'
-import { Search, Settings } from 'lucide-react'
+import { Search, Settings, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 
 const titles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -26,7 +26,13 @@ const titles: Record<string, string> = {
   '/import/csv': 'Import & Export',
 }
 
-export default function Header() {
+export default function Header({
+  sidebarCollapsed = false,
+  onToggleSidebar,
+}: {
+  sidebarCollapsed?: boolean
+  onToggleSidebar?: () => void
+}) {
   const { pathname } = useLocation()
   const title =
     titles[pathname] ??
@@ -37,7 +43,20 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-10 bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
-      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+      <div className="flex items-center gap-3">
+        {onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            title={sidebarCollapsed ? 'Show sidebar (Ctrl+\\)' : 'Hide sidebar (Ctrl+\\)'}
+            className="rounded-lg border border-gray-200 bg-gray-50 p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+          </button>
+        )}
+        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+      </div>
       <div className="flex items-center gap-2">
         <button
           type="button"

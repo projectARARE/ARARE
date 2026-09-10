@@ -4,6 +4,8 @@ import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.building.BuildingRepository;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.institute.Institute;
+import com.arare.features.institute.InstituteRepository;
 import com.arare.features.subject.SubjectRepository;
 import com.arare.features.timeslot.TimeslotRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class TeacherServiceImpl implements TeacherService {
     private final BuildingRepository buildingRepo;
     private final ClassSessionRepository sessionRepo;
     private final CascadeDeletionService cascadeDeletionService;
+    private final InstituteRepository instituteRepo;
 
     @Override
     @Transactional
@@ -38,6 +41,7 @@ public class TeacherServiceImpl implements TeacherService {
             .maxConsecutiveClasses(req.maxConsecutiveClasses())
             .movementPenalty(req.movementPenalty())
             .preferredFreeDay(req.preferredFreeDay())
+            .institute(resolveInstitute(req.instituteId(), null))
             .build();
         return toResponse(repo.save(t));
     }
@@ -57,8 +61,19 @@ public class TeacherServiceImpl implements TeacherService {
         t.setMovementPenalty(req.movementPenalty());
         t.setPreferredFreeDay(req.preferredFreeDay());
 
-        // The subject mappings are a managed @ManyToMany collection on Teacher,
-        // so Hibernate persists the join-table changes on save/flush.
+        /**
+         * Explicit instituteId always wins; otherwise keep an existing
+         * institute or fall back to the single institute when there is none.
+         */
+        Institute inst = resolveInstitute(req.instituteId(), t);
+        if (inst != t.getInstitute()) {
+            t.setInstitute(inst);
+        }
+
+        /**
+         * The subject mappings are a managed @ManyToMany collection on Teacher,
+         * so Hibernate persists the join-table changes on save/flush.
+         */
 
         return toResponse(repo.save(t));
     }
@@ -75,7 +90,10 @@ public class TeacherServiceImpl implements TeacherService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
-        sessionRepo.clearTeacherById(id);   // Unassign from schedules, keep sessions
+        /**
+         * Unassign from schedules, keep sessions
+         */
+        sessionRepo.clearTeacherById(id);   
         cascadeDeletionService.purgePreAllocationsForTeacher(id);
         cascadeDeletionService.detachTeacherFromEvents(id);
         repo.deleteById(id);
@@ -85,8 +103,10 @@ public class TeacherServiceImpl implements TeacherService {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Teacher", id));
     }
 
-    // Resolves every requested ID to its entity, failing with a 400-level
-    // validation error instead of silently dropping unknown IDs.
+    /**
+     * Resolves every requested ID to its entity, failing with a 400-level
+     * validation error instead of silently dropping unknown IDs.
+     */
     private <T> List<T> resolveAll(org.springframework.data.jpa.repository.JpaRepository<T, Long> repo, List<Long> ids, String type) {
         if (ids == null) return List.of();
         List<T> found = repo.findAllById(ids);
@@ -94,6 +114,28 @@ public class TeacherServiceImpl implements TeacherService {
             throw new IllegalArgumentException("One or more " + type + " ids do not exist: " + ids);
         }
         return found;
+    }
+
+    /**
+     * Resolves the institute for a teacher. An explicit instituteId always
+     * wins. When it is absent and the teacher has no institute yet, fall back
+     * to the single institute if exactly one exists; otherwise (none or
+     * multiple institutes) the teacher stays global (null). Never throws just
+     * because instituteId is absent.
+     */
+    private Institute resolveInstitute(Long instituteId, Teacher teacher) {
+        if (instituteId != null) {
+            return instituteRepo.findById(instituteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Institute", instituteId));
+        }
+        if (teacher != null && teacher.getInstitute() != null) {
+            return teacher.getInstitute();
+        }
+        List<Institute> all = instituteRepo.findAllByOrderByNameAsc();
+        if (all.size() == 1) {
+            return all.get(0);
+        }
+        return null;
     }
 
     private TeacherResponse toResponse(Teacher t) {
@@ -106,7 +148,8 @@ public class TeacherServiceImpl implements TeacherService {
             subjectIds, subjectNames,
             availableTimeslotIds, preferredBuildingIds,
             t.getMaxDailyHours(), t.getMaxWeeklyHours(), t.getMaxConsecutiveClasses(),
-            t.getMovementPenalty(), t.getPreferredFreeDay()
+            t.getMovementPenalty(), t.getPreferredFreeDay(),
+            t.getInstitute() != null ? t.getInstitute().getId() : null
         );
     }
 }

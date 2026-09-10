@@ -5,6 +5,8 @@ import com.arare.exception.ResourceNotFoundException;
 import com.arare.features.batch.BatchRepository;
 import com.arare.features.cascadedeletion.CascadeDeletionService;
 import com.arare.features.classsession.ClassSessionRepository;
+import com.arare.features.institute.Institute;
+import com.arare.features.institute.InstituteRepository;
 import com.arare.features.room.Room;
 import com.arare.features.room.RoomRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class BuildingServiceImpl implements BuildingService {
     private final ClassSessionRepository sessionRepo;
     private final BatchRepository batchRepo;
     private final CascadeDeletionService cascadeDeletionService;
+    private final InstituteRepository instituteRepo;
 
     @Override
     @Transactional
@@ -33,6 +36,7 @@ public class BuildingServiceImpl implements BuildingService {
         Building b = Building.builder()
             .name(req.name())
             .location(req.location())
+            .institute(resolveInstitute(req.instituteId()))
             .build();
         return toResponse(repo.save(b));
     }
@@ -43,6 +47,9 @@ public class BuildingServiceImpl implements BuildingService {
         Building b = findEntity(id);
         b.setName(req.name());
         b.setLocation(req.location());
+        if (req.instituteId() != null) {
+            b.setInstitute(resolveInstitute(req.instituteId()));
+        }
         return toResponse(repo.save(b));
     }
 
@@ -60,22 +67,15 @@ public class BuildingServiceImpl implements BuildingService {
     @Transactional
     public void delete(Long id) {
         findEntity(id);
-        // 0. Null out Batch.homeRoom FKs that point at this building's rooms
-        //    (plain @ManyToOne with no cascade/@OnDelete) before deleting rooms.
         batchRepo.clearHomeRoomByBuildingId(id);
-        // 1. Unassign any rooms in this building from scheduled sessions
         sessionRepo.clearRoomsByBuildingId(id);
-        // 2. Purge pre-allocations and event rows referencing rooms in this building,
-        //    then delete the rooms (Hibernate cleans up room_availability per room)
         for (Room room : roomRepo.findByBuildingId(id)) {
             cascadeDeletionService.purgePreAllocationsForRoom(room.getId());
             cascadeDeletionService.detachRoomFromEvents(room.getId());
         }
         roomRepo.deleteAll(roomRepo.findByBuildingId(id));
-        // 3. Remove building from join tables (department_buildings, teacher_preferred_buildings)
         repo.removeDepartmentAssociations(id);
         repo.removeTeacherAssociations(id);
-        // 4. Delete the building itself
         repo.deleteById(id);
     }
 
@@ -84,7 +84,24 @@ public class BuildingServiceImpl implements BuildingService {
             .orElseThrow(() -> new ResourceNotFoundException("Building", id));
     }
 
+    /**
+     * Resolves the institute for a building. If an explicit instituteId is
+     * provided it is used; otherwise exactly one institute must exist.
+     */
+    Institute resolveInstitute(Long instituteId) {
+        if (instituteId != null) {
+            return instituteRepo.findById(instituteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Institute", instituteId));
+        }
+        List<Institute> all = instituteRepo.findAll();
+        if (all.size() == 1) {
+            return all.get(0);
+        }
+        throw new IllegalArgumentException("instituteId is required when more than one institute exists");
+    }
+
     private BuildingResponse toResponse(Building b) {
-        return new BuildingResponse(b.getId(), b.getName(), b.getLocation());
+        return new BuildingResponse(b.getId(), b.getName(), b.getLocation(),
+            b.getInstitute() != null ? b.getInstitute().getId() : null);
     }
 }

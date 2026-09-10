@@ -10,6 +10,7 @@ import com.arare.features.solvejob.SolveJobResponse;
 import com.arare.features.solvejob.SolveJobService;
 import com.arare.features.solvejob.SolveJobStatus;
 import com.arare.features.solvejob.SolveJobType;
+import com.arare.features.solver.ScoreExplanationResponse;
 import com.arare.features.solver.TimetableSolverService;
 import com.arare.features.timeslot.TimeslotRepository;
 import org.junit.jupiter.api.Test;
@@ -231,7 +232,7 @@ class ScheduleServiceImplTest {
         draft.setScore(null);
         when(repo.findById(5L)).thenReturn(Optional.of(draft));
 
-        assertThrows(IllegalStateException.class, () -> service.activate(5L));
+        assertThrows(com.arare.exception.ResourceConflictException.class, () -> service.activate(5L));
         verify(repo, never()).save(any());
     }
 
@@ -241,7 +242,7 @@ class ScheduleServiceImplTest {
         archived.setStatus(com.arare.common.enums.ScheduleStatus.ARCHIVED);
         when(repo.findById(5L)).thenReturn(Optional.of(archived));
 
-        assertThrows(IllegalStateException.class, () -> service.activate(5L));
+        assertThrows(com.arare.exception.ResourceConflictException.class, () -> service.activate(5L));
     }
 
     @Test
@@ -272,15 +273,103 @@ class ScheduleServiceImplTest {
         verify(repo).save(active);
     }
 
+    // -- revalidate(): re-scores current sessions; INFEASIBLE -> DRAFT when hard = 0 --
+
     @Test
-    void archive_isIdempotentWhenAlreadyArchived() {
-        Schedule archived = existingSchedule(5L);
+    void revalidate_infeasibleFlipsToDraftWhenHardCleared() {
+        Schedule infeasible = existingSchedule(5L);
+        infeasible.setStatus(com.arare.common.enums.ScheduleStatus.INFEASIBLE);
+        infeasible.setScore("-2hard/0medium/0soft");
+        when(repo.findById(5L)).thenReturn(Optional.of(infeasible));
+        when(solverService.explainSchedule(5L))
+            .thenReturn(new ScoreExplanationResponse("0hard/-10medium/-5soft", true, 0, -10, -5, List.of()));
+        stubSaveReturnsArgument();
+
+        var response = service.revalidate(5L);
+
+        assertEquals(com.arare.common.enums.ScheduleStatus.DRAFT, response.status());
+        assertEquals("0hard/-10medium/-5soft", response.score());
+        verify(repo).save(infeasible);
+    }
+
+    @Test
+    void revalidate_feasibleDraftStaysDraftAndRefreshesScore() {
+        Schedule draft = existingSchedule(5L);
+        draft.setStatus(com.arare.common.enums.ScheduleStatus.DRAFT);
+        draft.setScore("0hard/0medium/0soft");
+        when(repo.findById(5L)).thenReturn(Optional.of(draft));
+        when(solverService.explainSchedule(5L))
+            .thenReturn(new ScoreExplanationResponse("0hard/-688medium/-882soft", true, 0, -688, -882, List.of()));
+        stubSaveReturnsArgument();
+
+        var response = service.revalidate(5L);
+
+        assertEquals(com.arare.common.enums.ScheduleStatus.DRAFT, response.status());
+        assertEquals("0hard/-688medium/-882soft", response.score());
+    }
+
+    @Test
+    void revalidate_makesDraftInfeasibleWhenHardReturns() {
+        Schedule draft = existingSchedule(5L);
+        draft.setStatus(com.arare.common.enums.ScheduleStatus.DRAFT);
+        when(repo.findById(5L)).thenReturn(Optional.of(draft));
+        when(solverService.explainSchedule(5L))
+            .thenReturn(new ScoreExplanationResponse("-1hard/-3medium/-1soft", false, -1, -3, -1, List.of()));
+        stubSaveReturnsArgument();
+
+        var response = service.revalidate(5L);
+
+        assertEquals(com.arare.common.enums.ScheduleStatus.INFEASIBLE, response.status());
+    }
+
+    @Test
+    void revalidate_withoutSolution_throws() {
+        Schedule draft = existingSchedule(5L);
+        draft.setStatus(com.arare.common.enums.ScheduleStatus.INFEASIBLE);
+        when(repo.findById(5L)).thenReturn(Optional.of(draft));
+        when(solverService.explainSchedule(5L))
+            .thenReturn(new ScoreExplanationResponse("N/A", false, 0, 0, 0, List.of()));
+
+        assertThrows(com.arare.exception.ResourceConflictException.class, () -> service.revalidate(5L));
+        verify(repo, never()).save(any());
+    }
+
+    @Test
+    void revalidate_active_throws() {
+        Schedule active = existingSchedule(5L);
+        active.setStatus(com.arare.common.enums.ScheduleStatus.ACTIVE);
+        when(repo.findById(5L)).thenReturn(Optional.of(active));
+
+        assertThrows(com.arare.exception.ResourceConflictException.class, () -> service.revalidate(5L));
+        verify(solverService, never()).explainSchedule(anyLong());
+    }
+
+    @Test
+    void revalidate_archivedRestoresToDraftWhenFeasible() {
+        Schedule archived = existingSchedule(6L);
         archived.setStatus(com.arare.common.enums.ScheduleStatus.ARCHIVED);
-        when(repo.findById(5L)).thenReturn(Optional.of(archived));
+        archived.setScore("0hard/-685medium/-833soft");
+        when(repo.findById(6L)).thenReturn(Optional.of(archived));
+        when(solverService.explainSchedule(6L))
+            .thenReturn(new ScoreExplanationResponse("0hard/-685medium/-833soft", true, 0, -685, -833, List.of()));
+        stubSaveReturnsArgument();
 
-        var response = service.archive(5L);
+        var response = service.revalidate(6L);
 
-        assertEquals(com.arare.common.enums.ScheduleStatus.ARCHIVED, response.status());
+        assertEquals(com.arare.common.enums.ScheduleStatus.DRAFT, response.status());
+        assertEquals("0hard/-685medium/-833soft", response.score());
+        verify(repo).save(archived);
+    }
+
+    @Test
+    void revalidate_rejectsWhenSolveJobInProgress() {
+        Schedule infeasible = existingSchedule(5L);
+        infeasible.setStatus(com.arare.common.enums.ScheduleStatus.INFEASIBLE);
+        when(repo.findById(5L)).thenReturn(Optional.of(infeasible));
+        doThrow(new ResourceBusyException("Schedule 5 has 1 solve job(s) in progress"))
+            .when(solveJobService).ensureNoActiveJobForSchedule(5L);
+
+        assertThrows(ResourceBusyException.class, () -> service.revalidate(5L));
         verify(repo, never()).save(any());
     }
 }

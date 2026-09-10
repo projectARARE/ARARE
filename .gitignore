@@ -104,3 +104,6 @@ temp/
 # Python
 __pycache__/
 *.py[cod]
+
+# E2E artifacts
+e2e-verify.json

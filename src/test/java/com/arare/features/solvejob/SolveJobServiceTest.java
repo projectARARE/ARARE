@@ -211,6 +211,109 @@ class SolveJobServiceTest {
     }
 
     @Test
+    void retry_failedPartialResolve_createsQueuedJobWithFullSnapshot() {
+        SolveJob failed = SolveJob.builder()
+            .jobType(SolveJobType.PARTIAL_RESOLVE)
+            .scheduleId(5L)
+            .status(SolveJobStatus.FAILED)
+            .impactedSessionIdsCsv("11,22")
+            .disruptionFactsCsv("TEACHER_UNAVAILABLE:3:MONDAY")
+            .build();
+        failed.setId(41L);
+        when(jobRepo.findById(41L)).thenReturn(java.util.Optional.of(failed));
+
+        SolveJob retried = SolveJob.builder()
+            .jobType(SolveJobType.PARTIAL_RESOLVE)
+            .scheduleId(5L)
+            .status(SolveJobStatus.QUEUED)
+            .build();
+        retried.setId(42L);
+        when(jobRepo.save(any(SolveJob.class))).thenReturn(retried);
+
+        try (MockedStatic<org.springframework.transaction.support.TransactionSynchronizationManager> mocked =
+                 mockStatic(org.springframework.transaction.support.TransactionSynchronizationManager.class)) {
+            mocked.when(org.springframework.transaction.support.TransactionSynchronizationManager::isActualTransactionActive)
+                .thenReturn(false);
+
+            SolveJobResponse response = service.retry(41L);
+
+            assertEquals(42L, response.id());
+            assertEquals(SolveJobStatus.QUEUED, response.status());
+            verify(runner).run(42L);
+
+            ArgumentCaptor<SolveJob> captor = ArgumentCaptor.forClass(SolveJob.class);
+            verify(jobRepo).save(captor.capture());
+            assertEquals(SolveJobType.PARTIAL_RESOLVE, captor.getValue().getJobType());
+            assertEquals("11,22", captor.getValue().getImpactedSessionIdsCsv());
+            assertEquals("TEACHER_UNAVAILABLE:3:MONDAY", captor.getValue().getDisruptionFactsCsv());
+        }
+    }
+
+    @Test
+    void retry_failedGenerate_carriesRequestSnapshot() {
+        SolveJob failed = SolveJob.builder()
+            .jobType(SolveJobType.GENERATE)
+            .scheduleId(5L)
+            .status(SolveJobStatus.FAILED)
+            .solvingTimeSeconds(60)
+            .departmentId(2L)
+            .instituteId(1L)
+            .batchIdsCsv("10,11")
+            .teacherIdsCsv("20")
+            .roomIdsCsv("")
+            .build();
+        failed.setId(51L);
+        when(jobRepo.findById(51L)).thenReturn(java.util.Optional.of(failed));
+
+        SolveJob retried = SolveJob.builder().build();
+        retried.setId(52L);
+        when(jobRepo.save(any(SolveJob.class))).thenReturn(retried);
+
+        try (MockedStatic<org.springframework.transaction.support.TransactionSynchronizationManager> mocked =
+                 mockStatic(org.springframework.transaction.support.TransactionSynchronizationManager.class)) {
+            mocked.when(org.springframework.transaction.support.TransactionSynchronizationManager::isActualTransactionActive)
+                .thenReturn(false);
+
+            service.retry(51L);
+
+            ArgumentCaptor<SolveJob> captor = ArgumentCaptor.forClass(SolveJob.class);
+            verify(jobRepo).save(captor.capture());
+            assertEquals(SolveJobType.GENERATE, captor.getValue().getJobType());
+            assertEquals(60, captor.getValue().getSolvingTimeSeconds());
+            assertEquals("10,11", captor.getValue().getBatchIdsCsv());
+            assertEquals("20", captor.getValue().getTeacherIdsCsv());
+            assertEquals("", captor.getValue().getRoomIdsCsv());
+        }
+    }
+
+    @Test
+    void retry_succeededJob_throwsConflict() {
+        SolveJob job = SolveJob.builder()
+            .jobType(SolveJobType.GENERATE)
+            .scheduleId(1L)
+            .status(SolveJobStatus.SUCCEEDED)
+            .build();
+        job.setId(61L);
+        when(jobRepo.findById(61L)).thenReturn(java.util.Optional.of(job));
+
+        assertThrows(com.arare.exception.ResourceConflictException.class, () -> service.retry(61L));
+        verify(jobRepo, never()).save(any(SolveJob.class));
+    }
+
+    @Test
+    void retry_queuedJob_throwsConflict() {
+        SolveJob job = SolveJob.builder()
+            .jobType(SolveJobType.GENERATE)
+            .scheduleId(1L)
+            .status(SolveJobStatus.QUEUED)
+            .build();
+        job.setId(62L);
+        when(jobRepo.findById(62L)).thenReturn(java.util.Optional.of(job));
+
+        assertThrows(com.arare.exception.ResourceConflictException.class, () -> service.retry(62L));
+    }
+
+    @Test
     void ensureNoActiveJobForSchedule_rejectsWhenSolveInProgress() {
         when(jobRepo.countByScheduleIdAndStatusIn(1L, List.of(SolveJobStatus.QUEUED, SolveJobStatus.RUNNING)))
             .thenReturn(2L);

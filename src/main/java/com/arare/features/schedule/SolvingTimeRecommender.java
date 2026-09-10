@@ -26,14 +26,16 @@ public final class SolvingTimeRecommender {
     /**
      * Multiplier over the raw CH estimate to leave room for local search.
      *
-     * <p>Calibrated empirically on the reference dataset: with {@code *2} the
-     * small-scale solve (208 sessions x 20 teachers x 12 rooms) still ended at
-     * -1 hard after 480s (local search was stuck); with {@code *4} (~1050s)
-     * the same scope reaches 0 hard and a fully dense timetable. Local search
-     * is stochastic, so the margin buys enough wall-clock for it to escape
-     * hard-penalty plateaus rather than stopping just after initialization.
+     * <p>Calibrated empirically on the reference dataset. {@code *2} was too
+     * tight for the small-scale solve (208 sessions x 20 teachers x 12 rooms):
+     * it still ended at -1 hard after 480s because local search was stuck on a
+     * hard-penalty plateau. {@code *2.5} (~500s) reaches 0 hard and a fully
+     * dense timetable on the same scope, which matched the regression runs, so
+     * a full 4x (~1050s) buys little extra for the wall-clock it costs. Local
+     * search is stochastic, so the margin should always be ≥ 2 to let it
+     * escape plateaus rather than stopping right after initialization.
      */
-    static final double MARGIN_FACTOR = 4.0;
+    static final double MARGIN_FACTOR = 2.5;
 
     static final int MIN_SECONDS = 30;
     static final int MAX_SECONDS = 1_800;

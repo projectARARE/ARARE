@@ -152,4 +152,29 @@ class SubjectOfferingServiceImplTest {
         when(repo.findById(99L)).thenReturn(Optional.empty());
         assertThrows(ResourceNotFoundException.class, () -> service.delete(99L));
     }
+
+    // Cross-scope guard (V14): a department-scoped subject must NOT be offered
+    // to a batch of a different department.
+    @Test
+    void createRejectsSubjectFromDifferentDepartmentThanBatch() {
+        Department otherDept = new Department();
+        otherDept.setId(2L);
+        otherDept.setCode("IT");
+        otherDept.setName("Information Technology");
+
+        Batch otherBatch = Batch.builder()
+            .department(otherDept)
+            .year(2)
+            .section("A")
+            .studentCount(60)
+            .build();
+        otherBatch.setId(2L);
+
+        when(subjectRepo.findById(10L)).thenReturn(Optional.of(subject));
+        when(batchRepo.findById(2L)).thenReturn(Optional.of(otherBatch));
+
+        assertThrows(ResourceConflictException.class,
+            () -> service.create(new SubjectOfferingRequest(10L, 2L, null, null, false)));
+        verify(repo, org.mockito.Mockito.never()).save(any(SubjectOffering.class));
+    }
 }

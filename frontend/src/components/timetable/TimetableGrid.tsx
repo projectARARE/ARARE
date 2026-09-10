@@ -249,21 +249,33 @@ export default function TimetableGrid({
           <p className="text-xs text-amber-700/80">Nothing left to place — every filtered session has a slot.</p>
         ) : (
           <div className="flex flex-wrap gap-2 max-h-[60vh] overflow-auto">
-            {unplaced.map((s) => (
-              <SessionCell
-                key={s.id}
-                session={s}
-                density={density}
-                onClick={onSessionClick}
-                onHover={onSessionHover}
-                onDragStart={onSessionDragStart}
-                onDragEnd={onSessionDragEnd}
-                onContextMenu={onSessionContextMenu}
-                heatState="none"
-                highlighted={highlightedSessionIds?.has(s.id) ?? false}
-                preAllocated={preAllocatedSessionIds?.has(s.id) ?? false}
-              />
-            ))}
+            {unplaced.map((s) => {
+              const heat = heatBySessionId[s.id] ?? { hard: 0, soft: 0, notes: [] }
+              const showHeatVisual = heatmapEnabled || highlightConflictsOnly
+              const heatState = !showHeatVisual
+                ? 'none'
+                : heat.hard > 0
+                  ? 'hard'
+                  : heat.soft > 0
+                    ? 'soft'
+                    : 'none'
+              return (
+                <SessionCell
+                  key={s.id}
+                  session={s}
+                  density={density}
+                  onClick={onSessionClick}
+                  onHover={onSessionHover}
+                  onDragStart={onSessionDragStart}
+                  onDragEnd={onSessionDragEnd}
+                  onContextMenu={onSessionContextMenu}
+                  heatState={heatState}
+                  inspectorNotes={heat.notes}
+                  highlighted={highlightedSessionIds?.has(s.id) ?? false}
+                  preAllocated={preAllocatedSessionIds?.has(s.id) ?? false}
+                />
+              )
+            })}
           </div>
         )}
       </div>
@@ -275,7 +287,7 @@ export default function TimetableGrid({
   const isDragging = draggedSessionId != null
 
   return (
-    <div className="overflow-auto rounded-lg border border-gray-200" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
       <table className="min-w-full border-collapse text-sm">
         <thead>
           <tr className="bg-slate-100">
@@ -360,7 +372,8 @@ export default function TimetableGrid({
                     <div className="space-y-1">
                       {cellSessions.map((s) => {
                         const heat = heatBySessionId[s.id] ?? { hard: 0, soft: 0, notes: [] }
-                        const heatState = !heatmapEnabled
+                        const showHeatVisual = heatmapEnabled || highlightConflictsOnly
+                        const heatState = !showHeatVisual
                           ? 'none'
                           : heat.hard > 0
                             ? 'hard'

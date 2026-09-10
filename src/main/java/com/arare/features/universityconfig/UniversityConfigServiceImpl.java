@@ -22,7 +22,9 @@ public class UniversityConfigServiceImpl implements UniversityConfigService {
     @Override
     @Transactional
     public UniversityConfigResponse save(UniversityConfigRequest req) {
-        // Deactivate any existing active config before saving the new one
+        /**
+         * Deactivate any existing active config before saving the new one
+         */
         repo.findByActiveTrue().ifPresent(existing -> {
             existing.setActive(false);
             repo.save(existing);

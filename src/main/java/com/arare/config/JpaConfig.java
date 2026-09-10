@@ -12,7 +12,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 
-// Enables @CreatedDate and @LastModifiedDate population in BaseEntity.
+/**
+ * Enables @CreatedDate and @LastModifiedDate population in BaseEntity.
+ */
 @Configuration
 @EnableJpaAuditing
 public class JpaConfig {
@@ -38,8 +40,10 @@ public class JpaConfig {
     @Value("${arare.flyway.auto-create-db:false}")
     private boolean autoCreateDb;
 
-    // Custom Flyway bean that ensures the target database exists before migrating.
-    // Connects to the default 'postgres' database first to CREATE DATABASE IF NOT EXISTS.
+    /**
+     * Custom Flyway bean that ensures the target database exists before migrating.
+     * Connects to the default 'postgres' database first to CREATE DATABASE IF NOT EXISTS.
+     */
     @Bean
     public Flyway flyway(DataSource dataSource) {
         ensureDatabaseExists();
@@ -60,16 +64,20 @@ public class JpaConfig {
 
     private void ensureDatabaseExists() {
         if (!autoCreateDb) {
-            // Creating the DB is opt-in. By default the database must already
-            // exist (see docs); if it does not, Flyway's connect will surface a
-            // clear error below.
+            /**
+             * Creating the DB is opt-in. By default the database must already
+             * exist (see docs); if it does not, Flyway's connect will surface a
+             * clear error below.
+             */
             return;
         }
         if (datasourceUrl != null && datasourceUrl.startsWith("jdbc:h2:")) {
             return;
         }
         String targetDb = extractDatabaseName(datasourceUrl);
-        // Validate the extracted name to avoid injection-shaped concatenation.
+        /**
+         * Validate the extracted name to avoid injection-shaped concatenation.
+         */
         if (targetDb == null || !targetDb.matches("[A-Za-z0-9_]+")) {
             log.warn("Skipping auto-create-db: extracted database name '{}' is not valid.", targetDb);
             return;
@@ -80,7 +88,9 @@ public class JpaConfig {
              Statement stmt = conn.createStatement()) {
             stmt.execute("CREATE DATABASE " + targetDb);
         } catch (Exception e) {
-            // Database likely already exists; ignore and let Flyway handle the rest.
+            /**
+             * Database likely already exists; ignore and let Flyway handle the rest.
+             */
             if (!e.getMessage().contains("already exists") && !e.getMessage().contains("duplicate")) {
                 log.warn("Could not ensure database exists (continuing): {}", e.getMessage());
             }

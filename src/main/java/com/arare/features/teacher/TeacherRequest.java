@@ -5,7 +5,9 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 
-// Request DTO: create or update a Teacher. 
+/**
+ * Request DTO: create or update a Teacher.
+ */
 public record TeacherRequest(
     String employeeId,
     @NotBlank String name,
@@ -16,5 +18,6 @@ public record TeacherRequest(
     @Min(1) int maxWeeklyHours,
     @Min(1) int maxConsecutiveClasses,
     int movementPenalty,
-    SchoolDay preferredFreeDay
+    SchoolDay preferredFreeDay,
+    Long instituteId
 ) {}

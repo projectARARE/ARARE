@@ -6,7 +6,7 @@ This document describes the JPA domain model. All entities extend
 declares its own `@PlanningId @Id` for Timefold.
 
 Tables are created by Flyway migrations (`src/main/resources/db/migration`,
-`V1`…`V13`); `spring.jpa.hibernate.ddl-auto=validate` in production, so the
+`V1`…`V15`); `spring.jpa.hibernate.ddl-auto=validate` in production, so the
 schema is owned by the migrations, not by Hibernate auto-DDL.
 
 Relationship conventions:
@@ -85,12 +85,15 @@ Table `departments`. Academic department (e.g. CSE, IT). Owns allowed buildings.
 | buildingsAllowed | `List<Building>` | `@ManyToMany` join table `department_buildings` (soft constraint) |
 
 ### Building
-Table `buildings`. Physical building. Unique on `name`.
+Table `buildings`. Physical building, owned by an institute (`V14`). Names are
+**not** globally unique — only unique per institute in practice; CSV import treats
+a name shared across institutes as ambiguous.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| name | `String` | `@NotBlank`, **unique** |
+| name | `String` | `@NotBlank`; import-targetable via `instituteCode` column |
 | location | `String` | optional |
+| institute | `Institute` | `@ManyToOne(LAZY)` FK `institute_id`, `NOT NULL` |
 
 ### Room
 Table `rooms`. Physical room. Unique on (`building_id`, `room_number`).
@@ -153,6 +156,7 @@ Table `teachers`. Faculty member.
 | maxConsecutiveClasses | `int` | `@Min(1)`, default 3 (medium constraint) |
 | movementPenalty | `int` | `@Min(0)`, default 1 (building-change soft weight) |
 | preferredFreeDay | `SchoolDay` | optional soft constraint |
+| institute | `Institute` | optional `@ManyToOne(LAZY)` FK `institute_id`; null = university-global teacher (`V15`) |
 
 Hard constraints: teacher not double-booked, available at slot, qualified for
 subject. Collections are de-duplicated in place on persist/update.

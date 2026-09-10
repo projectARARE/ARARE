@@ -2,6 +2,7 @@ package com.arare.features.classsession;
 
 import com.arare.common.enums.SchoolDay;
 import com.arare.common.enums.RoomType;
+import com.arare.common.enums.ScheduleStatus;
 import com.arare.common.enums.TimeslotType;
 import com.arare.exception.ResourceNotFoundException;
 import com.arare.exception.ResourceConflictException;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -71,9 +73,11 @@ public class ClassSessionServiceImpl implements ClassSessionService {
                 "Session " + sessionId + " is locked — unlock it before editing its assignment");
         }
 
-        // Resolve the post-edit assignment first (without saving), then reject
-        // any change that violates a solver HARD constraint. Manual edits must
-        // never introduce states the solver would reject.
+        /**
+         * Resolve the post-edit assignment first (without saving), then reject
+         * any change that violates a solver HARD constraint. Manual edits must
+         * never introduce states the solver would reject.
+         */
         Teacher   newTeacher   = s.getTeacher();
         Room      newRoom      = s.getRoom();
         Timeslot  newTimeslot  = s.getTimeslot();
@@ -116,12 +120,27 @@ public class ClassSessionServiceImpl implements ClassSessionService {
             newTimeslot = null;
         }
 
-        requireAvailability(newTeacher, newRoom, newTimeslot);
-        requireNoHardConflicts(s, newTeacher, newRoom, newTimeslot);
-        requireNoCrossScheduleTeacherConflict(newTeacher, newTimeslot, scheduleIdOf(s), s.getDuration());
-        requireHomeRoomCompliance(s, newRoom);
-        if (newTeacher != null) {
-            requireSingleTeacherPerSubjectSection(s, newTeacher, newTimeslot);
+if (assignmentChange) {
+            /**
+             * If the teacher+timeslot pairing is unchanged, the session
+             * already exists with that pairing (e.g., a pre-allocation
+             * pins the teacher outside the teacher's general
+             * availability). Re-checking general availability would
+             * wrongly reject valid manual edits (e.g. changing only the
+             * room).
+             */
+            boolean teacherAndTimeslotUnchanged =
+                Objects.equals(newTeacher, s.getTeacher())
+                    && Objects.equals(newTimeslot, s.getTimeslot());
+            if (!teacherAndTimeslotUnchanged) {
+                requireAvailability(newTeacher, newRoom, newTimeslot);
+            }
+            requireNoHardConflicts(s, newTeacher, newRoom, newTimeslot);
+            requireNoCrossScheduleTeacherConflict(newTeacher, newTimeslot, scheduleIdOf(s), s.getDuration());
+            requireHomeRoomCompliance(s, newRoom);
+            if (newTeacher != null) {
+                requireSingleTeacherPerSubjectSection(s, newTeacher, newTimeslot);
+            }
         }
 
         s.setTeacher(newTeacher);
@@ -133,6 +152,30 @@ public class ClassSessionServiceImpl implements ClassSessionService {
         }
 
         return toResponse(repo.save(s));
+    }
+
+    @Override
+    @Transactional
+    public int bulkSetLocked(Long scheduleId, SessionsBulkLockRequest req) {
+        Schedule schedule = scheduleRepo.findById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
+        if (schedule.getStatus() == ScheduleStatus.ARCHIVED) {
+            throw new IllegalArgumentException(
+                "Archived schedules are read-only — locks cannot be changed");
+        }
+        List<ClassSession> sessions;
+        if (req.sessionIds() == null || req.sessionIds().isEmpty()) {
+            sessions = repo.findBulkByScheduleId(scheduleId);
+        } else {
+            sessions = repo.findAllById(req.sessionIds()).stream()
+                .filter(s -> s.getSchedule() != null && scheduleId.equals(s.getSchedule().getId()))
+                .toList();
+        }
+        for (ClassSession s : sessions) {
+            s.setLocked(req.locked());
+        }
+        repo.saveAll(sessions);
+        return sessions.size();
     }
 
     @Override
@@ -164,6 +207,8 @@ public class ClassSessionServiceImpl implements ClassSessionService {
                 .orElseThrow(() -> new ResourceNotFoundException("ClassSection", req.sectionId())));
         }
         ClassSession s = builder.build();
+
+        validateDepartmentPairing(subject, s.getEffectiveBatch());
 
         if (req.teacherId() != null) {
             Teacher t = teacherRepo.findById(req.teacherId())
@@ -318,6 +363,22 @@ public class ClassSessionServiceImpl implements ClassSessionService {
 
     private static Long scheduleIdOf(ClassSession s) {
         return s.getSchedule() != null ? s.getSchedule().getId() : null;
+    }
+
+    /**
+     * Ensures a department-scoped subject is only paired with batches of the
+     * same department. Institute-wide subjects (department == null) may pair
+     * with any batch.
+     */
+    private void validateDepartmentPairing(Subject subject, Batch batch) {
+        if (batch == null) return;
+        if (subject.getDepartment() == null) return;
+        if (batch.getDepartment() == null) return;
+        if (!subject.getDepartment().getId().equals(batch.getDepartment().getId())) {
+            throw new ResourceConflictException(
+                "Subject belongs to department '" + subject.getDepartment().getCode()
+                    + "' but batch belongs to department '" + batch.getDepartment().getCode() + "'");
+        }
     }
 
     private Long instituteIdOf(Long scheduleId) {

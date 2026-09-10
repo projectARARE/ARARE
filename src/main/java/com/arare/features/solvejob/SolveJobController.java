@@ -29,6 +29,11 @@ public class SolveJobController {
         return ResponseEntity.ok(solveJobService.get(id));
     }
 
+    @PostMapping("/{id}/retry")
+    public ResponseEntity<SolveJobResponse> retry(@PathVariable Long id) {
+        return ResponseEntity.ok(solveJobService.retry(id));
+    }
+
     @PostMapping("/{id}/cancel")
     public ResponseEntity<SolveJobResponse> cancel(@PathVariable Long id) {
         return ResponseEntity.ok(solveJobService.cancel(id));

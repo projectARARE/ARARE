@@ -6,25 +6,29 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 import java.util.stream.Collectors;
 
-// BFS-based impact analyzer.
-// <p>Given a disruption event and the dependency graph of a schedule,
-// produces the <em>minimal</em> set of session IDs that must be rescheduled.</p>
-// <h3>Traversal rules</h3>
-// <ol>
-// <li>Seed the queue with sessions <em>directly</em> affected by the disruption
-// (same teacher/room/timeslot on the affected day).</li>
-// <li>BFS: for each session, follow dependency edges to connected sessions.</li>
-// <li>Stop expanding from a locked session — it stays in the impacted set
-// (so the caller can report it) but its own neighbors are not traversed.</li>
-// <li>Sessions on a different day are ignored for teacher/room disruptions.</li>
-// </ol>
+/**
+ * BFS-based impact analyzer.
+ * <p>Given a disruption event and the dependency graph of a schedule,
+ * produces the <em>minimal</em> set of session IDs that must be rescheduled.</p>
+ * <h3>Traversal rules</h3>
+ * <ol>
+ * <li>Seed the queue with sessions <em>directly</em> affected by the disruption
+ * (same teacher/room/timeslot on the affected day).</li>
+ * <li>BFS: for each session, follow dependency edges to connected sessions.</li>
+ * <li>Stop expanding from a locked session — it stays in the impacted set
+ * (so the caller can report it) but its own neighbors are not traversed.</li>
+ * <li>Sessions on a different day are ignored for teacher/room disruptions.</li>
+ * </ol>
+ */
 @Component
 public class ImpactAnalyzer {
 
-// @param event    The disruption to analyze.
-// @param graph    Pre-built dependency graph of the schedule.
-// @param sessions All ClassSessions belonging to the schedule (used for seed selection).
-// @return Ordered set of session IDs that are impacted (BFS order = closest first).
+/**
+ * @param event    The disruption to analyze.
+ * @param graph    Pre-built dependency graph of the schedule.
+ * @param sessions All ClassSessions belonging to the schedule (used for seed selection).
+ * @return Ordered set of session IDs that are impacted (BFS order = closest first).
+ */
     public Set<Long> analyze(DisruptionRequest event,
                              DependencyGraph graph,
                              List<ClassSession> sessions) {
@@ -40,8 +44,10 @@ public class ImpactAnalyzer {
             SessionNode node = graph.getNode(current);
             if (node == null) continue;
 
-            // Locked sessions are reported as impacted but traversal stops here;
-            // they won't be moved by the solver anyway.
+            /**
+             * Locked sessions are reported as impacted but traversal stops here;
+             * they won't be moved by the solver anyway.
+             */
             if (node.locked()) continue;
 
             for (DependencyEdge edge : graph.getNeighbors(current)) {
@@ -55,9 +61,9 @@ public class ImpactAnalyzer {
         return impacted;
     }
 
-    // 
-    // Seed selection
-    // 
+    /**
+     * Seed selection
+     */
 
     private List<Long> findInitialSessions(DisruptionRequest event, List<ClassSession> sessions) {
         List<Long> initial = sessions.stream()
@@ -65,8 +71,10 @@ public class ImpactAnalyzer {
             .map(ClassSession::getId)
             .collect(Collectors.toList());
 
-        // Timeslot blocking must also re-consider currently unassigned sessions;
-        // otherwise they can be newly assigned into the blocked slot after re-solve.
+        /**
+         * Timeslot blocking must also re-consider currently unassigned sessions;
+         * otherwise they can be newly assigned into the blocked slot after re-solve.
+         */
         if (event.type() == DisruptionType.TIMESLOT_BLOCKED) {
             sessions.stream()
                 .filter(s -> s.getTimeslot() == null)
@@ -103,25 +111,32 @@ public class ImpactAnalyzer {
 
 private boolean matchesDay(ClassSession s, DisruptionRequest event) {
         if (event.date() == null) {
-            // No date provided: the disruption has no defined scope and therefore
-            // matches nothing. This keeps the preview in sync with the solver
-            // facts (a dayless teacher/room block produces no fact), so a
-            // dateless disruption reports zero impact and degrades to a no-op
-            // instead of claiming impact and then doing nothing on re-solve.
+            /**
+             * No date provided: the disruption has no defined scope and therefore
+             * matches nothing. This keeps the preview in sync with the solver
+             * facts (a dayless teacher/room block produces no fact), so a
+             * dateless disruption reports zero impact and degrades to a no-op
+             * instead of claiming impact and then doing nothing on re-solve.
+             */
             return false;
         }
-        String disruptionDay = event.date().getDayOfWeek().name(); // e.g. "MONDAY"
+        /**
+         * e.g. "MONDAY"
+         */
+        String disruptionDay = event.date().getDayOfWeek().name(); 
         return s.getTimeslot() != null && s.getTimeslot().getDay().name().equals(disruptionDay);
     }
 
-    // 
-    // Expansion rule
-    // 
+    /**
+     * Expansion rule
+     */
 
-// Controls how far BFS expands.
-// Currently expands all dependency types — every session sharing a resource
-// with an impacted session is considered potentially conflicted.
-// <p>In future: add granularity (e.g. only expand TEACHER edges, not BATCH edges).</p>
+/**
+ * Controls how far BFS expands.
+ * Currently expands all dependency types — every session sharing a resource
+ * with an impacted session is considered potentially conflicted.
+ * <p>In future: add granularity (e.g. only expand TEACHER edges, not BATCH edges).</p>
+ */
     private boolean shouldExpand(DependencyEdge edge) {
         return true;
     }

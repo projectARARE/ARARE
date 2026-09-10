@@ -4,6 +4,7 @@ import com.arare.features.batch.BatchRepository;
 import com.arare.features.building.BuildingRepository;
 import com.arare.features.department.Department;
 import com.arare.features.department.DepartmentRepository;
+import com.arare.features.institute.Institute;
 import com.arare.features.room.RoomRepository;
 import com.arare.features.subject.Subject;
 import com.arare.features.subject.SubjectRepository;
@@ -23,6 +24,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -176,6 +179,94 @@ class CsvEntityUpserterTest {
             row(Map.of("day", "MONDAY", "startTime", "09:00", "endTime", "10:00", "type", "BREAK")),
             3, context);
         assertFalse(again);
+    }
+
+    @Test
+    void departmentByCodeIsAmbiguousWhenSameCodeInTwoInstitutes() {
+        Institute a = Institute.builder().name("A").code("A").build();
+        a.setId(1L);
+        Institute b = Institute.builder().name("B").code("B").build();
+        b.setId(2L);
+        Department deptA = Department.builder().code("CSE").name("CS A").institute(a).build();
+        Department deptB = Department.builder().code("CSE").name("CS B").institute(b).build();
+        when(departmentRepository.findAll()).thenReturn(List.of(deptA, deptB));
+
+        ImportContext context = new ImportContext(
+            timeslotRepository, buildingRepository, departmentRepository,
+            roomRepository, subjectRepository, teacherRepository, batchRepository);
+        context.loadFromDatabase();
+
+        assertNull(context.departmentByCode("CSE"), "same code in two institutes must be ambiguous");
+    }
+
+    @Test
+    void departmentByCodeResolvesUniqueCodeAcrossInstitutes() {
+        Institute a = Institute.builder().name("A").code("A").build();
+        a.setId(1L);
+        Department deptA = Department.builder().code("CSE").name("CS A").institute(a).build();
+        Department deptB = Department.builder().code("ECE").name("EC B").institute(a).build();
+        when(departmentRepository.findAll()).thenReturn(List.of(deptA, deptB));
+
+        ImportContext context = new ImportContext(
+            timeslotRepository, buildingRepository, departmentRepository,
+            roomRepository, subjectRepository, teacherRepository, batchRepository);
+        context.loadFromDatabase();
+
+        assertNotNull(context.departmentByCode("CSE"));
+        assertEquals(deptA, context.departmentByCode("CSE"));
+    }
+
+    @Test
+    void buildingByNameIsAmbiguousWhenSameNameInTwoInstitutes() {
+        Institute a = Institute.builder().name("A").code("A").build();
+        a.setId(1L);
+        Institute b = Institute.builder().name("B").code("B").build();
+        b.setId(2L);
+        com.arare.features.building.Building ba = new com.arare.features.building.Building();
+        ba.setId(10L);
+        ba.setName("Block A");
+        ba.setInstitute(a);
+        com.arare.features.building.Building bb = new com.arare.features.building.Building();
+        bb.setId(11L);
+        bb.setName("Block A");
+        bb.setInstitute(b);
+        when(buildingRepository.findAll()).thenReturn(List.of(ba, bb));
+
+        ImportContext context = new ImportContext(
+            timeslotRepository, buildingRepository, departmentRepository,
+            roomRepository, subjectRepository, teacherRepository, batchRepository);
+        context.loadFromDatabase();
+
+        assertNull(context.buildingByName("Block A"), "same name in two institutes must be ambiguous");
+        assertTrue(context.isAmbiguousBuildingName("Block A"));
+    }
+
+    @Test
+    void buildingUpsertOnAmbiguousNameFailsInsteadOfSilentlyCreatingDuplicate() {
+        Institute a = Institute.builder().name("A").code("A").build();
+        a.setId(1L);
+        Institute b = Institute.builder().name("B").code("B").build();
+        b.setId(2L);
+        com.arare.features.building.Building ba = new com.arare.features.building.Building();
+        ba.setId(10L);
+        ba.setName("Block A");
+        ba.setInstitute(a);
+        com.arare.features.building.Building bb = new com.arare.features.building.Building();
+        bb.setId(11L);
+        bb.setName("Block A");
+        bb.setInstitute(b);
+        when(buildingRepository.findAll()).thenReturn(List.of(ba, bb));
+
+        ImportContext context = new ImportContext(
+            timeslotRepository, buildingRepository, departmentRepository,
+            roomRepository, subjectRepository, teacherRepository, batchRepository);
+        context.loadFromDatabase();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+            () -> upserter.upsert(CsvEntityType.BUILDINGS,
+                row(Map.of("name", "Block A")), 2, context));
+
+        assertTrue(ex.getMessage().contains("Ambiguous building name"));
     }
 
     private static Map<String, String> row(Map<String, String> values) {

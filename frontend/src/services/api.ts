@@ -38,6 +38,8 @@ import type {
   SessionCreateRequest,
   SolveJobResponse,
   PreAllocation,
+  PreAllocationRequest,
+  SessionsBulkLockRequest,
   TeacherAssignment,
   TeacherAssignmentRequest,
   Institute,
@@ -134,6 +136,8 @@ export const instituteApi = {
 export const roomApi = {
   getAll: () => api.get<Room[]>('/rooms').then((r) => r.data),
   getById: (id: number) => api.get<Room>(`/rooms/${id}`).then((r) => r.data),
+  getByBuilding: (buildingId: number) =>
+    api.get<Room[]>(`/rooms/building/${buildingId}`).then((r) => r.data),
   create: (data: RoomRequest) => api.post<Room>('/rooms', data).then((r) => r.data),
   update: (id: number, data: RoomRequest) =>
     api.put<Room>(`/rooms/${id}`, data).then((r) => r.data),
@@ -154,6 +158,8 @@ export const teacherApi = {
 export const subjectApi = {
   getAll: () => api.get<Subject[]>('/subjects').then((r) => r.data),
   getById: (id: number) => api.get<Subject>(`/subjects/${id}`).then((r) => r.data),
+  getByDepartment: (departmentId: number) =>
+    api.get<Subject[]>(`/subjects/department/${departmentId}`).then((r) => r.data),
   create: (data: SubjectRequest) => api.post<Subject>('/subjects', data).then((r) => r.data),
   update: (id: number, data: SubjectRequest) =>
     api.put<Subject>(`/subjects/${id}`, data).then((r) => r.data),
@@ -164,6 +170,8 @@ export const subjectApi = {
 export const batchApi = {
   getAll: () => api.get<Batch[]>('/batches').then((r) => r.data),
   getById: (id: number) => api.get<Batch>(`/batches/${id}`).then((r) => r.data),
+  getByDepartment: (departmentId: number) =>
+    api.get<Batch[]>(`/batches/department/${departmentId}`).then((r) => r.data),
   create: (data: BatchRequest) => api.post<Batch>('/batches', data).then((r) => r.data),
   update: (id: number, data: BatchRequest) =>
     api.put<Batch>(`/batches/${id}`, data).then((r) => r.data),
@@ -258,9 +266,12 @@ export const scheduleApi = {
   getExplanation: (id: number) =>
     api.get<string>(`/schedules/${id}/explanation`).then((r) => r.data),
   getSessions: (id: number) =>
-    api.get<ClassSession[]>(`/sessions/schedule/${id}`).then((r) => r.data),
+    api.get<ClassSession[]>(`/schedules/${id}/sessions`).then((r) => r.data),
   activate: (id: number) => api.post<Schedule>(`/schedules/${id}/activate`).then((r) => r.data),
   archive: (id: number) => api.post<Schedule>(`/schedules/${id}/archive`).then((r) => r.data),
+  revalidate: (id: number) => api.post<Schedule>(`/schedules/${id}/revalidate`).then((r) => r.data),
+  partialResolve: (id: number, impactedSessionIds: number[]) =>
+    api.post<SolveJobResponse>(`/schedules/${id}/partial-resolve`, { impactedSessionIds }).then((r) => r.data),
   delete: (id: number) => api.delete(`/schedules/${id}`),
   previewDisruption: (id: number, data: DisruptionRequest) =>
     api.post<DisruptionResponse>(`/schedules/${id}/disruption/preview`, data).then((r) => r.data),
@@ -301,12 +312,22 @@ export const solveJobApi = {
   listForSchedule: (scheduleId: number) =>
     api.get<SolveJobResponse[]>(`/solve-jobs/schedule/${scheduleId}`).then((r) => r.data),
   cancel: (id: number) => api.post(`/solve-jobs/${id}/cancel`),
+  retry: (id: number) =>
+    api.post<SolveJobResponse>(`/solve-jobs/${id}/retry`).then((r) => r.data),
 }
 
 // Sessions (manual editing of timetable)
 export const sessionApi = {
+  getBySchedule: (scheduleId: number) =>
+    api.get<ClassSession[]>(`/sessions/schedule/${scheduleId}`).then((r) => r.data),
+  getByBatch: (scheduleId: number, batchId: number) =>
+    api.get<ClassSession[]>(`/sessions/schedule/${scheduleId}/batch/${batchId}`).then((r) => r.data),
+  getByTeacher: (scheduleId: number, teacherId: number) =>
+    api.get<ClassSession[]>(`/sessions/schedule/${scheduleId}/teacher/${teacherId}`).then((r) => r.data),
   updateAssignment: (id: number, data: SessionAssignmentRequest) =>
     api.patch<ClassSession>(`/sessions/${id}`, data).then((r) => r.data),
+  bulkSetLocked: (scheduleId: number, data: SessionsBulkLockRequest) =>
+    api.patch<number>(`/sessions/schedule/${scheduleId}/lock`, data).then((r) => r.data),
   create: (data: SessionCreateRequest) =>
     api.post<ClassSession>('/sessions', data).then((r) => r.data),
   delete: (id: number) => api.delete(`/sessions/${id}`),
@@ -314,6 +335,11 @@ export const sessionApi = {
 
 // Pre-Allocations (pre-assigned teachers/rooms for a schedule)
 export const preAllocationApi = {
+  create: (data: PreAllocationRequest) =>
+    api.post<PreAllocation>('/pre-allocations', data).then((r) => r.data),
+  getAll: () => api.get<PreAllocation[]>('/pre-allocations').then((r) => r.data),
+  getById: (id: number) =>
+    api.get<PreAllocation>(`/pre-allocations/${id}`).then((r) => r.data),
   getBySchedule: (scheduleId: number) =>
     api.get<PreAllocation[]>(`/pre-allocations/schedule/${scheduleId}`).then((r) => r.data),
   delete: (id: number) => api.delete(`/pre-allocations/${id}`),

@@ -27,7 +27,7 @@ flowchart TB
         IMP["ImpactAnalyzer\ndependency-graph BFS"]
         DI["CSV / ZIP import"]
     end
-    DB[("PostgreSQL / H2\nFlyway V1–V13")]
+    DB[("PostgreSQL / H2\nFlyway V1–V15")]
     WIZ --> API
     VIEW --> API
     EX --> API

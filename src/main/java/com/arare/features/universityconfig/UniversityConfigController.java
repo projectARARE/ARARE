@@ -12,7 +12,9 @@ public class UniversityConfigController {
 
     private final UniversityConfigService service;
 
-    // Creates or replaces the active university configuration. 
+    /**
+     * Creates or replaces the active university configuration.
+     */
     @PostMapping
     public ResponseEntity<UniversityConfigResponse> save(@Valid @RequestBody UniversityConfigRequest req) {
         return ResponseEntity.ok(service.save(req));

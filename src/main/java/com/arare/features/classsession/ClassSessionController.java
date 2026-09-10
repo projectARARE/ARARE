@@ -48,6 +48,14 @@ public class ClassSessionController {
         return ResponseEntity.ok(service.create(req));
     }
 
+    @PatchMapping("/schedule/{scheduleId}/lock")
+    public ResponseEntity<Integer> bulkSetLocked(
+        @PathVariable Long scheduleId,
+        @Valid @RequestBody SessionsBulkLockRequest req
+    ) {
+        return ResponseEntity.ok(service.bulkSetLocked(scheduleId, req));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
