@@ -18,7 +18,7 @@ public record ScheduleRequest(
     List<Long> batchIds,
     List<Long> teacherIds,
     List<Long> roomIds,
-    @Min(30) @Max(3600) Integer solvingTimeSeconds,
+    @Min(30) @Max(18000) Integer solvingTimeSeconds,
     List<SchoolDay> blockedDays,
     /**
      * Pre-assignments made in the wizard BEFORE the schedule row exists. The

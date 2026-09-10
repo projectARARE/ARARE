@@ -68,20 +68,19 @@ public class SolveJobRunner {
         long startedMillis = System.currentTimeMillis();
         UUID problemId = UUID.randomUUID();
         /**
-         * Guarded transition: only flips QUEUED -> RUNNING (writing problemId)
-         * and wins if the job is still QUEUED. A concurrent cancel() issues a
-         * guarded terminal UPDATE that leaves the row no longer QUEUED, so this
-         * UPDATE matches 0 rows and we bail — the job is never resurrected to
-         * RUNNING, and no results are persisted for a job the user cancelled.
+         * Guarded transition: only flips QUEUED -> RUNNING (writing problemId
+         * and startedAt) and wins if the job is still QUEUED. A concurrent
+         * cancel() issues a guarded terminal UPDATE that leaves the row no
+         * longer QUEUED, so this UPDATE matches 0 rows and we bail — the job
+         * is never resurrected to RUNNING, and no results are persisted for a
+         * job the user cancelled. finishedAt is intentionally left unset here;
+         * it is stamped only when the job reaches a terminal state.
          */
-        int updated = jobRepo.transitionTerminal(
+        int updated = jobRepo.startRunning(
             jobId,
             List.of(SolveJobStatus.QUEUED),
             SolveJobStatus.RUNNING,
-            null,
-            null,
             LocalDateTime.now(),
-            null,
             problemId);
         if (updated == 0) {
             /**

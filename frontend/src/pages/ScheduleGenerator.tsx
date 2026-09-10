@@ -728,12 +728,12 @@ export default function ScheduleGenerator() {
                   <input
                     type="number"
                     min={30}
-                    max={1800}
+                    max={18000}
                     step={10}
                     value={form.solvingTimeSeconds ?? 30}
                     onChange={(e) => {
                       setTimeTouched(true)
-                      setForm({ ...form, solvingTimeSeconds: Math.max(30, Math.min(1800, +e.target.value || 30)) })
+                      setForm({ ...form, solvingTimeSeconds: Math.max(30, Math.min(18000, +e.target.value || 30)) })
                     }}
                     className="block w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />

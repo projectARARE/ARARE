@@ -1046,8 +1046,13 @@ def verify_governance_and_workflow(api, dept, checks):
     arch = api.post(f"/schedules/{sid}/archive")
     checks.ok("archive schedule", arch.get("status") == "ARCHIVED",
               f"status={arch.get('status')}")
-    r2 = api.req("post", f"/schedules/{sid}/revalidate")
-    checks.ok("revalidate blocked on ARCHIVED (409)", r2.status_code == 409, f"HTTP {r2.status_code}")
+    # Archived schedules re-validate back to an editable DRAFT (unarchive feature).
+    r2 = api.json("post", f"/schedules/{sid}/revalidate", expected=(200,))
+    checks.ok("revalidate on ARCHIVED restores DRAFT (unarchive)",
+              r2.get("status") == "DRAFT", f"status={r2.get('status')}")
+    rearch = api.post(f"/schedules/{sid}/archive")
+    checks.ok("re-archive after unarchive", rearch.get("status") == "ARCHIVED",
+              f"status={rearch.get('status')}")
     r3 = api.req("post", f"/schedules/{sid}/activate")
     checks.ok("activate blocked on ARCHIVED (409)", r3.status_code == 409, f"HTTP {r3.status_code}")
 

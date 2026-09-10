@@ -38,7 +38,13 @@ public final class SolvingTimeRecommender {
     static final double MARGIN_FACTOR = 2.5;
 
     static final int MIN_SECONDS = 30;
-    static final int MAX_SECONDS = 1_800;
+    /**
+     * Hard ceiling for a single solve: 5 hours. Long enough for very large
+     * datasets even with the 2.5x local-search margin; larger values have no
+     * practical upside (local search converges to a plateau that an extra
+     * hour of wall-clock barely improves).
+     */
+    static final int MAX_SECONDS = 18_000;
 
     private SolvingTimeRecommender() {
     }
@@ -48,7 +54,7 @@ public final class SolvingTimeRecommender {
      * @param teachers      number of teachers in the solve scope
      * @param rooms         number of rooms in the solve scope
      * @param classTimeslots number of CLASS-type timeslots configured
-     * @return recommended solving time in seconds (min 30, max 1800)
+     * @return recommended solving time in seconds (min 30, max 18000)
      */
     public static int recommend(int sessions, int teachers, int rooms, int classTimeslots) {
         long candidates = (long) Math.max(1, sessions)

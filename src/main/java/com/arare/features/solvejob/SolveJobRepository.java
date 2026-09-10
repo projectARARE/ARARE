@@ -41,6 +41,28 @@ public interface SolveJobRepository extends JpaRepository<SolveJob, Long> {
      * {@code @Modifying} query without one fails with
      * {@code TransactionRequiredException}.</p>
      */
+    /**
+     * Marks a QUEUED job as RUNNING, stamping {@code startedAt} and the
+     * assigned problemId. Atomic and guarded: returns 1 only if the job is
+     * still QUEUED, so a concurrent cancel() can never be defeated by a worker
+     * starting late. {@code finishedAt} is deliberately NOT written here — it
+     * is set only when the job actually reaches a terminal state.
+     */
+    @Transactional
+    @Modifying
+    @Query("""
+        UPDATE SolveJob j
+        SET j.status = :toStatus,
+            j.startedAt = :startedAt,
+            j.problemId = :problemId
+        WHERE j.id = :id AND j.status IN :fromStatuses
+        """)
+    int startRunning(@Param("id") Long id,
+        @Param("fromStatuses") Collection<SolveJobStatus> fromStatuses,
+        @Param("toStatus") SolveJobStatus toStatus,
+        @Param("startedAt") LocalDateTime startedAt,
+        @Param("problemId") UUID problemId);
+
     @Transactional
     @Modifying
     @Query("""
