@@ -103,7 +103,7 @@ Copy to `.env` and adjust if the backend runs elsewhere.
 ### Build & type-check
 ```bash
 npm run build         # tsc && vite build
-npm run test          # (if configured) component/unit tests
+npm run build          # tsc + vite build (no frontend test runner is configured)
 npx tsc --noEmit      # type-check without emitting
 ```
 

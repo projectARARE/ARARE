@@ -1,7 +1,7 @@
 # Edge Cases — Status of Record
 
 The real-university timetable edge cases that drove product decisions, and how
-each one is handled today. Everything below is **enforced end-to-end** (backend
+each one is handled today. Most are enforced **in the backend** (schema constraints
 uniqueness + cross-scope guards + CSV import safety + frontend pickers). There
 are no deliberately-open items; the last three (solver repair, teacher→institute
 binding, institute-aware CSV targeting) were implemented in the production
@@ -12,11 +12,11 @@ finalization wave.
 | # | Edge case | Behavior today | Status |
 |---|-----------|----------------|--------|
 | 1 | Two institutes both have a department `CS` | Department code/name unique per `(institute, code)`; same code in a different institute is legal (`V14`). CSV import treats a code shared across institutes as **ambiguous** and refuses to silently prefer one. | Enforced |
-| 2 | Department owned by institute A but assigned institute B's building | `department.buildingIds` must be a subset of the institute's buildings; the department form only offers the owning institute's buildings. | Enforced |
+| 2 | Department owned by institute A but assigned institute B's building | `department.buildingIds` must be a subset of the institute's buildings. The backend only checks that the ids exist (`DepartmentServiceImpl.resolveBuildings`); the subset rule is enforced by the department form, which only offers the owning institute's buildings. | Frontend only |
 | 3 | Institute-wide subject (no department) paired with any batch | Allowed by contract: `departmentId == null` subjects may pair with any batch regardless of department. | Enforced |
 | 4 | Subject from dept X offered/assigned/sessioned to a batch of dept Y | Cross-scope mismatch rejected with 409 in offerings, teacher assignments, manual sessions and pre-allocations. The frontend forms auto-align subject↔batch to one department so this is impossible by construction. | Enforced |
 | 5 | Duplicate subject code within one department | Unique `(department_id, code)` partial index; institute-wide subjects unique among themselves by code. | Enforced |
-| 6 | Two buildings named identically in different institutes | Buildings are institute-owned (`V14`). CSV import keeps an ambiguity set over building names: a name that exists in multiple institutes makes name-only targeting refuse the row with a clear error (an explicit `instituteCode` column disambiguates). | Enforced |
+| 6 | Two buildings named identically in different institutes | `buildings.name` is **globally** unique, so this cannot arise through normal writes; the CSV import ambiguity set is a defensive fallback. Buildings are institute-owned (`V14`), and the import refuses a name-only reference it cannot resolve unambiguously (an explicit `instituteCode` column disambiguates). | Schema-enforced |
 | 7 | Same `room_number` in two buildings | Already unique per `(building_id, room_number)`; room import keys by `building\|room`. | OK |
 | 8 | Batch `(dept, year, section)` and section `(batch, label)` duplicates | Already unique per parent. | OK |
 | 9 | CSV departments/buildings targeting institute 2 | Departments.csv and buildings.csv now accept an optional `instituteCode` column resolved by code then name; absent it defaults to the single/first institute, correct for single-campus deployments. `(institute, code)` resolution + ambiguity sets keep multi-institute seeding safe. | Enforced |

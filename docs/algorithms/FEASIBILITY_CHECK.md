@@ -126,16 +126,21 @@ derives the wall-clock the solver should be given for the *exact* scope of the
 request:
 
 ```
-seconds = ceil(sessions x teachers x rooms x classTimeslots / 8000) x MARGIN_FACTOR
+seconds = clamp(ceil(sessions x teachers x rooms x classTimeslots / 8000 x MARGIN_FACTOR), 30, 18000)
 ```
 
 `8000` is the measured Construction-Heuristic candidate evaluations/sec (each CH
 step ranks every teacher × room × timeslot value for one session). `MARGIN_FACTOR`
-(4.0) is calibrated on the reference dataset: with ×2 the small scope
-(208 sessions × 20 teachers × 12 rooms × 42 slots ≈ 525s) still ended at −1 hard
-after 480s; at ×4 (~1050s) the same data reaches **0 hard**, all 208 sessions
-assigned, and every batch at full density (33 of 35 slots). Results are clamped
-to [30, 1800] seconds.
+is **2.5**, calibrated empirically on the reference dataset: ×2 was too tight for
+the small scope (208 sessions × 20 teachers × 12 rooms) — it still ended at **−1
+hard** after 480s, because local search was stuck on a hard-penalty plateau;
+×2.5 (~500s) reaches **0 hard** and a fully dense timetable on the same scope,
+which matched the regression runs. A full ×4 (~1050s) buys little extra for the
+wall-clock it costs, and since local search is stochastic the margin is kept ≥ 2
+so it can escape plateaus rather than stopping right after initialization.
+Results are clamped to [30, 18000] seconds (the 5-hour ceiling in
+`SolvingTimeRecommender.MAX_SECONDS`, mirrored by the frontend slider and
+`ScheduleRequest.solvingTimeSeconds`).
 
 The frontend pre-fills this value into the Solve Time control after a successful
 feasibility check and expands the slider range to fit it, so the E2E flow and the
@@ -159,5 +164,5 @@ flowchart TD
     SX --> P["pre-allocation correctness\nmissing/out-of-scope · wrong room type · two teachers ·\ncross-schedule double-book → ERROR"]
     P --> AL["teacher allotments\nexactly one in-scope teacher per (batch, subject)"]
     AL --> OUT["result\nfeasible = errorCount == 0 · issues sorted errors-first"]
-    OUT --> TIME["recommendedSolvingTimeSeconds\nceil(sessions×teachers×rooms×slots / 8000) × 4 · clamped [30, 1800]"]
+    OUT --> TIME["recommendedSolvingTimeSeconds\nceil(sessions×teachers×rooms×slots / 8000 × 2.5) · clamped [30, 18000]"]
 ```

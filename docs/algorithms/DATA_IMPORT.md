@@ -17,7 +17,7 @@ Shared parsing and natural-key normalisation.
 * Header normalisation: `normalizeHeader` lower-cases, removes spaces/underscores
   and the BOM, so `employeeId`, `EMPLOYEE ID`, `employee_id` all map to the same
   key.
-* `write` / `toCsvLine` – RFC 4180 serialiser (prefixes a UTF-8 BOM so Excel
+* `write` / `toCsvLine` - RFC 4180 serialiser. Only `write` prefixes a UTF-8 BOM so Excel
   opens UTF-8 correctly), with `escape` quoting `,` `"` and newlines.
 * `required` / `blankToNull` / `splitTokens` (splits on `;` or `|`) /
   `parseEnum`, `parseBooleanOrDefault`, `parseIntOrDefault`, `optionalInt`,
@@ -70,8 +70,8 @@ untouched when blank – a CSV omitting them never wipes existing data.
 * Teachers default `maxDailyHours=6`, `maxWeeklyHours=20`,
   `maxConsecutiveClasses=3`, `movementPenalty=1` on create.
 * Batches default `studentCount=60`.
-* Subject codes are upper-cased; `lab`/`requiresTeacher`/`requiresRoom` default
-  true.
+* Subject codes are upper-cased; `requiresTeacher`/`requiresRoom` default
+  **true** but `lab` defaults to **false**.
 
 `upsert` returns `true` when a new entity was created, `false` on update. After
 a successful save it calls `context.register(entity)` so later files (e.g.

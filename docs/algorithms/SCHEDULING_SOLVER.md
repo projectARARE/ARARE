@@ -13,7 +13,7 @@ The root object handed to the solver. It carries:
 
 | Category | Field | Notes |
 |----------|-------|-------|
-| **Problem facts** (read-only) | `timeslots`, `rooms`, `teachers`, `subjects`, `batches`, `classSections`, `buildings`, `configs` | Value-range providers, tagged `@ProblemFactCollectionProperty`. |
+| **Problem facts** (read-only) | `timeslots`, `rooms`, `teachers`, `subjects`, `batches`, `classSections`, `buildings`, `configs`, plus the busy-interval collections `teacherBusyIntervals` and `roomBusyIntervals` (the cross-schedule commitments that feed `teacherBusyCrossSchedule` / `roomBusyCrossSchedule`) | Value-range providers, tagged `@ProblemFactCollectionProperty`. |
 | | `preAllocationFacts` | `PreAllocationConstraintFact` – partial pins (teacher/room, slot left open). |
 | | `teacherBusyIntervals` | Cross-schedule double-booking windows. |
 | | `previousAssignments` | Parent/last-run placements, used to minimise churn. |
@@ -235,8 +235,10 @@ solver routes around teacher double-booking across *different* active schedules.
 Iterates locked `PreAllocation`s and matches generated sessions by
 `subject.id` + `effectiveBatch.id`:
 
-* **Full pin** (`pa.timeslot != null`): sets `teacher`, `room`, `timeslot` and
-  `isLocked = true` on the matching session.
+* **Full pin** (`pa.timeslot != null`): sets `timeslot` and `isLocked = true` on the
+  matching session, and sets `teacher`/`room` only where the pre-allocation supplies
+  them — a slot-only pin does not overwrite a teacher or room the generator already
+  chose.
 * **Partial pin** (`pa.timeslot == null`): sets `teacher` (and `room`) and emits
   a `PreAllocationConstraintFact(sessionId, teacherId, roomId)`. The
   `preAllocationViolation` HARD constraint then forces the solver to keep those

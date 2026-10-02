@@ -195,9 +195,9 @@ the worker runs on a separate thread.
 
 2. **Run (`SolveJobRunner.run`, `@Async("solveTaskExecutor")`).**
    - It loads the job; if `CANCELLED` it returns immediately.
-   - Guarded `transitionTerminal(QUEUED → RUNNING)` writing the `problemId`. If
+   - Guarded `jobRepo.startRunning(QUEUED → RUNNING)` writing the `problemId`. If
      `0` rows change, the job was already cancelled → return, persist nothing.
-   - **Build the problem** inside a *read-only* short transaction
+   - **Build the problem** inside a short transaction (read-write: `AsyncConfig` builds a plain `TransactionTemplate`, so `readOnly` stays at its default `false`)
      (`transactionTemplate.execute` → `TimetableProblemBuilder.build`). This is
      the only DB read the worker does.
    - **Solve with no DB connection open.** The solver runs entirely in memory
@@ -285,7 +285,7 @@ Set `ARARE_CORS_ORIGINS` to the real frontend origin in deployment.
 
 There is **no authentication/authorization layer by design**. ARARE is intended
 to run on a university's own infrastructure on a trusted local network (or
-single-tenant cloud) where the operator is trusted. `DOCUMENTATION.md`/deployment
+single-tenant cloud) where the operator is trusted. this document/deployment
 guidance therefore focuses on network isolation and CORS rather than login.
 
 The model is **single-deployment, not multi-tenant**: one database, one
@@ -314,7 +314,7 @@ ScheduleServiceImpl.generate  (@Transactional)
             ▼
        SolveJobRunner.run (@Async solveTaskExecutor)
             ├─ QUEUED→RUNNING (guarded)
-            ├─ build problem (read-only tx)
+            ├─ build problem (tx)
             ├─ solve in-memory (no DB)
             └─ QUEUED/RUNNING→SUCCEEDED + persist (one tx)  [cancel wins → skip]
    ◀── 202 Accepted + SolveJobResponse (id, status=QUEUED)
@@ -352,7 +352,7 @@ sequenceDiagram
     end
     Note over SJ,RU: afterCommit hook starts worker only after the job row commits
     RU->>DB: guarded QUEUED→RUNNING (writes problemId)
-    RU->>RU: build problem (read-only tx)
+    RU->>RU: build problem (tx)
     RU->>TF: solver.solve(problem) — no DB open
     activate TF
     TF-->>RU: best solution

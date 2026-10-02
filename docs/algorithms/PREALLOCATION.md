@@ -102,10 +102,10 @@ intra-payload collisions are caught in O(N)):
   rows, appending each saved entity to the in-memory `existing` list so later
   specs catch collisions with earlier ones in the same request.
 
-### `findByScheduleIdWithDetails`
+### `findByScheduleId`
 
 Returns all pre-allocations for a schedule using an EntityGraph
-(`findByScheduleIdWithDetails`) so the subject/teacher/room/timeslot are fetched
+(`PreAllocationRepository.findByScheduleId`, annotated `@EntityGraph`) so the subject/teacher/room/timeslot are fetched
 eagerly for the response DTO.
 
 ## 4. How the solver consumes pre-allocations

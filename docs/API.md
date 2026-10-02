@@ -8,7 +8,7 @@ with a `SolveJobResponse`; poll `GET /api/v1/solve-jobs/{id}` for status.
 Conventions:
 - Path params: `{id}` = entity id (`Long`).
 - All list endpoints return JSON arrays.
-- Create returns `201 Created`; delete returns `204 No Content`.
+- Create returns `201 Created` and delete `204 No Content` on most controllers. The exceptions are `POST /sessions` and `POST /university-config`, which return `200 OK`.
 
 ## Error codes (all resources)
 
@@ -49,7 +49,6 @@ Conventions:
 | PUT | `/buildings/{id}` | Update | `BuildingRequest` |
 | GET | `/buildings/{id}` | Get by id | — |
 | GET | `/buildings` | List all | — |
-| GET | `/buildings/{buildingId}` | List by building | — |
 | DELETE | `/buildings/{id}` | Delete | — (nulls `Batch.homeRoom` FKs first) |
 
 ## Rooms — `/api/v1/rooms`
@@ -122,7 +121,7 @@ Invariants enforced: `weeklyHours` divisible by `chunkHours`; `isLab` ⇔ `roomT
 | GET | `/subject-offerings/subject/{subjectId}` | List by subject | — |
 | DELETE | `/subject-offerings/{id}` | Delete | — |
 
-Exactly one of `batchId`/`sectionId` required.
+At least one of `batchId`/`sectionId` required; both may be set when the section belongs to the batch.
 
 ## Teacher Assignments — `/api/v1/teacher-assignments`
 | Method | Path | Purpose | Body |
@@ -136,7 +135,7 @@ Exactly one of `batchId`/`sectionId` required.
 | GET | `/teacher-assignments/subject/{subjectId}` | List by subject | — |
 | DELETE | `/teacher-assignments/{id}` | Delete | — |
 
-Exactly one of `batchId`/`sectionId` required. Hard constraint for the solver.
+At least one of `batchId`/`sectionId` required; both may be set when the section belongs to the batch. Hard constraint for the solver.
 
 ## Timeslots — `/api/v1/timeslots`
 | Method | Path | Purpose | Body |
@@ -155,11 +154,12 @@ Unique on (`day`, `start_time`, `end_time`); `endTime` must be after `startTime`
 | GET | `/sessions/schedule/{scheduleId}` | Sessions of a schedule | — |
 | GET | `/sessions/schedule/{scheduleId}/batch/{batchId}` | Sessions of schedule+batch | — |
 | GET | `/sessions/schedule/{scheduleId}/teacher/{teacherId}` | Sessions of schedule+teacher | — |
+| PATCH | `/sessions/schedule/{scheduleId}/lock` | Bulk lock/unlock a schedule's sessions | `SessionLockRequest` |
 | PATCH | `/sessions/{id}` | Reassign teacher/room/timeslot/lock | `SessionAssignmentRequest{teacherId?, roomId?, timeslotId?, locked?, clearTeacher?, clearRoom?, clearTimeslot?}` |
 | POST | `/sessions` | Manually create a session | `SessionCreateRequest{scheduleId, subjectId, batchId?, sectionId?, teacherId?, roomId?, timeslotId?, duration?, locked?}` |
 | DELETE | `/sessions/{id}` | Delete | — |
 
-`PATCH` nulls the field when the matching `clear*` flag is true (or id set null).
+`PATCH` applies an id when supplied; to clear a field you must set the matching `clearTeacher`/`clearRoom`/`clearTimeslot` flag to `true` (a null id alone leaves the current value).
 
 ## Events (disruptions) — `/api/v1/events`
 | Method | Path | Purpose | Body |
@@ -188,6 +188,7 @@ Unique on (`day`, `start_time`, `end_time`); `endTime` must be after `startTime`
 | GET | `/schedules` | List all | — |
 | POST | `/schedules/{id}/activate` | Activate (archives other active in scope) | — |
 | POST | `/schedules/{id}/archive` | Archive | — |
+| POST | `/schedules/{id}/revalidate` | Re-score an existing schedule | - |
 | POST | `/schedules/{id}/partial-resolve` | Re-solve impacted sessions (async) | `PartialResolveRequest{impactedSessionIds[]}` → `202 SolveJobResponse` |
 | GET | `/schedules/{id}/score-explanation` | Score breakdown | — → `ScoreExplanationResponse` |
 | GET | `/schedules/{id}/explanation` | Score explanation text | — |
@@ -234,6 +235,7 @@ Unique on (`schedule_id`, `batch_id`, `subject_id`, `timeslot_id`).
 | GET | `/solve-jobs/schedule/{scheduleId}` | List by schedule | — |
 | GET | `/solve-jobs/{id}` | Get status | — |
 | POST | `/solve-jobs/{id}/cancel` | Cancel (terminates live solver) | — → `409` if not cancellable |
+| POST | `/solve-jobs/{id}/retry` | Retry a failed solve job | - |
 
 `SolveJobResponse{id, jobType, scheduleId, status, score, bestScore, errorMessage, elapsedMillis, createdAt, startedAt, finishedAt}`.
 
@@ -254,9 +256,10 @@ The impact engine is driven by `DisruptionRequest{type, affectedEntityId?, date?
 | GET | `/import/template/zip` | All templates ZIP | — (`application/zip`) |
 | GET | `/import/order` | Canonical import order | — (`List<ImportOrderStep>`) |
 
-`{entityType}` is a `CsvEntityType` name (e.g. `institute`, `department`,
-`building`, `room`, `batch`, `class-section`, `teacher`, `subject`,
-`subject-offering`, `teacher-assignment`, `timeslot`, …).
+`{entityType}` is a `CsvEntityType` name. There are exactly seven, and the names are
+plural: `timeslots`, `buildings`, `departments`, `rooms`, `subjects`, `teachers`, `batches`.
+Anything else is rejected with `IllegalArgumentException` - `institute`, `class-section`,
+`subject-offering` and `teacher-assignment` are not importable entity types.
 
 ## Generic Spreadsheet Export — `/api/v1/export`
 | Method | Path | Purpose | Body |

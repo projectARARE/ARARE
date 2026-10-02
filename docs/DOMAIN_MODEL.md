@@ -79,15 +79,17 @@ Table `departments`. Academic department (e.g. CSE, IT). Owns allowed buildings.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| name | `String` | `@NotBlank`, `@Size(120)`, **unique** |
-| code | `String` | `@NotBlank`, `@Size(20)`, **unique** |
+| name | `String` | `@NotBlank`, `@Size(120)`. Uniqueness is **per institute** (`V14` dropped the global unique; `uq_departments_institute_code` covers `institute_id, code`), enforced in `DepartmentServiceImpl`. |
+| code | `String` | `@NotBlank`, `@Size(20)`, `@Pattern("^[A-Za-z0-9_-]+$")`. Unique per institute, not globally. |
 | institute | `Institute` | `@ManyToOne(optional=false)`, FK `institute_id` |
 | buildingsAllowed | `List<Building>` | `@ManyToMany` join table `department_buildings` (soft constraint) |
 
 ### Building
-Table `buildings`. Physical building, owned by an institute (`V14`). Names are
-**not** globally unique — only unique per institute in practice; CSV import treats
-a name shared across institutes as ambiguous.
+Table `buildings`. Physical building, owned by an institute (`V14`). `name` is
+**globally unique** (`@UniqueConstraint(columnNames = {"name"})`, enforced by
+`BuildingServiceImpl.create`); the import path's ambiguity handling for repeated
+names across institutes is therefore a defensive fallback rather than a reachable
+case under normal writes.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -178,7 +180,7 @@ room-type/teacher assignment.
 | isLab | `boolean` | default false |
 | requiresTeacher | `boolean` | default true (false → solver may leave teacher null) |
 | requiresRoom | `boolean` | default true (false → solver may leave room null) |
-| minGapBetweenSessions | `int` | `@Min(0)`, default 0, spread soft constraint |
+| minGapBetweenSessions | `int` | `@Min(0)`, default 0. Persisted and exported, but **not yet enforced** by any constraint in the solver.
 | maxSessionsPerDay | `int` | `@Min(1)`, default 1, cognitive-load constraint |
 
 Validation enforces invariants (weeklyHours divisible by chunkHours, lab↔LAB
@@ -186,7 +188,9 @@ consistency).
 
 ### SubjectOffering
 Table `subject_offerings`. The "offered this term" layer: which batch/section
-takes which subject. Exactly one of `batch`/`section` must be set.
+takes which subject. **At least one** of `batch`/`section` must be set; both may be
+set provided the section belongs to the batch (`validateInvariant` throws only when
+both are null, or when the two disagree).
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -201,8 +205,9 @@ falls back to the legacy `batch.subjects` / `section.subjects`.
 
 ### TeacherAssignment
 Table `teacher_assignments`. The "allotted" layer: which teacher actually teaches
-which subject for which batch/section this term. Exactly one of `batch`/`section`
-must be set. Treated as a **hard constraint** by the solver (unless no allotment
+which subject for which batch/section this term. **At least one** of
+`batch`/`section` must be set, with the same both-set rule as `SubjectOffering`.
+Treated as a **hard constraint** by the solver (unless no allotment
 exists, then it falls back to qualified teachers).
 
 | Field | Type | Notes |
@@ -259,7 +264,7 @@ re-optimization.
 | --- | --- | --- |
 | title | `String` | `@NotBlank` |
 | type | `EventType` | `@NotNull` enum |
-| startDate / endDate | `LocalDate` | `@NotNull`, endDate ≥ startDate |
+| startDate / endDate | `LocalDate` | nullable on the entity; `@NotNull` lives on `EventRequest`. `validateInvariant` rejects an end date before the start date. A disruption with neither date applies across all days. |
 | description | `String` | optional TEXT |
 | affectedRooms | `List<Room>` | `@ManyToMany` table `event_affected_rooms` |
 | affectedTeachers | `List<Teacher>` | `@ManyToMany` table `event_affected_teachers` |
@@ -272,7 +277,7 @@ Table `academic_terms`. A semester/trimester for temporal versioning of schedule
 | --- | --- | --- |
 | name | `String` | `@NotBlank` (e.g. "Semester 1 2025–26") |
 | academicYear | `String` | optional (e.g. "2025-26") |
-| startDate / endDate | `LocalDate` | `@NotNull`, endDate ≥ startDate |
+| startDate / endDate | `LocalDate` | nullable on the entity; `@NotNull` lives on `EventRequest`. `validateInvariant` rejects an end date before the start date. A disruption with neither date applies across all days. |
 | examPeriodStart / examPeriodEnd | `LocalDate` | optional |
 | status | `AcademicTermStatus` | default `UPCOMING` |
 | description | `String` | optional TEXT |
@@ -334,8 +339,11 @@ Status transitions are performed by guarded bulk `UPDATE`
 (`SolveJobRepository.transitionTerminal`), which does **not** bump `@Version`.
 
 ### UniversityConfig
-Table `university_configs`. Global scheduling knobs; only **one active** record
-is expected (`active` flag; migration `V3` enforces single active config).
+Table `university_configs`. Global scheduling knobs; the service keeps **one active**
+record by deactivating the previous one on save. The `V3` partial unique index on
+`(id) WHERE active = true` is intended to enforce this at the database level, but
+because it indexes the primary key it can never conflict — the guarantee rests on the
+service layer alone, not on a direct database write.
 
 | Field | Type | Notes |
 | --- | --- | --- |

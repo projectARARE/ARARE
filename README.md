@@ -100,6 +100,7 @@ Start here, then follow the links for depth.
 |-------|-----|
 | Architecture, layers, async solve pipeline, request flows | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | JPA domain model & enums | [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) |
+| Cross-institute / import edge cases | [docs/EDGE_CASES.md](docs/EDGE_CASES.md) |
 | Full REST API reference | [docs/API.md](docs/API.md) |
 | Developer setup & testing | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Production / local deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |

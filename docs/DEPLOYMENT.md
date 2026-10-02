@@ -109,7 +109,7 @@ time limit defaults to **30s** (`timefold.solver.termination.spent-limit`) and
 can be overridden per request via `ScheduleRequest.solvingTimeSeconds`.
 
 The worker opens **no DB connection while solving**; it reads the problem in a
-short read-only transaction, solves in memory, then persists the result in one
+short transaction (read-write: `AsyncConfig` constructs a plain `TransactionTemplate`, leaving `readOnly` false), solves in memory, then persists the result in one
 short write transaction. A `SolveJobRecoverySweeper` marks any `QUEUED`/`RUNNING`
 jobs `FAILED` on startup so a crash cannot leave a job blocking schedule deletion
 forever.

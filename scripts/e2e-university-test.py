@@ -68,7 +68,7 @@ SOLVER_BUDGET_SEC = {"small": 480, "medium": 720, "large": 1200}
 
 # The small synthetic dataset sits on the solver's convergence edge: a single
 # residual hard violation (one batch double-booked slot) is the documented
-# "-1hard seed flake" (docs/algorithms/EDGE_CASES.md #11) that repair rounds
+# "-1hard seed flake" (docs/EDGE_CASES.md row 11) that repair rounds
 # occasionally cannot close. The gate tolerates exactly this residual (-1 hard,
 # one batch conflict); any worse outcome still fails, including an
 # under-budgeted solve that finishes before construction.

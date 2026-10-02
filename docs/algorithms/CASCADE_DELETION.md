@@ -67,5 +67,6 @@ orphaned FK remains:
 * **Transactional boundary**: all deletions for a single call happen in one
   transaction, so a failure rolls back the whole operation cleanly.
 
-The pre-allocation purge methods are also used by the data-import and
-pre-allocation management flows (see `PREALLOCATION.md` and `DATA_IMPORT.md`).
+The pre-allocation purge methods are called only by the owning master-data services
+(batch, building, department, room, subject, teacher, timeslot). Neither the data-import
+package nor `PreAllocationServiceImpl` calls them.

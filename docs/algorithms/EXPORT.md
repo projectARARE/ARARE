@@ -1,9 +1,12 @@
 # Schedule Export
 
-ARARE can export a solved schedule to CSV, Excel (`.xlsx`), and PDF. All three
-views render the same week grid: **rows = time slots, columns = days of the
-week**, with each cell showing the subject (and teacher/room/building). Non-CLASS
-sessions are intentionally excluded from the grid.
+ARARE can export a solved schedule to CSV, Excel (`.xlsx`), and PDF. The CSV
+exporter emits a **flat row list** of assigned sessions, ordered by day then start
+time. The Excel and PDF renderers lay those sessions out as a week grid: **rows =
+time slots, columns = days of the week**, with each cell showing the subject (and
+teacher/room/building). Sessions are included whenever they have a timeslot; the
+Excel/PDF grid shows only CLASS slots, so non-CLASS sessions are not visible there
+(they are still counted and logged), whereas the CSV includes them.
 
 All classes live in `features/schedule/`.
 
@@ -15,14 +18,14 @@ All classes live in `features/schedule/`.
 `Day, Start, End, Subject, Code, Teacher, Room, Building, Batch, Section, Type,
 Duration(h), Locked`.
 
-* Only sessions with a `timeslot != null` are emitted.
-* Unassigned sessions (no timeslot) are reported as a trailing comment line
-  (`"# N session(s) were not assigned…"`) and excluded from the rows.
+* Only sessions with a `timeslot != null` are emitted; unassigned sessions are
+  simply absent from the export (no separate summary line is written).
 * Batch/section labels are derived from `ClassSession.getBatch()` /
   `getSection()` (lab-split sessions carry a `section`).
 * **Per-entity grouping**: when `view != ALL` and `entityId == null`, the CSV
   exporter splits sessions by entity (teacher/room/batch **id**, never by label)
-  and returns a **ZIP** containing one CSV per entity, named after the entity id.
+  and returns a **ZIP** containing one CSV per entity, each file named after that
+  entity's label (teacher name, room number, batch label) — not its id.
   Passing a specific `entityId` returns a single CSV narrowed to that entity.
   Grouping by id guarantees two distinct entities that happen to share a label
   (e.g. the same teacher name, or the same batch label in two campuses) remain
@@ -93,7 +96,7 @@ used by master-data tables (auto-detects numeric cells).
 ## 4. Shared notes
 
 * **Non-CLASS sessions excluded**: both Excel and PDF filter
-  `timeslot != null && timeslot.type == CLASS` and log an info line per export.
+  `timeslot != null` (the grid then iterates CLASS slots, so non-CLASS sessions never reach a cell) and log an info line per export.
   They are intentionally absent from the teaching grid.
 * **EntityGraph-free fetch**: exporters load sessions via
   `sessionRepo.findByScheduleId` and rely on the LAZY associations being
