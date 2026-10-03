@@ -109,7 +109,15 @@ public class TimetableSolverService {
      */
     private static List<Long> sessionIdsOf(ConstraintMatchTotal<HardMediumSoftScore> total) {
         return total.getConstraintMatchSet().stream()
-            .flatMap(m -> m.getJustificationList().stream())
+            .flatMap(m -> {
+                Object justification = m.getJustification();
+                if (justification instanceof java.util.Collection) {
+                    return ((java.util.Collection<?>) justification).stream();
+                } else if (justification != null) {
+                    return java.util.stream.Stream.of(justification);
+                }
+                return java.util.stream.Stream.empty();
+            })
             .filter(ClassSession.class::isInstance)
             .map(j -> ((ClassSession) j).getId())
             .distinct()
