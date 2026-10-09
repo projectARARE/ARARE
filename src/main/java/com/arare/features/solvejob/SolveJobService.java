@@ -151,12 +151,15 @@ public class SolveJobService {
                     solver.terminateEarly();
                 }
             }
+            long cancelledMillis = job.getStartedAt() != null
+                ? java.time.Duration.between(job.getStartedAt(), java.time.LocalDateTime.now()).toMillis()
+                : 0L;
             int updated = jobRepo.transitionTerminal(
                 jobId,
                 List.of(SolveJobStatus.QUEUED, SolveJobStatus.RUNNING),
                 SolveJobStatus.CANCELLED,
                 null,
-                null,
+                cancelledMillis,
                 java.time.LocalDateTime.now(),
                 null,
                 null);

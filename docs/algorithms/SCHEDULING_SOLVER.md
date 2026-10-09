@@ -109,7 +109,6 @@ filter.
 | `teacherDailyHoursCap` | Sum of `duration` per teacher/day > `maxDailyHours`. |
 | `teacherWeeklyHoursCap` | Sum of `duration` per teacher > `maxWeeklyHours`. |
 | `teacherConsecutiveClassesCap` | Longest contiguous run of slots > `maxConsecutiveClasses` (`consecutiveSlotExcess`). |
-| `mandatoryBatchBreak` | Batch has no covered interval inside the 12:00–14:00 midday window (`hasMiddayBreak`). |
 | `avoidStudentIdleGaps` | Consecutive (by slot) sessions of the same `effectiveBatch` with a gap (`hasIdleGap`). |
 | `avoidTeacherIdleGaps` | Same for a teacher. |
 | `minimizeTeacherBuildingChanges` | Back-to-back sessions of same teacher in different buildings. |

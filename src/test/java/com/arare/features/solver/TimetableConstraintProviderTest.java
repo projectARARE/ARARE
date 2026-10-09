@@ -185,29 +185,37 @@ class TimetableConstraintProviderTest {
         }
 
         @Test
-        void mandatoryBatchBreakPenalizesWhenMiddayWindowFullyOccupied() {
-        Batch batch = Batch.builder().studentCount(60).year(2).section("A").build();
-        batch.setId(1L);
+        void breakSlotViolationPenalizesSessionOnConfigBreakSlot() {
+        Timeslot breakSlot = Timeslot.builder()
+            .day(SchoolDay.MONDAY)
+            .startTime(LocalTime.of(10, 0))
+            .endTime(LocalTime.of(10, 30))
+            .slotNumber(3)
+            .type(TimeslotType.BREAK)
+            .build();
+        breakSlot.setId(20L);
 
-        Timeslot lunch1 = buildTimeslot(20L, SchoolDay.MONDAY, 12, 13, 5);
-        Timeslot lunch2 = buildTimeslot(21L, SchoolDay.MONDAY, 13, 14, 6);
+        Timeslot classSlot = buildTimeslot(21L, SchoolDay.MONDAY, 11, 12, 4);
 
         ClassSession s1 = ClassSession.builder()
             .id(1L)
-            .batch(batch)
-            .timeslot(lunch1)
+            .timeslot(breakSlot)
             .duration(1)
             .build();
         ClassSession s2 = ClassSession.builder()
             .id(2L)
-            .batch(batch)
-            .timeslot(lunch2)
+            .timeslot(breakSlot)
+            .duration(1)
+            .build();
+        ClassSession s3 = ClassSession.builder()
+            .id(3L)
+            .timeslot(classSlot)
             .duration(1)
             .build();
 
-        constraintVerifier.verifyThat(TimetableConstraintProvider::mandatoryBatchBreak)
-            .given(lunch1, lunch2, s1, s2)
-            .penalizesBy(1);
+        constraintVerifier.verifyThat(TimetableConstraintProvider::breakSlotViolation)
+            .given(breakSlot, classSlot, s1, s2, s3)
+            .penalizesBy(2);
         }
 
     // -- Malformed data: sessions with a null subject must never NPE --

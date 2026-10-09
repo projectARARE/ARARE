@@ -8,15 +8,10 @@ import com.arare.features.batch.Batch;
 import com.arare.features.classsession.ClassSession;
 import com.arare.features.timeslot.Timeslot;
 import com.arare.features.universityconfig.UniversityConfig;
-import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 public class TimetableConstraintProvider implements ConstraintProvider {
-
-    private static final LocalTime MIDDAY_BREAK_START = LocalTime.of(12, 0);
-    private static final LocalTime MIDDAY_BREAK_END = LocalTime.of(14, 0);
 
     @Override
     public Constraint[] defineConstraints(ConstraintFactory factory) {
@@ -52,7 +47,6 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             teacherDailyHoursCap(factory),
             teacherWeeklyHoursCap(factory),
             teacherConsecutiveClassesCap(factory),
-            mandatoryBatchBreak(factory),
             avoidStudentIdleGaps(factory),
             avoidTeacherIdleGaps(factory),
                         preferDepartmentBuildings(factory),
@@ -308,17 +302,6 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .asConstraint("Teacher consecutive classes exceeded");
     }
 
-    Constraint mandatoryBatchBreak(ConstraintFactory factory) {
-        return factory.forEachIncludingUnassigned(ClassSession.class)
-            .filter(s -> effectiveBatch(s) != null && s.getTimeslot() != null)
-            .groupBy(TimetableConstraintProvider::effectiveBatch,
-                s -> s.getTimeslot().getDay(),
-                ConstraintCollectors.toList())
-            .filter((batch, day, sessions) -> !hasMiddayBreak(sessions))
-            .penalize(HardMediumSoftScore.ONE_MEDIUM)
-            .asConstraint("Batch missing midday break");
-    }
-
     Constraint avoidStudentIdleGaps(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> effectiveBatch(s) != null && s.getTimeslot() != null)
@@ -365,11 +348,12 @@ public class TimetableConstraintProvider implements ConstraintProvider {
     Constraint preferDepartmentBuildings(ConstraintFactory factory) {
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> s.getRoom() != null
+                && s.getRoom().getBuilding() != null
                 && s.getSubject() != null
                 && s.getSubject().getDepartment() != null
                 && !s.getSubject().getDepartment().getBuildingsAllowed().isEmpty()
-                && !s.getSubject().getDepartment().getBuildingsAllowed()
-                    .contains(s.getRoom().getBuilding()))
+                && s.getSubject().getDepartment().getBuildingsAllowed().stream()
+                    .noneMatch(b -> b.getId().equals(s.getRoom().getBuilding().getId())))
             .penalize(HardMediumSoftScore.ONE_MEDIUM)
             .asConstraint("Session outside department buildings");
     }
@@ -419,9 +403,10 @@ public class TimetableConstraintProvider implements ConstraintProvider {
         return factory.forEachIncludingUnassigned(ClassSession.class)
             .filter(s -> s.getTeacher() != null
                 && s.getRoom() != null
+                && s.getRoom().getBuilding() != null
                 && !s.getTeacher().getPreferredBuildings().isEmpty()
-                && !s.getTeacher().getPreferredBuildings()
-                    .contains(s.getRoom().getBuilding()))
+                && s.getTeacher().getPreferredBuildings().stream()
+                    .noneMatch(b -> b.getId().equals(s.getRoom().getBuilding().getId())))
             .penalize(HardMediumSoftScore.ONE_SOFT,
                 s -> s.getTeacher().getMovementPenalty())
             .asConstraint("Teacher building preference violated");
@@ -784,48 +769,6 @@ private static boolean areBackToBackBySlotNumber(ClassSession a, ClassSession b)
         int secondStart = second.getTimeslot().getSlotNumber();
         int firstEnd = firstStart + first.getDuration() - 1;
         return secondStart == firstEnd + 1;
-    }
-
-    private static boolean hasMiddayBreak(List<ClassSession> sessions) {
-        int windowStart = MIDDAY_BREAK_START.toSecondOfDay();
-        int windowEnd = MIDDAY_BREAK_END.toSecondOfDay();
-
-        List<int[]> covered = new ArrayList<>();
-        for (ClassSession session : sessions) {
-            Timeslot timeslot = session.getTimeslot();
-            if (timeslot == null || timeslot.getType() != TimeslotType.CLASS) {
-                continue;
-            }
-
-            int start = timeslot.getStartTime().toSecondOfDay();
-            int end = timeslot.getEndTime().toSecondOfDay();
-            int overlapStart = Math.max(start, windowStart);
-            int overlapEnd = Math.min(end, windowEnd);
-            if (overlapStart < overlapEnd) {
-                covered.add(new int[]{overlapStart, overlapEnd});
-            }
-        }
-
-        if (covered.isEmpty()) {
-            return true;
-        }
-
-        covered.sort(Comparator.comparingInt(a -> a[0]));
-        int mergedStart = covered.get(0)[0];
-        int mergedEnd = covered.get(0)[1];
-
-        if (mergedStart > windowStart) {
-            return true;
-        }
-
-        for (int i = 1; i < covered.size(); i++) {
-            int[] interval = covered.get(i);
-            if (interval[0] > mergedEnd) {
-                return true;
-            }
-            mergedEnd = Math.max(mergedEnd, interval[1]);
-        }
-        return mergedEnd < windowEnd;
     }
 
     private static boolean supportsSessionEnd(ClassSession s, Timeslot slot) {
