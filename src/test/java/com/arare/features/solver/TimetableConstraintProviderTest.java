@@ -456,6 +456,26 @@ class TimetableConstraintProviderTest {
             .penalizesBy(0);
     }
 
+    @Test
+    void minimizeMovedSessionsDoesNotPenalizeSessionWhenNoBaselineExists() {
+        Subject subject = Subject.builder().name("DSA").build();
+        subject.setId(10L);
+        Batch batch = Batch.builder().year(2).section("A").build();
+        batch.setId(1L);
+
+        Teacher teacher = Teacher.builder().build();
+        teacher.setId(1L);
+        Room room = Room.builder().type(RoomType.LECTURE).capacity(60).build();
+        room.setId(1L);
+        Timeslot slot = buildTimeslot(10L, SchoolDay.MONDAY, 8, 9, 1);
+
+        ClassSession session = buildMovableSession(1L, subject, batch, teacher, room, slot);
+
+        constraintVerifier.verifyThat(TimetableConstraintProvider::minimizeMovedSessions)
+            .given(session)
+            .penalizesBy(0);
+    }
+
     // -- Helpers --
 
     // -- Disruption facts --

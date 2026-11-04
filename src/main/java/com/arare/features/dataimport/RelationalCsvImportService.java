@@ -131,6 +131,7 @@ public class RelationalCsvImportService {
                 if (entry.isDirectory()) continue;
                 String filename = entry.getName();
                 if (filename.contains("/")) filename = filename.substring(filename.lastIndexOf('/') + 1);
+                if (filename.contains("\\")) filename = filename.substring(filename.lastIndexOf('\\') + 1);
                 filename = filename.toLowerCase(Locale.ROOT);
                 if (filename.endsWith(".csv")) {
                     /**

@@ -55,7 +55,7 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             mandatoryBatchBreak(factory),
             avoidStudentIdleGaps(factory),
             avoidTeacherIdleGaps(factory),
-                        preferDepartmentBuildings(factory),
+            preferDepartmentBuildings(factory),
             minimizeTeacherBuildingChanges(factory),
             preferSplitLabSectionsAtSameTime(factory),
 
@@ -701,9 +701,9 @@ public class TimetableConstraintProvider implements ConstraintProvider {
             .filter(s -> s.getId() != null
                 && s.getTeacher() != null && s.getRoom() != null && s.getTimeslot() != null
                 && s.getSubject() != null && effectiveBatch(s) != null)
-            .ifNotExists(PreviousAssignment.class,
-                Joiners.equal(TimetableConstraintProvider::movementKey, PreviousAssignment::key),
-                Joiners.filtering((s, prev) -> prev.matches(s)))
+            .join(PreviousAssignment.class,
+                Joiners.equal(TimetableConstraintProvider::movementKey, PreviousAssignment::key))
+            .filter((s, prev) -> !prev.matches(s))
             .penalize(HardMediumSoftScore.ONE_SOFT)
             .asConstraint("Session moved from previous timetable");
     }

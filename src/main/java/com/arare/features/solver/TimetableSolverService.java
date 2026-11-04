@@ -12,6 +12,7 @@ import com.arare.features.solvejob.SolveJobRepository;
 import com.arare.features.solvejob.SolveJobType;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,12 +39,22 @@ public class TimetableSolverService {
             .orElseThrow(() -> new ResourceNotFoundException("Schedule", scheduleId));
 
         /**
-         * Recompute the explanation with the SAME disruption facts as the last
-         * partial-resolve that produced this schedule, so the breakdown matches
-         * the persisted score. Without this, an infeasible partial resolve would
-         * be re-scored without its disruption constraints and reported feasible.
+         * Recompute the explanation with the SAME disruption facts and churn baseline
+         * as the last partial-resolve that produced this schedule, so the breakdown
+         * matches the persisted score. Without this, an infeasible partial resolve would
+         * be re-scored without its disruption constraints and reported feasible, or churn
+         * penalties would be computed against an empty baseline.
          */
-        List<DisruptionConstraintFact> disruptionFacts = latestPartialResolveFacts(scheduleId);
+        Optional<SolveJob> latestPartial = solveJobRepo
+            .findTopByScheduleIdAndJobTypeOrderByCreatedAtDesc(scheduleId, SolveJobType.PARTIAL_RESOLVE);
+        List<DisruptionConstraintFact> disruptionFacts = latestPartial
+            .map(SolveJob::getDisruptionFactsCsv)
+            .map(DisruptionConstraintFact::decode)
+            .orElseGet(List::of);
+        List<Long> impactedSessionIds = latestPartial
+            .map(SolveJob::getImpactedSessionIdsCsv)
+            .map(TimetableSolverService::parseIds)
+            .orElse(null);
 
         /**
          * Read-only explain path: do NOT generate/persist sessions for a schedule
@@ -53,7 +64,7 @@ public class TimetableSolverService {
          */
         TimetableSolution solution = problemBuilder.build(new ProblemBuildRequest(
             schedule,
-            null,
+            impactedSessionIds,
             null,
             schedule.getInstituteId(),
             null,
@@ -93,6 +104,20 @@ public class TimetableSolverService {
             score != null ? score.softScore() : 0,
             breakdowns
         );
+    }
+
+    private static List<Long> parseIds(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return null;
+        }
+        List<Long> ids = new java.util.ArrayList<>();
+        for (String part : csv.split(",")) {
+            try {
+                ids.add(Long.parseLong(part.trim()));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return ids;
     }
 
     private List<DisruptionConstraintFact> latestPartialResolveFacts(Long scheduleId) {

@@ -72,7 +72,7 @@ public interface SolveJobRepository extends JpaRepository<SolveJob, Long> {
             j.elapsedMillis = :elapsedMillis,
             j.finishedAt = :finishedAt,
             j.errorMessage = :errorMessage,
-            j.problemId = :problemId
+            j.problemId = COALESCE(:problemId, j.problemId)
         WHERE j.id = :id AND j.status IN :fromStatuses
         """)
     int transitionTerminal(@Param("id") Long id,

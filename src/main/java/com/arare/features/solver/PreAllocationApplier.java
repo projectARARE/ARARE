@@ -69,7 +69,9 @@ public class PreAllocationApplier {
                          * solver remains free to choose a compatible slot.
                          */
                         s.setTeacher(pa.getTeacher());
-                        s.setRoom(pa.getRoom());
+                        if (pa.getRoom() != null) {
+                            s.setRoom(pa.getRoom());
+                        }
                         facts.add(new PreAllocationConstraintFact(
                             s.getId(),
                             pa.getTeacher().getId(),

@@ -61,6 +61,14 @@ public class ScheduleServiceImpl implements ScheduleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule", req.parentScheduleId()))
             : null;
 
+        if (parent != null) {
+            /**
+             * Prevent spawning a child schedule or re-solving while the parent
+             * schedule currently has an active solve job running.
+             */
+            solveJobService.ensureNoActiveJobForSchedule(parent.getId());
+        }
+
         Schedule schedule = Schedule.builder()
             .name(req.name())
             .scope(req.scope() != null ? req.scope() : ScheduleScope.DEPARTMENT)

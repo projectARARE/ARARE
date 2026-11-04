@@ -146,10 +146,17 @@ filter.
 
 * **Score type**: `HardMediumSoftScore` – hard failures dominate everything
   below them; then medium, then soft.
-* **Termination**: configured externally via Timefold
-  (`termination.spent-limit`, a wall-clock budget) and
-  `environment-mode = REPRODUCIBLE` (deterministic, single-threaded solving) so
-  identical inputs yield identical schedules.
+* **Termination & dynamic budget**: While Timefold provides baseline settings
+  (`environment-mode = REPRODUCIBLE` for deterministic solving), `SolveJobRunner`
+  programmatically overrides the spent limit using `SolverConfigOverride`
+  based on the job's `timeLimitSeconds` (or backend-recommended solve time). The
+  total budget is partitioned:
+  * `totalBudgetMillis = timeLimitSeconds * 1000L`
+  * `repairReserve = Math.min(60_000L, Math.max(5_000L, totalBudgetMillis / 4))`
+  * `mainBudgetMillis = Math.max(1_000L, totalBudgetMillis - repairReserve)`
+  If the main solve pass leaves residual hard violations, `SolveJobRunner`
+  executes iterative repair passes from the best solution using a fresh solver
+  within the repair reserve until feasible or timeout.
 * **Persistence**: `SolutionPersister.persist` treats a negative hard score as
   *infeasible* but still writes the best-effort placement back and marks the
   schedule `INFEASIBLE` (read-only, not activatable). Only a `null` score

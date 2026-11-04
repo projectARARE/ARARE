@@ -261,4 +261,49 @@ class PreAllocationApplierTest {
         assertNull(session.getTeacher());
         assertNull(session.getRoom());
     }
+
+    @Test
+    void partialPinWithTeacherKeepsRoomItDoesNotCarry() {
+        Batch batch = Batch.builder().year(2).section("A").studentCount(60).build();
+        batch.setId(1L);
+
+        Subject subject = Subject.builder().name("Physics").build();
+        subject.setId(2L);
+        Teacher pinnedTeacher = Teacher.builder().name("Dr. X").build();
+        pinnedTeacher.setId(3L);
+        Room existingRoom = Room.builder().roomNumber("L-202").build();
+        existingRoom.setId(8L);
+
+        ClassSession session = ClassSession.builder()
+            .id(10L)
+            .subject(subject)
+            .batch(batch)
+            .teacher(null)
+            .room(existingRoom)
+            .duration(1)
+            .isLocked(false)
+            .build();
+
+        PreAllocation pa = PreAllocation.builder()
+            .batch(batch)
+            .subject(subject)
+            .teacher(pinnedTeacher)
+            .room(null)
+            .timeslot(null)
+            .locked(true)
+            .build();
+        pa.setId(20L);
+
+        var facts = applier.apply(List.of(session), List.of(pa));
+
+        assertSame(pinnedTeacher, session.getTeacher());
+        // Room is not carried by the partial pre-allocation → existing assignment kept.
+        assertSame(existingRoom, session.getRoom());
+        assertNull(session.getTimeslot());
+        assertFalse(session.isLocked());
+        assertFalse(facts.isEmpty());
+        assertSame(session.getId(), facts.get(0).sessionId());
+        assertSame(pinnedTeacher.getId(), facts.get(0).teacherId());
+        assertNull(facts.get(0).roomId());
+    }
 }
